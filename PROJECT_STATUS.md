@@ -1,6 +1,6 @@
 # Thrift Log project status
 
-**Latest assistant checkpoint (November 9, 2026):** screenshot sales/listing review and approved imports are implemented. Typecheck/lint/build, 110 unit/database tests, all 24 desktop/mobile browser tests and isolated real Supabase/WebKit approval checks pass. Real OpenAI extraction and actual iPhone acceptance remain pending. See the final assistant checkpoint below and `docs/ASSISTANT.md`.
+**Latest assistant checkpoint (November 9, 2026):** screenshot sales/listing review and approved imports are implemented. Typecheck/lint/build, 110 unit/database tests, all 24 desktop/mobile browser tests and isolated real Supabase/WebKit approval checks pass. Live OpenAI vision now passes with rendered test images; genuine marketplace screenshot matching and actual iPhone acceptance remain pending. See the latest vision follow-up below and `docs/ASSISTANT.md`.
 
 
 Updated November 9, 2026 (financial ledger and local Supabase handoff). This is a functional initial implementation of the core manual/CSV workflows. It is **not the complete long-term specification**, and no marketplace connection or hosted Supabase deployment is verified.
@@ -178,3 +178,28 @@ Final hardening and recovery behavior:
 5. Re-run relevant checks only for new changes/failures. For hosted assistant verification after a new build, run `node --env-file=.env.local --experimental-strip-types scripts/verify-assistant-hosted.mjs`; it creates and removes only its disposable data. Broader deployment and the owner's normal password retry remain separate earlier tasks. Do not automatically deploy, push, replay migrations or implement the deferred Inventory → For Sale → Sold → Shipped pipeline.
 
 The final checkpoint selectively stages assistant changes while preserving unrelated working-tree changes from before this task. New assistant documentation/configuration additions are committed without sweeping in the earlier Auth edits. No credentials, private screenshots or runtime environment files are tracked. No changes have been pushed.
+
+### Live OpenAI vision verification — November 9, 2026
+
+The user added `OPENAI_API_KEY` to the existing ignored `.env.local` and authorized live screenshot-sales verification. Confirmed presence only (no key output), file permissions `0600`, Git exclusion, and absence of the exact key bytes from tracked files and `.next/static` browser assets. A fresh isolated production server on port 3153 read the key and reported `gpt-4.1-mini-2025-04-14`, batch limit 10. No model/configuration change or application-code fix was required.
+
+**Live OpenAI requests are now verified**, separately from the earlier mocked tests. The opt-in `scripts/verify-assistant-vision.mjs` renders three clearly labeled fictional receipt images, uploads them through the actual browser attachment/compression flow and authenticated `/api/assistant/extract` route, and receives real Responses API output. No provider response is mocked:
+
+- Completed Vinted example: title, listing/SKU/order IDs, USD, date, $45 price, $4 seller fees, $3 seller shipping and all explicitly displayed zero amounts were read correctly. Exact identifiers selected the intended in-memory inventory item and retrieved its $12 stored fixture cost. The actual UI displayed **$26 net profit**, using the existing financial logic.
+- Completed Depop example with omitted charges: absent fees/processing/shipping/discount/refund/other amounts remained null, so that row stayed unresolved with provisional profit.
+- Accepted offer awaiting payment: the model returned no sale records and explicitly explained that it was not completed. An initial harness assertion expected an offer row and was corrected to accept the safe empty-record response; this was a test expectation issue, not an application defect. The final complete live run passes.
+- Only the fully known completed sale was ready for approval. No Approve button was clicked. The harness blocks business/photo/approval write routes and confirmed that none were attempted. SHA-256 comparisons of the real private workspace and owner photo listing, plus the financial-audit count, were unchanged before/after analysis. The temporary real owner Auth session was revoked locally without signing out other sessions; no email was sent and no owner password was accessed.
+
+**Important scope limit:** no genuine marketplace screenshot was attached, and read-only inspection found the real private workspace uninitialized/empty (no saved items, listings or orders). The test inventory was supplied only to an isolated browser GET response and never inserted into Supabase. Therefore this verifies live image understanding and matching/profit behavior against known in-memory records; it does **not** establish a match to the user's real inventory or accuracy across genuine Depop/Vinted screen layouts. Do not describe the rendered test receipts as real orders.
+
+Artifacts are ignored under `test-results/live-vision/`: rendered PNG inputs, real extracted JSON, pending preview metadata, a review screenshot and the summarized result. No API key or session token is included. The review screenshot may contain the private app's normal profile UI and must not be published. The reproducible harness is opt-in and makes real billable OpenAI calls:
+
+```bash
+node --env-file=.env.local --experimental-strip-types scripts/verify-assistant-vision.mjs
+```
+
+Checks run in this follow-up: live authenticated three-image OpenAI/browser test **passes**, read-only no-write comparison **passes**, key exposure checks **pass**, ESLint **passes**, all **110 unit/database tests pass**. Production application code was unchanged. A fresh production build with the configured key passes, and the key is absent from the newly built browser assets; the earlier 24-browser regression results remain applicable. No hosted schema/Storage/business records were added or changed, and nothing was pushed or deployed.
+
+**Next acceptance steps:** use a genuine sale/listing screenshot and saved inventory with a known purchase cost, inspect actual extracted values/matches, and leave pending until the owner approves. If inventory is absent, match manually/create a proposed item and enter its real acquisition cost/date; never fabricate cost basis. Actual iPhone/PWA-over-HTTPS acceptance also remains outstanding. The API-key setup step in the prior checkpoint is now complete. Start/restart the regular app to use the updated environment; the isolated verification server stops after testing.
+
+The regular local production app was started on `http://127.0.0.1:3100` after the fresh build so the owner can use the new environment. The isolated verification server on port 3153 was stopped. No hosting deployment was made.
