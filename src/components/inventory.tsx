@@ -5,10 +5,11 @@ import { currentOrderTotals } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, parseMoney } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
-import { itemStatuses, type Item } from '@/lib/model';
+import { itemStatuses, marketplaces, type Item } from '@/lib/model';
 import { Status, ItemPhoto, Empty } from './shared';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { listingMetrics } from '@/lib/listing-metrics';
 import { PhotoGallery } from './photo-gallery';
 import type { EditorTarget } from './editor';
 export function Inventory({
@@ -24,6 +25,8 @@ export function Inventory({
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [tab, setTab] = useState('Inventory');
   const [status, setStatus] = useState('All statuses');
+  const [marketplace, setMarketplace] = useState('All marketplaces');
+  const listingSummary = listingMetrics(w, marketplace);
   const [sort, setSort] = useState('Newest');
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
@@ -31,6 +34,8 @@ export function Inventory({
     .filter(
       (i) =>
         (status === 'All statuses' || i.status === status) &&
+        (marketplace === 'All marketplaces' ||
+          w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace)) &&
         `${i.sku} ${i.title} ${i.brand} ${i.category} ${i.source} ${i.storage}`
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -47,6 +52,7 @@ export function Inventory({
     const item = w.items.find((i) => i.id === l.itemId);
     return (
       item &&
+      (marketplace === 'All marketplaces' || l.marketplace === marketplace) &&
       `${item.title} ${item.sku} ${l.marketplace}`.toLowerCase().includes(search.toLowerCase())
     );
   });
@@ -107,6 +113,56 @@ export function Inventory({
           </Button>
         </div>
       </div>
+      <div className="listing-filter">
+        <label className="field">
+          <span>Marketplace</span>
+          <select
+            aria-label="Filter marketplace"
+            value={marketplace}
+            onChange={(e) => setMarketplace(e.target.value)}
+          >
+            <option>All marketplaces</option>
+            {marketplaces.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {tab === 'Listings' && (
+        <section className="card padded listing-overview" aria-label="Listing summary">
+          <div className="listing-summary-grid">
+            {[
+              ['Physical inventory items', String(listingSummary.physicalItems)],
+              ['Active listings', String(listingSummary.activeListings)],
+              ['Inventory at acquisition cost', money(listingSummary.inventoryCost)],
+              ['Combined active asking prices', money(listingSummary.aggregateAsking)],
+              ['Cross-listed physical items', String(listingSummary.crossListed)],
+              ['Unlisted inventory', String(listingSummary.unlisted)],
+              ['Items sold', String(listingSummary.sold)],
+              ['Listings needing delisting', String(listingSummary.needsDelisting)],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <small>{label}</small>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="hint">
+            Acquisition cost counts each unsold physical item once. Combined asking prices add every
+            active listing; they are potential prices, not inventory cost or realized profit.
+            Zero-cost records may need review.
+          </p>
+          <div className="actions listing-breakdown">
+            {listingSummary.byMarketplace
+              .filter((m) => m.active > 0)
+              .map((m) => (
+                <span key={m.marketplace}>
+                  {m.marketplace}: <strong>{m.active}</strong>
+                </span>
+              ))}
+          </div>
+        </section>
+      )}
       {tab === 'Inventory' ? (
         <>
           <div className="inventory-stats">
@@ -131,7 +187,7 @@ export function Inventory({
                     .reduce((n, i) => n + i.asking, 0),
                 )}
               </strong>{' '}
-              asking value
+              item asking value
             </span>
           </div>
           <section className="card">
