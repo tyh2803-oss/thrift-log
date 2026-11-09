@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import sharp from 'sharp';
 import { requireUser, checkOrigin } from '@/lib/supabase/server';
 import { ConfigurationError } from '@/lib/supabase/config';
 import { assistantConfig, AssistantError, extractScreenshot } from '@/lib/assistant/openai';
@@ -56,6 +57,24 @@ export async function POST(request: Request) {
         new TextDecoder().decode(bytes.slice(8, 12)) === 'WEBP';
       const mime = png ? 'image/png' : jpg ? 'image/jpeg' : webp ? 'image/webp' : '';
       if (!mime) throw new AssistantError('Unsupported image. Use JPEG, PNG, or WebP screenshots.');
+      try {
+        const image = sharp(bytes, { limitInputPixels: 6_250_000, failOn: 'error' });
+        const metadata = await image.metadata();
+        if (
+          !metadata.width ||
+          !metadata.height ||
+          metadata.width > 2500 ||
+          metadata.height > 2500 ||
+          (metadata.pages ?? 1) > 1
+        )
+          throw new Error('Image limit');
+        // Decode before spending API tokens; a valid signature alone is insufficient.
+        await image.resize(1, 1).toBuffer();
+      } catch {
+        throw new AssistantError(
+          'This image is corrupt, animated or too large. Reattach it using the app’s image picker.',
+        );
+      }
       prepared.push({ file, bytes, mime });
     }
     // Sequential requests cap provider load; the cache also collapses identical screenshots.

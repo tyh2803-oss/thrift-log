@@ -85,3 +85,11 @@ The service worker caches only explicit public assets and the offline shell. It 
 ## Deploy
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Do not use a deployment for real business data until hosted authentication/storage tests pass.
+
+## AI assistant and screenshot imports
+
+Open **Assistant** from the floating button or **Quick add → AI assistant**. Upload several completed-sale or active-listing screenshots, review inventory matches and profit, make corrections, then choose **Approve All Ready**. New inventory needs a known purchase cost and acquisition date. Missing amounts stay unknown; no business records are created before approval. Imported records appear in the existing Inventory/Listings, Sales and financial views.
+
+Configure optional server-only `OPENAI_API_KEY`, `OPENAI_SCREENSHOT_MODEL` and `ASSISTANT_BATCH_LIMIT` from `.env.example`, then restart. Never prefix the key with `NEXT_PUBLIC_`. Without a key, manual/CSV workflows keep working and the assistant explains setup. `/demo` does not invoke private AI analysis.
+
+See [assistant usage, privacy, architecture and verification](docs/ASSISTANT.md) and [current test/checkpoint results](PROJECT_STATUS.md). OpenAI Responses/vision requests use strict structured extraction and `store: false`; the existing command and financial layers control calculations and approved writes. Source screenshots are preserved in private Storage when available at approval. Real OpenAI interpretation remains pending until an API key is configured.

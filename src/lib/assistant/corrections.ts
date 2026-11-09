@@ -10,6 +10,10 @@ export function correctBatch(
   const batch = structuredClone(input);
   const fail = (text: string) => ({ batch: input, message: text, changed: false });
   const text = message.trim();
+  if (/buyer.*shipping|shipping.*buyer/i.test(text))
+    return fail(
+      'Buyer-paid platform shipping may not be seller revenue. Use Edit to enter only shipping money you actually received.',
+    );
   const normalized = text.toLowerCase();
   const ordinals = [
     'first',

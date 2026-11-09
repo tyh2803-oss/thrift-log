@@ -316,3 +316,55 @@ it('commits assistant-approved sales and provenance with the existing ledger and
     db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]),
   ).rejects.toThrow('revision_conflict');
 });
+
+it('round-trips new assistant inventory and listings atomically without changing existing counts', async () => {
+  const { assistantWorkspace, extractedSale, extractedLine } = await import('./helpers/assistant');
+  const { createBatch } = await import('../src/lib/assistant/drafts');
+  const { approvalCommands } = await import('../src/lib/assistant/planner');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { listingMetrics } = await import('../src/lib/listing-metrics');
+  const owner = '55555555-5555-4555-8555-555555555555';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  const w = assistantWorkspace();
+  const batch = createBatch(
+    [
+      {
+        hash: 'b'.repeat(64),
+        name: 'listing.png',
+        extraction: {
+          message: '',
+          records: [
+            extractedSale({
+              kind: 'listing',
+              status: 'active',
+              lines: [extractedLine({ title: 'New boots', listingId: 'boots' })],
+            }),
+          ],
+        },
+      },
+    ],
+    w,
+  );
+  batch.rows[0].matches[0] = {
+    itemId: null,
+    confirmZeroCost: false,
+    newItem: {
+      id: crypto.randomUUID(),
+      sku: 'NEW-BOOTS',
+      cost: 1400,
+      purchasedAt: '2026-10-01',
+      confirmedDistinct: true,
+    },
+  };
+  const next = approvalCommands(w, batch, [batch.rows[0].id]).reduce(applyCommand, w);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(listingMetrics(loaded)).toMatchObject({
+    physicalItems: 2,
+    inventoryCost: 2600,
+    activeListings: 3,
+  });
+  expect(loaded.orders).toHaveLength(0);
+});

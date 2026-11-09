@@ -381,7 +381,11 @@ export function approvalCommands(
           version: 1,
           batchId: batch.id,
           rows: [{ sourceHash: row.sourceHash, recordIndex: row.recordIndex }],
-          screenshot: { hash: screenshot.hash, name: screenshot.name },
+          screenshot: {
+            hash: screenshot.hash,
+            name: screenshot.name,
+            reference: screenshot.reference,
+          },
           extracted: screenshot.extraction.records[row.recordIndex],
           corrected: row.facts,
           matches: row.matches,

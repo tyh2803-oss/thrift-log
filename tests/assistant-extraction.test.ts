@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
 import { extractionSchema } from '../src/lib/assistant/schema';
 import { extractedSale } from './helpers/assistant';
 vi.mock('server-only', () => ({}));
@@ -10,7 +11,11 @@ import {
   extractScreenshot,
 } from '../src/lib/assistant/openai';
 import { GET, POST } from '../src/app/api/assistant/extract/route';
-const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const png = new Uint8Array(
+  await sharp({ create: { width: 2, height: 2, channels: 3, background: '#abcdef' } })
+    .png()
+    .toBuffer(),
+);
 const extraction = () => ({ records: [extractedSale()], message: 'One sale found.' });
 const result = (data: unknown) =>
   new Response(
@@ -135,4 +140,26 @@ describe('authenticated screenshot route', () => {
     vi.stubEnv('ASSISTANT_BATCH_LIMIT', '1000');
     expect(assistantConfig().batchLimit).toBe(10);
   });
+});
+
+it('rejects a forged PNG signature before sending data to OpenAI', async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal('fetch', fetcher);
+  const response = await POST(
+    request([new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'corrupt.png')]),
+  );
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).toContain('corrupt');
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it('bounds per-owner API attempts and keeps other owners isolated', async () => {
+  const fetcher = vi.fn().mockImplementation(async () => result(extraction()));
+  for (let i = 0; i < 20; i++)
+    await extractScreenshot('owner', new Uint8Array([i]), 'image/png', fetcher);
+  await expect(
+    extractScreenshot('owner', new Uint8Array([21]), 'image/png', fetcher),
+  ).rejects.toThrow('Too many');
+  await expect(
+    extractScreenshot('another', new Uint8Array([21]), 'image/png', fetcher),
+  ).resolves.toBeTruthy();
 });

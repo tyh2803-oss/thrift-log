@@ -21,6 +21,7 @@ test('inventory → cross-list → sale → return; money and persistence', asyn
   await dialog.getByLabel('Inventory item').selectOption({ label: 'E2E-001 · E2E denim jacket' });
   await dialog.getByLabel('Asking price ($)').fill('50');
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
   await page.goto('/demo/sales');
   await page.getByRole('button', { name: 'Record sale', exact: true }).first().click();
   dialog = page.getByRole('dialog');

@@ -5,6 +5,7 @@ import { loadWorkspace } from '@/lib/supabase/workspace';
 import { ConfigurationError, DatabaseReadinessError } from '@/lib/supabase/config';
 import { batchSchema } from '@/lib/assistant/drafts';
 import { approvalCommands, alreadyApproved } from '@/lib/assistant/planner';
+import { verifyScreenshotReferences } from '@/lib/assistant/provenance';
 import { applyCommand } from '@/lib/commands';
 export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
         { status: 409, ...options },
       );
     const commands = approvalCommands(current, batch, rowIds);
+    await verifyScreenshotReferences(user.id, batch, rowIds);
     const next = commands.reduce(applyCommand, current);
     const { data, error } = await adminClient().rpc('commit_workspace', {
       p_user_id: user.id,

@@ -26,6 +26,7 @@
     "react-dom": "19.3.1",
     "recharts": "latest",
     "server-only": "latest",
+    "sharp": "0.35.5",
     "tailwind-merge": "latest",
     "zod": "latest"
   },

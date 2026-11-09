@@ -45,6 +45,7 @@ export type Extraction = z.infer<typeof extractionSchema>;
 export const screenshotSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/),
   name: z.string().max(200),
+  reference: z.string().max(500).optional(),
   extraction: extractionSchema,
 });
 export type Screenshot = z.infer<typeof screenshotSchema>;

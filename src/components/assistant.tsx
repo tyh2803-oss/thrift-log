@@ -27,7 +27,15 @@ export function Assistant({
   scope: string;
   onView: (kind: 'order' | 'listing', id: string) => void;
 }) {
-  const { demo, w, saving, error: workspaceError, approveAssistant, notify } = useWorkspace();
+  const {
+    demo,
+    w,
+    ready,
+    saving,
+    error: workspaceError,
+    approveAssistant,
+    notify,
+  } = useWorkspace();
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -37,6 +45,7 @@ export function Assistant({
   const [config, setConfig] = useState<{ enabled: boolean; batchLimit: number } | null>(null);
   const [restored, setRestored] = useState(false);
   const storageKey = `thrift-log.draft.assistant.${scope}`;
+  const sourceFiles = useRef(new Map<string, File>());
   const urls = useRef(new Set<string>());
   const lock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -91,12 +100,17 @@ export function Assistant({
     lock.current = true;
     setBusy(true);
     setError('');
+    const additions: Attachment[] = [];
     try {
       if (files.length + attachments.length > limit)
         throw new Error(`Choose up to ${limit} screenshots per batch.`);
-      const additions: Attachment[] = [];
       for (const source of files) {
         const file = await prepareImage(source);
+        const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+        const hash = Array.from(new Uint8Array(digest), (b) =>
+          b.toString(16).padStart(2, '0'),
+        ).join('');
+        sourceFiles.current.set(hash, file);
         const url = URL.createObjectURL(file);
         urls.current.add(url);
         additions.push({ id: crypto.randomUUID(), file, url });
@@ -113,6 +127,10 @@ export function Assistant({
       }
       setAttachments((old) => [...old, ...additions]);
     } catch (e) {
+      additions.forEach((a) => {
+        URL.revokeObjectURL(a.url);
+        urls.current.delete(a.url);
+      });
       setError(e instanceof Error ? e.message : 'Could not read this screenshot.');
     } finally {
       lock.current = false;
@@ -125,10 +143,11 @@ export function Assistant({
     setAttachments([]);
     setMessages([]);
     setBatch(null);
+    sourceFiles.current.clear();
     setError('');
   }
   async function send() {
-    if (lock.current || (!text.trim() && !attachments.length)) return;
+    if (lock.current || !ready || (!text.trim() && !attachments.length)) return;
     const prompt = text.trim() || 'Review these screenshots.';
     if (!attachments.length && batch) {
       try {
@@ -183,7 +202,7 @@ export function Assistant({
       const extracted = screenshotSchema.array().parse(data.screenshots);
       setBatch(createBatch(extracted, w));
       setMessages((old) => [
-        ...old,
+        ...old.slice(-38),
         { id: crypto.randomUUID(), role: 'user', text: prompt, images: attachments },
         {
           id: crypto.randomUUID(),
@@ -212,7 +231,29 @@ export function Assistant({
     setBusy(true);
     setError('');
     try {
-      if (await approveAssistant(batch, ids)) {
+      const approvedHashes = new Set(
+        batch.rows.filter((r) => ids.includes(r.id)).map((r) => r.sourceHash),
+      );
+      const prepared = structuredClone(batch);
+      if (!demo)
+        for (const screenshot of prepared.screenshots) {
+          if (!approvedHashes.has(screenshot.hash) || screenshot.reference) continue;
+          const file = sourceFiles.current.get(screenshot.hash);
+          if (!file) continue;
+          const body = new FormData();
+          body.set('file', file);
+          const upload = await fetch('/api/photos', { method: 'POST', body });
+          const uploaded = await upload.json();
+          if (!upload.ok)
+            throw new Error(
+              uploaded.error ||
+                'Could not preserve the private screenshot. No business records were saved.',
+            );
+          screenshot.reference = uploaded.path;
+          // Keep successful upload references on failure/retry, avoiding another upload.
+          setBatch(structuredClone(prepared));
+        }
+      if (await approveAssistant(prepared, ids)) {
         setBatch((current) =>
           current
             ? current.rows.some((r) => !ids.includes(r.id))
@@ -229,7 +270,12 @@ export function Assistant({
           },
         ]);
         notify('Approved screenshot records saved.');
+        for (const hash of approvedHashes) sourceFiles.current.delete(hash);
       }
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Approval failed. Your pending draft is preserved.',
+      );
     } finally {
       lock.current = false;
       setBusy(false);
@@ -237,7 +283,12 @@ export function Assistant({
   }
   return (
     <>
-      <button className="assistant-launch" aria-label="Open AI assistant" onClick={onOpen}>
+      <button
+        className="assistant-launch"
+        aria-label="Open AI assistant"
+        disabled={!ready || !restored}
+        onClick={onOpen}
+      >
         <MessageCircle size={20} />
         <span>Assistant</span>
       </button>
@@ -258,7 +309,7 @@ export function Assistant({
             }}
           >
             <div className="assistant-thread" role="log" aria-label="Assistant conversation">
-              {!messages.length && (
+              {!messages.length && !batch && (
                 <div className="assistant-intro">
                   <MessageCircle size={28} />
                   <h3>Less typing. More thrifting.</h3>
@@ -340,6 +391,7 @@ export function Assistant({
             >
               <textarea
                 aria-label="Message assistant"
+                disabled={busy}
                 placeholder="Log these sales…"
                 value={text}
                 maxLength={2000}

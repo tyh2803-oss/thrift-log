@@ -8,13 +8,14 @@ const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   checkOrigin: vi.fn(),
   rpc: vi.fn(),
+  download: vi.fn(),
   load: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('../src/lib/supabase/server', () => ({
   requireUser: mocks.requireUser,
   checkOrigin: mocks.checkOrigin,
-  adminClient: () => ({ rpc: mocks.rpc }),
+  adminClient: () => ({ rpc: mocks.rpc, storage: { from: () => ({ download: mocks.download }) } }),
 }));
 vi.mock('../src/lib/supabase/workspace', () => ({ loadWorkspace: mocks.load }));
 import { POST } from '../src/app/api/assistant/approve/route';
@@ -166,4 +167,28 @@ describe('server approval boundary', () => {
     mocks.rpc.mockResolvedValue({ data: null, error: null });
     expect((await POST(request({ batch: b, rowIds: [b.rows[0].id] }))).status).toBe(400);
   });
+});
+
+it('verifies private screenshot ownership and hash before a financial write', async () => {
+  const { createHash } = await import('node:crypto');
+  const owner = '11111111-1111-4111-8111-111111111111';
+  mocks.requireUser.mockResolvedValue({ id: owner });
+  const b = batch();
+  b.screenshots[0].reference = 'another-owner/file.jpg';
+  expect((await POST(request({ batch: b, rowIds: [b.rows[0].id] }))).status).toBe(400);
+  expect(mocks.download).not.toHaveBeenCalled();
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  const data = new Blob(['private screenshot bytes']);
+  const hash = createHash('sha256')
+    .update(new Uint8Array(await data.arrayBuffer()))
+    .digest('hex');
+  b.screenshots[0].hash = hash;
+  b.rows[0].sourceHash = hash;
+  b.screenshots[0].reference = `${owner}/22222222-2222-4222-8222-222222222222.jpg`;
+  mocks.download.mockResolvedValue({ data: new Blob(['wrong bytes']), error: null });
+  expect((await POST(request({ batch: b, rowIds: [b.rows[0].id] }))).status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  mocks.download.mockResolvedValue({ data, error: null });
+  expect((await POST(request({ batch: b, rowIds: [b.rows[0].id] }))).status).toBe(200);
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
 });

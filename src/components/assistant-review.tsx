@@ -5,6 +5,7 @@ import { matchInventory } from '@/lib/assistant/matching';
 import type { DraftBatch, DraftRow } from '@/lib/assistant/drafts';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, parseMoney } from '@/lib/money';
+import type { Screenshot } from '@/lib/assistant/schema';
 import { marketplaces } from '@/lib/model';
 import { Badge, ItemPhoto } from './shared';
 import { Button } from './ui/button';
@@ -38,6 +39,7 @@ export function AssistantReview({
         <ReviewRow
           key={p.row.id}
           preview={p}
+          source={batch.screenshots.find((s) => s.hash === p.row.sourceHash)}
           index={index}
           onChange={change}
           busy={busy}
@@ -124,12 +126,14 @@ function AmountField({
 }
 function ReviewRow({
   preview: p,
+  source,
   index,
   onChange,
   busy,
   onView,
 }: {
   preview: Preview;
+  source?: Screenshot;
   index: number;
   onChange: (r: DraftRow) => void;
   busy: boolean;
@@ -604,6 +608,21 @@ function ReviewRow({
           Source screenshot hash: {row.sourceHash.slice(0, 12)}… · Inventory cost is retrieved
           separately.
         </small>
+        {source?.reference && (
+          <a
+            className="text-link"
+            href={`/api/photos?path=${encodeURIComponent(source.reference)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View private source screenshot
+          </a>
+        )}
+        <small>Original screenshot extraction</small>
+        <pre className="assistant-source">
+          {JSON.stringify(source?.extraction.records[row.recordIndex] || null)}
+        </pre>
+        <small>Current corrected facts</small>
         <pre className="assistant-source">{factRecord}</pre>
       </details>
     </article>

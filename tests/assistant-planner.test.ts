@@ -180,3 +180,67 @@ describe('sales preparation and existing financial logic', () => {
     expect(importDate('2026-11-08T12:00:00', 'America/New_York')).toBeNull();
   });
 });
+
+it('keeps foreign currencies, unknown currencies, and overlong identifiers unresolved without crashing the preview', () => {
+  const w = assistantWorkspace();
+  for (const currency of ['GBP', null])
+    expect(
+      previewBatch(
+        w,
+        batch(extractedSale({ currency, lines: [extractedLine({ listingId: 'listing-1' })] })),
+      )[0].ready,
+    ).toBe(false);
+  const long = batch(
+    extractedSale({
+      externalOrderId: 'x'.repeat(700),
+      lines: [extractedLine({ listingId: 'listing-1' })],
+    }),
+  );
+  expect(previewBatch(w, long)[0].ready).toBe(false);
+});
+
+it('keeps dated returns and original sale cost snapshots intact when an item is resold', () => {
+  let w = assistantWorkspace();
+  const first = batch();
+  w = previewBatch(w, first)[0].commands.reduce(applyCommand, w);
+  const original = w.orders[0];
+  w = applyCommand(w, {
+    type: 'financialEvent',
+    value: {
+      id: crypto.randomUUID(),
+      orderId: original.id,
+      date: '2026-11-08T18:00:00Z',
+      kind: 'Return',
+      amount: 0,
+      reason: 'Physical item returned',
+      itemIds: [w.items[0].id],
+      externalId: 'return-test',
+      reversesId: null,
+      category: 'Other',
+    },
+  });
+  const tooEarly = batch(
+    extractedSale({
+      externalOrderId: 'resale',
+      date: '2026-11-08',
+      lines: [extractedLine({ listingId: 'listing-1' })],
+    }),
+    w,
+  );
+  expect(previewBatch(w, tooEarly)[0].ready).toBe(false);
+  const resale = batch(
+    extractedSale({
+      externalOrderId: 'resale',
+      date: '2026-11-09',
+      lines: [extractedLine({ listingId: 'listing-1' })],
+    }),
+    w,
+  );
+  resale.rows[0].matches[0].costOverride = 1400;
+  const p = previewBatch(w, resale)[0];
+  expect(p.ready).toBe(true);
+  const next = p.commands.reduce(applyCommand, w);
+  expect(next.orders[0].lines[0].costBasis).toBe(1200);
+  expect(next.orders[1].lines[0].costBasis).toBe(1400);
+  expect(next.financialEvents).toHaveLength(1);
+});

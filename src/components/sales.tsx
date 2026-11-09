@@ -138,7 +138,7 @@ export function Sales({
                 <tbody>
                   {orders.map((o) => (
                     <tr key={o.id}>
-                      <td>
+                      <td className="sales-order-cell">
                         <button
                           className="cell-button"
                           onClick={() => onEdit({ kind: 'order', value: o })}

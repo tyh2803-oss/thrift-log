@@ -1,5 +1,8 @@
 # Thrift Log project status
 
+**Latest assistant checkpoint (November 9, 2026):** screenshot sales/listing review and approved imports are implemented. Typecheck/lint/build, 110 unit/database tests, all 24 desktop/mobile browser tests and isolated real Supabase/WebKit approval checks pass. Real OpenAI extraction and actual iPhone acceptance remain pending. See the final assistant checkpoint below and `docs/ASSISTANT.md`.
+
+
 Updated November 9, 2026 (financial ledger and local Supabase handoff). This is a functional initial implementation of the core manual/CSV workflows. It is **not the complete long-term specification**, and no marketplace connection or hosted Supabase deployment is verified.
 
 ## Implemented
@@ -64,3 +67,114 @@ Whatnot/eBay official documentation requests returned HTTP 403. Required domains
 1. Owner applies/verifies missing hosted migrations and Auth/Storage settings from authenticated local Codex using the saved handoff. Cloud development does not depend on this.
 2. Add import reconciliation staging and official report mappings once official documentation/sample reports can be verified; implement read-only Whatnot sync first when available.
 3. Extend show comparisons, sourcing/brand sell-through and inventory history, then package/bank reconciliation and the remaining advanced workflows.
+
+## AI assistant and screenshot imports — paused before implementation (November 9, 2026)
+
+The requested implementation is restricted to **GPT-6.1 Sol only**. This session cannot verify its exact serving model, so no feature implementation has begun. This is an unverified model identity, not evidence of a detected model switch or exhausted allowance. Resume only with GPT-6.1 Sol explicitly selected and available.
+
+### Saved continuation checkpoint
+
+- Existing HEAD: `9b8ef90` (`Build Thrift Log reselling management application`). All six assistant milestones remain unstarted in this session; no assistant code has been inspected or verified yet.
+- The checkout already contained uncommitted Auth/configuration/documentation/test changes and three untracked hosted/browser verification files. These were preserved without staging or committing unrelated work.
+- A local recovery snapshot of the pre-task tracked diff, untracked nonignored files, Git status and HEAD is saved at `.git/checkpoints/before-ai-assistant-20261109T173401Z`. This lives inside `.git`, is not pushed, and excludes ignored credentials. Inspect it before any manual recovery; do not blindly apply it over later changes.
+- This session read Git status, recent commits, this status file and `AGENTS.md`. No source code, dependencies, database, business records or credentials were modified. Only this continuation note was added after the local snapshot.
+- No tests ran in this paused session. Earlier verification results above belong to the previous work and do not establish assistant functionality.
+
+### Exact next steps when the required model is available
+
+1. Read this file, inspect recent commits and all uncommitted changes, and preserve the existing Auth fixes. Confirm GPT-6.1 Sol is explicitly selected and available; do not infer verification from this note.
+2. Inspect `README.md`, `docs/PRODUCT_SPEC.md`, `src/lib/model.ts`, `src/lib/commands.ts`, `src/lib/operational-commands.ts`, `src/lib/ledger.ts`, `src/lib/finance.ts`, `src/lib/use-workspace.tsx`, `src/components/importer.tsx`, existing migrations, navigation and shared UI. Read the relevant installed Next.js guides under `node_modules/next/dist/docs/` before writing code, as required by `AGENTS.md`.
+3. Read applicable OpenAI, Supabase and Postgres skills before their respective implementation work; review current official OpenAI multimodal/Responses/structured-output documentation. Inspect existing test scripts and run the relevant baseline checks, keeping previously documented UI failures separate from new regressions. Do not replay hosted migrations with mismatched version identifiers.
+4. Implement milestone 1 only first: global responsive chat, up to approximately ten image attachments with thumbnails/removal/drop/paste/mobile selection, server-only OpenAI configuration and Zod-validated structured extraction. Show an honest setup message without an API key and use deterministic extraction doubles for tests. Do not fabricate screenshot results.
+5. Test and document milestone 1, then continue sequentially: sales extraction/matching/profit/duplicates; editable and conversational batch review with explicit approval and validated persistence; active-listing imports; existing-view dashboard metrics; final tests and documentation. Reuse existing financial and command logic, preserve unknown costs as unknown, and never insert business records during preparation. Record each tested checkpoint and exact remaining work.
+6. Before declaring completion, run type checking, lint, unit/database tests, production build and appropriate desktop/mobile browser tests. Distinguish mocked extraction, real OpenAI verification and hosted Supabase verification explicitly. Do not push automatically.
+
+The separate **Inventory → For Sale → Sold → Shipped** pipeline remains a future roadmap item and is outside this assistant implementation. Keep the assistant within existing Inventory/Listings navigation. The first priority remains screenshot sales import with reliable matching, existing financial calculations, corrections and one-click batch approval, followed by listing imports.
+
+## Assistant implementation checkpoints — resumed November 9, 2026
+
+The user explicitly requested continuation with GPT-6.1 Sol. The agent cannot independently inspect the serving model identity and has not claimed to verify it. No model switching or delegation was requested or performed. Work is on local branch `feat/ai-assistant-screenshots`; nothing has been pushed. The earlier pause note above is historical.
+
+### Milestone 1 — foundation complete
+
+- Added a global assistant button and Quick add entry, responsive desktop chat panel/mobile full-screen dialog, multiple screenshot attachments, compression, thumbnails/removal, paste/drop/photo-library file selection, messages and extracted-fact display. Closing the panel preserves its in-memory state.
+- Added owner-authenticated, origin-checked, no-store `/api/assistant/extract` configuration and analysis routes. OpenAI uses server-only `OPENAI_API_KEY`, Responses API image input, strict JSON Schema derived from Zod, `store: false`, configurable model and bounded batch/image/request limits. Default application extraction model is `gpt-4.1-mini-2025-04-14`; this is separate from the implementation-session model restriction. There is no automatic model fallback.
+- Unknown monetary amounts remain null; screenshot text cannot issue business commands. Owner-isolated bounded cache collapses repeat/in-flight images; sanitized provider errors preserve attachments for retry. Demo analysis requires private sign-in. No business writes or permanent image uploads occur during extraction.
+- Read the requested domain/import/navigation/schema files and installed Next.js route/server-client guides. Reviewed official OpenAI vision/structured-output/model pages and Supabase changelog/Storage access documentation. Existing command/ledger logic will be reused, not replaced.
+- Validation actually run: baseline 57 unit/database tests; after foundation, **68 unit/database tests pass**, typecheck passes, lint passes, production build passes; **2 new assistant Playwright tests pass** (desktop and iPhone-sized Chromium via local Chrome). These browser tests cover attachments, removal, close/reopen state, layout bounds and the demo/private boundary. No real OpenAI screenshot interpretation or new hosted Supabase write was tested.
+- Existing uncommitted Auth fixes and hosted/browser scripts remain untouched and outside the assistant commits. Pre-resume documentation copies are in `.git/checkpoints/assistant-resume/`; the earlier full recovery snapshot remains intact. Documentation/environment additions are saved but left unstaged to avoid sweeping pre-existing changes into assistant commits.
+
+Next: milestone 2 — reusable exact/ambiguous inventory matching, automatic stored cost retrieval, duplicate detection and profit previews through existing money/ledger functions. Then milestone 3 editing/corrections/approval and persistence, milestone 4 listing commits, milestone 5 existing-view metrics, and milestone 6 comprehensive verification. No approval functionality exists at this foundation checkpoint; extracted facts are not yet sales records.
+
+### Milestone 2 — sales matching and financial previews complete
+
+- Added reusable exact listing-ID/product-ID/SKU/URL matching, ranked approximate candidates without automatic uncertain selection, typed pending batches and read-only review cards.
+- Preview retrieves stored cost, requires explicit confirmation of legacy zero costs, and uses `orderTotals`/`lineProfits` plus command-layer validation. Missing fees/shipping stay unresolved and estimates are labeled provisional. Offers/pending/refunded screenshots cannot become completed sales automatically. Date-only imports use the workspace timezone.
+- Existing marketplace/order IDs (including CSV/manual orders), sold physical inventory, repeated image hashes and included duplicate order rows are checked. Multi-item order totals are applied once with the existing exact-cent allocation. Cross-listing behavior is verified through the existing commands.
+- Validation actually run: **83 unit/database tests pass**, typecheck and lint pass. Added matching, ambiguity, no-match, cost/fee/shipping/discount, multi-item allocation, duplicate, completion-status and timezone tests. No hosted writes or real OpenAI calls were performed.
+- Next: milestone 3 — searchable inventory selection, inline editing, conversational corrections, safe draft recovery, batch inclusion/exclusion and authenticated approval with current-state revalidation/transactional persistence. Listing creation remains deliberately blocked until milestone 4.
+
+### Milestone 3 — editing and approved sales persistence complete
+
+- Added inline sale/marketplace/date/currency/status/amount editing, searchable inventory selection with candidate photos and listing/cost details, zero-cost confirmation, warnings review, batch inclusion/exclusion, and Approve All Ready. Unsupported or ambiguous text edits ask for clarification; bounded deterministic corrections support price, shipping, fees, discount, marketplace and explicit unique inventory names without re-analyzing images or creating transactions.
+- Pending extracted/corrected metadata is validated and stored in owner/demo-scoped tab session storage, cleared by the existing sign-out draft cleanup. Image bytes stay only in in-memory object URLs and are not put in JSON/session storage. Restored drafts retain their source hashes and extracted fields; image previews require reattachment after reload.
+- Added authenticated/origin-checked `/api/assistant/approve`: reloads the workspace, validates included row IDs/revision/current inventory/duplicates, generates only typed commands, commits using existing transactional `commit_workspace`, and reports success only on a valid database confirmation. Stable per-row import receipts make lost-response retries idempotent; failed/conflicting approvals preserve pending drafts.
+- Provenance uses existing private `imports` storage: `mapping.format=assistant-v1`, source filename/hash, original extraction, corrected facts, matching decisions, batch ID, approved record IDs and approval timestamp. The legacy `rawCsv` column holds bounded JSON metadata for assistant imports; it contains no image bytes. No database schema change or hosted migration was needed. The existing workspace loader was extracted to a shared server-only module; prior Auth fixes were preserved.
+- Validation actually run: **94 unit/database tests pass**, typecheck passes, production build passes; lint passed with one unused-import warning that has since been removed. **4 assistant browser tests pass**, desktop and iPhone-sized Chromium: attachments, no-write preparation, text correction/recalculation, draft reload, revision-conflict recovery, batch approval and persisted single-sale result. PGlite round-trip verifies approved sales, provenance, profit, cross-listing alerts and revision locking. Server approval tests use explicit service doubles. No real OpenAI call or new hosted Supabase financial write was performed.
+- Next: milestone 4 — existing-listing updates and new inventory/listing creation, stable listing duplicate handling and active-listing batch approvals. New inventory and listing approval remain blocked at this checkpoint. Then existing-view metrics and full validation/documentation.
+
+### Milestone 4 — active listings and new inventory complete
+
+- Active-listing drafts now add or update the existing marketplace listing while preserving original price and known listing date. Same-price/identifier duplicates, conflicting IDs, ambiguous existing listings and wrong physical-item relationships stay pending. Cross-marketplace listings use the same physical item.
+- Review supports creating a new physical item for either listings or missing-inventory sales. Extracted attributes prefill the item; explicit SKU, known cost (including an intentionally entered zero), acquisition date, title and new-physical-item confirmation are required. Exact existing identifiers prevent duplicate creation. New item plus listing/sale commit atomically through existing commands.
+- New listings require an explicit listing date when none exists; missing dates/attributes are never invented. Existing listings retain their stored date when a screenshot omits it. Review also allows an explicit current purchase-cost correction; it is committed only on approval and previous sale snapshots remain unchanged.
+- Validation actually run: typecheck and lint pass; **102 unit/database tests pass**, including existing-listing updates, additional marketplaces without inventory duplication, new-item creation, missing costs/dates, duplicate/conflicting identifiers, exact-match duplicate prevention, cost correction and missing-inventory sales. No hosted changes or real OpenAI calls were made.
+- Next: milestone 5 — marketplace filtering and clear existing Inventory/Listings summary metrics, then milestone 6 final robustness, privacy/provenance, browser and regression verification, and documentation.
+
+### Milestone 5 — existing dashboard integration complete
+
+- Added marketplace filtering within the existing Inventory/Listings view, with physical-item counts, active-listing counts, acquisition-cost valuation, combined active asking prices, cross-listed physical items, unlisted stock, sold items, delisting work and marketplace active counts.
+- Acquisition cost counts unsold physical items once; aggregate listing asking value is labeled separately from inventory cost and realized profit. No new top-level navigation destination or future inventory pipeline was added.
+- Validation actually run: **104 unit/database tests pass**, typecheck and lint pass. New metric tests verify cross-listing without double-counting, marketplace filters, sold inventory/delisting and empty/unlisted cases.
+- Checked only the presence of `OPENAI_API_KEY` without printing any credentials: it is not configured. Real OpenAI screenshot interpretation remains unverified; extraction tests use deterministic service doubles.
+- Next: milestone 6 — harden image validation/private screenshot provenance, add complete listing/new-item mobile browser scenarios, run full checks and document exact remaining verification limits.
+
+### Milestone 6 — automated and hosted implementation verification complete; real-vision acceptance pending
+
+Final implementation is on `feat/ai-assistant-screenshots`. Completed checkpoint commits before the final verification/documentation commit:
+
+| Checkpoint | Commit |
+| --- | --- |
+| Assistant foundation and structured extraction | `4e4483a` |
+| Sales matching and financial previews | `1287b4c` |
+| Editing, corrections and approved persistence | `87c4b4c` |
+| Active listings and new inventory | `669c86c` |
+| Existing-view marketplace metrics | `e547110` |
+
+Final verification actually performed:
+
+- **110 unit/database tests pass** (9 files), including screenshot/API failures, invalid/corrupt images, cache/rate controls, ambiguous/exact inventory matches, missing costs/fees/shipping, buyer/seller amounts, discounts, multi-item exact-cent allocation, foreign currency, edits/corrections, batch inclusion/exclusion, authenticated approval, revision conflicts, failed confirmation, durable retries, private source ownership/hashes, listing/new-item duplication, metric valuation and dated return/resale cost preservation.
+- Type checking **passes**, ESLint **passes without warnings**, production build **passes**, and `git diff --check` **passes**. Sharp `0.35.5` was promoted from Next.js's existing optional dependency to a pinned direct dependency for actual server-side image decoding; dependency versions were not broadly upgraded. Installation used `--ignore-scripts`; existing ESLint peer warnings and npm's moderate audit findings were not addressed with unrelated upgrades.
+- **All 24 Playwright browser tests pass**, desktop and iPhone-sized Chromium using local Chrome. This includes all six assistant cases plus the existing inventory/CSV/time/ledger/refund/package/payout/PWA regressions. After the final screenshot-capture adjustment, all six assistant cases passed again. Fictional desktop/mobile assistant screenshots were visually inspected from ignored `test-results/assistant-review-*.png` (animations disabled for accurate capture).
+- The first complete browser run reproduced the same three previously recorded failures (21/24 passed). The cross-listing test navigated before awaiting its listing save; it now waits for dialog completion. The mobile order adjustment button overflowed its table cell; order actions now stack within the cell. Subsequent complete runs pass 24/24. These changes do not alter financial formulas or transaction behavior.
+- `npm run supabase:verify` **passes** read-only hosted readiness/RLS/private Storage/owner/workspace checks. No migration was applied, replayed or changed.
+- The new opt-in `scripts/verify-assistant-hosted.mjs` **passes** against real Supabase with an isolated production process (port 3152), disposable owner account and mobile-sized **WebKit** browser. It verifies actual password sign-in/cookies, no business writes during prepare, a listing update plus new inventory/listing in one approval, acquisition valuation counting each item once, a completed sale with stored cost and a $26 profit preview, sold inventory and cross-listing flags, lost-response receipt replay, repeated screenshot rejection, private source screenshot references/downloads and anonymous download denial. All synthetic records, images, sessions and the disposable account were cleaned up. The configured owner's normal password and business records were not accessed or modified.
+- Hosted extraction is **explicitly mocked at the browser FormData boundary** with deterministic facts and tiny generated image fixtures. Auth, approved business commands, database persistence and Storage are real; **OpenAI interpretation is not verified**. `OPENAI_API_KEY` is absent. Do not present these fixtures as real marketplace image analysis.
+
+Final hardening and recovery behavior:
+
+- The assistant waits for the initial workspace load before analysis, preventing an empty/stale initial inventory match. This was found during hosted verification and corrected.
+- Available original screenshots are uploaded to the existing private photo bucket only after approval. Their owner paths and SHA-256 hashes are verified before the financial commit. References/metadata are audited without embedding image bytes in JSON. A successful image upload is remembered across failed approvals to prevent a retry upload. Reattaching the original after draft reload makes its bytes available for preservation again.
+- Existing zero costs require confirmation/correction, missing amounts remain null, non-USD amounts require correction and explicit currency confirmation, unknown new-item/listing dates remain unresolved, and positive refund screenshots route to original-order reconciliation. Existing financial commands and dated ledger rules remain authoritative.
+- During hosted harness development, early runs encountered sign-in/initial-load timing and a WebKit protocol-interception hash mismatch. The harness now hashes the actual browser File when stubbing extraction. Cleanup originally attempted DELETE on empty immutable ledger tables (denied by existing grants); it now cleans only the disposable tables it creates. Every test-created account was removed; no grants, immutable triggers or real records were changed. Final complete hosted runs, including cleanup, exit successfully.
+- Documented limits: bounded conversational edits, no automatic merge of partial screenshots sharing one order, no visual inventory search or automatic product-photo cropping, tab-scoped draft recovery, in-process extraction cache/rate accounting, and no automated orphan-image retention job. Full screenshots are private source evidence; inventory product photos remain managed by the existing editor. See `docs/ASSISTANT.md` for details.
+
+### Exact continuation point and remaining acceptance work
+
+1. **Do not restart milestones 1–5.** Read this section and `docs/ASSISTANT.md`, inspect recent commits and the inherited uncommitted Auth/configuration/documentation scripts, and preserve them. Continue only with GPT-6.1 Sol explicitly selected and available; this session did not independently verify serving-model identity or switch models.
+2. Set server-only `OPENAI_API_KEY` securely in the existing environment and restart. Leave the configured model at `gpt-4.1-mini-2025-04-14` unless explicitly choosing another officially supported vision/structured-output model. This application extraction setting does not change the implementation-session model requirement.
+3. Verify the **unmocked** extraction endpoint with real Depop/Vinted sale/listing screenshots: single and multiple images, absent fees/shipping, accepted offers versus completed sales, ambiguous matches, multi-item orders, duplicate uploads and corrections. Review all proposals before approving any real business records. Record exact outcomes; do not infer vision accuracy from existing fixtures.
+4. Test on an actual iPhone/PWA over HTTPS, including photo-library format/permissions, keyboard, long batch review, tab recovery, sign-out and responsive approval. Current Chromium device emulation and mobile WebKit checks are useful but not actual-device verification.
+5. Re-run relevant checks only for new changes/failures. For hosted assistant verification after a new build, run `node --env-file=.env.local --experimental-strip-types scripts/verify-assistant-hosted.mjs`; it creates and removes only its disposable data. Broader deployment and the owner's normal password retry remain separate earlier tasks. Do not automatically deploy, push, replay migrations or implement the deferred Inventory → For Sale → Sold → Shipped pipeline.
+
+The final checkpoint selectively stages assistant changes while preserving unrelated working-tree changes from before this task. New assistant documentation/configuration additions are committed without sweeping in the earlier Auth edits. No credentials, private screenshots or runtime environment files are tracked. No changes have been pushed.
