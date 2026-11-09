@@ -1,0 +1,279 @@
+import { PGlite } from '@electric-sql/pglite';
+import { beforeAll, afterAll, it, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { demoWorkspace } from '../src/lib/demo';
+import { workspaceSchema } from '../src/lib/model';
+let db: PGlite;
+const user = '11111111-1111-4111-8111-111111111111';
+const other = '22222222-2222-4222-8222-222222222222';
+beforeAll(async () => {
+  db = new PGlite();
+  await db.exec(
+    `create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;create schema storage;grant usage on schema storage to authenticated,service_role;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key,bucket_id text,name text);alter table storage.objects enable row level security;grant select on storage.objects to authenticated;grant select on storage.buckets to service_role;insert into auth.users values('${user}'),('${other}');`,
+  );
+  await db.exec(
+    await readFile(
+      new URL('../supabase/migrations/202611090001_initial.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL('../supabase/migrations/202611090002_auth_storage_hardening.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/202611090003_financial_ledger_shipments.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
+});
+afterAll(async () => {
+  await db?.close();
+});
+it('applies the complete migration and round-trips related records', async () => {
+  const w = demoWorkspace();
+  const saved = await db.query<{ revision: number }>(
+    'select public.commit_workspace($1,0,$2::jsonb) as revision',
+    [user, JSON.stringify(w)],
+  );
+  expect(saved.rows[0].revision).toBe(1);
+  const result = await db.query<{ workspace: unknown }>(
+    'select public.load_workspace($1) as workspace',
+    [user],
+  );
+  const loaded = workspaceSchema.parse(result.rows[0].workspace);
+  expect(loaded.items).toHaveLength(24);
+  expect(loaded.orders).toHaveLength(14);
+  expect(loaded.orders[0].lines).toHaveLength(1);
+  expect(
+    (await db.query<{ count: number }>('select count(*)::int as count from public.financial_audit'))
+      .rows[0].count,
+  ).toBe(28);
+});
+it('rejects stale revisions atomically', async () => {
+  await expect(
+    db.query('select public.commit_workspace($1,0,$2::jsonb)', [
+      user,
+      JSON.stringify(demoWorkspace()),
+    ]),
+  ).rejects.toThrow('revision_conflict');
+  expect(
+    (
+      await db.query<{ revision: number }>(
+        'select revision from public.workspaces where user_id=$1',
+        [user],
+      )
+    ).rows[0].revision,
+  ).toBe(1);
+});
+it('enforces RLS and blocks direct authenticated writes and RPC access', async () => {
+  await db.exec(`set role authenticated;set request.jwt.claim.sub='${other}';`);
+  expect((await db.query('select * from public.items')).rows).toHaveLength(0);
+  await expect(db.query('select public.load_workspace($1)', [user])).rejects.toThrow(
+    'permission denied',
+  );
+  await expect(db.query('delete from public.items')).rejects.toThrow('permission denied');
+  await db.exec('reset role');
+});
+it('rejects duplicate physical sales and rolls back financial history', async () => {
+  const w = demoWorkspace();
+  w.orders.push({ ...w.orders[0], id: crypto.randomUUID(), externalId: 'DUPLICATE' });
+  await expect(
+    db.query('select public.commit_workspace($1,1,$2::jsonb)', [user, JSON.stringify(w)]),
+  ).rejects.toThrow('duplicate_physical_sale');
+  expect(
+    (await db.query<{ count: number }>('select count(*)::int as count from public.orders')).rows[0]
+      .count,
+  ).toBe(14);
+});
+
+it('verifies all application RLS and restricted RPC grants under the actual service role', async () => {
+  await db.exec('set role service_role');
+  try {
+    const result = await db.query<{ checks: Record<string, unknown> }>(
+      'select public.verify_thrift_log() as checks',
+    );
+    expect(result.rows[0].checks).toEqual({
+      schemaVersion: 3,
+      financialLedger: true,
+      shipmentStorage: true,
+      tablesPresent: true,
+      rlsEnabled: true,
+      clientWritesBlocked: true,
+      privatePhotosBucket: true,
+      serverRpcRestricted: true,
+      privatePhotoReadPolicy: true,
+    });
+    const loaded = await db.query<{ workspace: unknown }>(
+      'select public.load_workspace($1) as workspace',
+      [user],
+    );
+    expect(workspaceSchema.parse(loaded.rows[0].workspace).items).toHaveLength(24);
+  } finally {
+    await db.exec('reset role');
+  }
+});
+it('allows owner-only inventory photo reads and denies anonymous access', async () => {
+  await db.query(
+    "insert into storage.objects values($1,'inventory-photos',$2),($3,'inventory-photos',$4)",
+    [crypto.randomUUID(), `${user}/test.png`, crypto.randomUUID(), `${other}/test.png`],
+  );
+  await db.exec(`set role authenticated;set request.jwt.claim.sub='${user}';`);
+  try {
+    const result = await db.query<{ name: string }>('select name from storage.objects');
+    expect(result.rows.map((r) => r.name)).toEqual([`${user}/test.png`]);
+    await expect(db.query('select public.verify_thrift_log()')).rejects.toThrow(
+      'permission denied',
+    );
+  } finally {
+    await db.exec('reset role');
+  }
+  await db.exec('set role anon');
+  try {
+    await expect(db.query('select * from storage.objects')).rejects.toThrow('permission denied');
+  } finally {
+    await db.exec('reset role');
+  }
+});
+it('isolates every business table from another authenticated account', async () => {
+  await db.exec(`set role authenticated;set request.jwt.claim.sub='${other}';`);
+  try {
+    for (const table of [
+      'workspaces',
+      'imports',
+      'locations',
+      'trips',
+      'shows',
+      'items',
+      'listings',
+      'orders',
+      'expenses',
+      'sessions',
+      'order_lines',
+      'financial_audit',
+    ])
+      expect((await db.query(`select * from public.${table}`)).rows, table).toHaveLength(0);
+  } finally {
+    await db.exec('reset role');
+  }
+});
+it('round-trips a dated return and resale in one atomic transaction', async () => {
+  const { applyCommand } = await import('../src/lib/commands');
+  const result = await db.query<{ workspace: unknown }>(
+    'select public.load_workspace($1) as workspace',
+    [user],
+  );
+  let w = workspaceSchema.parse(result.rows[0].workspace);
+  const rev = w.revision;
+  const original = w.orders.find((o) => o.lines[0].itemId === w.items[0].id) || w.orders[0];
+  const line = original.lines[0];
+  const date = new Date().toISOString();
+  w = applyCommand(w, {
+    type: 'financialEvent',
+    value: {
+      id: '30000000-0000-4000-8000-000000000001',
+      orderId: original.id,
+      date,
+      kind: 'Refund',
+      amount: 100,
+      itemIds: [line.itemId],
+      reason: 'Test partial return',
+      externalId: 'TEST-RETURN',
+      reversesId: null,
+      category: 'Other',
+    },
+  });
+  w = applyCommand(w, {
+    type: 'order',
+    value: {
+      ...original,
+      id: '30000000-0000-4000-8000-000000000002',
+      externalId: 'TEST-RESALE',
+      date,
+      lines: [{ ...line, price: 5000 }],
+      refund: 0,
+      feeCredit: 0,
+      adjustment: 0,
+      discount: 0,
+    },
+  });
+  await db.exec('set role service_role');
+  try {
+    await db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+      user,
+      rev,
+      JSON.stringify(w),
+    ]);
+  } finally {
+    await db.exec('reset role');
+  }
+  const saved = workspaceSchema.parse(
+    (
+      await db.query<{ workspace: unknown }>('select public.load_workspace($1) as workspace', [
+        user,
+      ])
+    ).rows[0].workspace,
+  );
+  expect(saved.financialEvents[0].itemIds).toEqual([line.itemId]);
+  expect(saved.orders.some((o) => o.externalId === 'TEST-RESALE')).toBe(true);
+  expect(saved.revision).toBe(rev + 1);
+});
+it('rejects edits to posted events and original financial bases at the database boundary', async () => {
+  const w = workspaceSchema.parse(
+    (
+      await db.query<{ workspace: unknown }>('select public.load_workspace($1) as workspace', [
+        user,
+      ])
+    ).rows[0].workspace,
+  );
+  const changed = structuredClone(w);
+  changed.financialEvents[0].amount++;
+  await expect(
+    db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+      user,
+      w.revision,
+      JSON.stringify(changed),
+    ]),
+  ).rejects.toThrow('posted_record_immutable');
+  const changedOrder = structuredClone(w);
+  changedOrder.orders.find((o) => o.id === w.financialEvents[0].orderId)!.lines[0].price++;
+  await expect(
+    db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+      user,
+      w.revision,
+      JSON.stringify(changedOrder),
+    ]),
+  ).rejects.toThrow('financial_basis_immutable');
+  expect(
+    (
+      await db.query<{ revision: number }>(
+        'select revision from public.workspaces where user_id=$1',
+        [user],
+      )
+    ).rows[0].revision,
+  ).toBe(w.revision);
+});
+it('isolates the new ledger, receipt, and shipment tables with RLS', async () => {
+  await db.exec(`set role authenticated;set request.jwt.claim.sub='${other}';`);
+  try {
+    for (const table of [
+      'financial_events',
+      'payouts',
+      'shipments',
+      'financial_event_returns',
+      'payout_allocations',
+      'shipment_orders',
+    ]) {
+      expect((await db.query(`select * from public.${table}`)).rows, table).toHaveLength(0);
+      await expect(db.query(`delete from public.${table}`)).rejects.toThrow('permission denied');
+    }
+  } finally {
+    await db.exec('reset role');
+  }
+});
