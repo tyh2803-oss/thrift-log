@@ -1,5 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { inventoryPipeline, stageNames, type PipelineStage } from '@/lib/pipeline';
 import { LayoutGrid, List, Plus, Download, ExternalLink, Copy } from 'lucide-react';
 import { currentOrderTotals } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
@@ -16,12 +19,23 @@ export function Inventory({
   search,
   onEdit,
   onImport,
+  pipelineStage = null,
 }: {
+  pipelineStage?: PipelineStage | null;
   search: string;
   onEdit: (t: EditorTarget) => void;
   onImport: () => void;
 }) {
   const { now, w, dispatch, notify } = useWorkspace();
+  const base = usePathname().startsWith('/demo') ? '/demo' : '';
+  const pipeline = useMemo(() => (pipelineStage ? inventoryPipeline(w) : null), [w, pipelineStage]);
+  const pipelineIds = useMemo(
+    () =>
+      pipelineStage && pipeline
+        ? new Set(pipeline.groups[pipelineStage].entries.map((e) => e.item.id))
+        : null,
+    [pipeline, pipelineStage],
+  );
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [tab, setTab] = useState('Inventory');
   const [status, setStatus] = useState('All statuses');
@@ -33,6 +47,7 @@ export function Inventory({
   const items = w.items
     .filter(
       (i) =>
+        (!pipelineIds || pipelineIds.has(i.id)) &&
         (status === 'All statuses' || i.status === status) &&
         (marketplace === 'All marketplaces' ||
           w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace)) &&
@@ -52,6 +67,7 @@ export function Inventory({
     const item = w.items.find((i) => i.id === l.itemId);
     return (
       item &&
+      (!pipelineIds || (pipelineIds.has(item.id) && l.status === 'Active')) &&
       (marketplace === 'All marketplaces' || l.marketplace === marketplace) &&
       `${item.title} ${item.sku} ${l.marketplace}`.toLowerCase().includes(search.toLowerCase())
     );
@@ -67,12 +83,25 @@ export function Inventory({
   }
   return (
     <>
+      {pipelineStage && (
+        <div className="pipeline-filter-banner">
+          <div>
+            <strong>{stageNames[pipelineStage]} · Current physical inventory</strong>
+            <p>As of now · One row per physical item</p>
+          </div>
+          <Link className="text-link" href={`${base}/inventory`}>
+            Clear pipeline filter
+          </Link>
+        </div>
+      )}
       <div className="page-toolbar">
         <div className="tabs">
           {['Inventory', 'Listings'].map((t) => (
             <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
               {t}
-              <span>{t === 'Inventory' ? w.items.length : w.listings.length}</span>
+              <span>
+                {t === 'Inventory' ? (pipelineIds?.size ?? w.items.length) : listings.length}
+              </span>
             </button>
           ))}
         </div>

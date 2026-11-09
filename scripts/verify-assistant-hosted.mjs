@@ -1,7 +1,9 @@
 // Real isolated Auth/Storage/financial persistence with deterministic extraction fixtures.
 // Never sends business images to OpenAI or touches the configured owner's records.
 import { createClient } from '@supabase/supabase-js';
-import { webkit } from '@playwright/test';
+import { chromium, webkit } from '@playwright/test';
+const browserName = process.env.HOSTED_BROWSER || 'webkit';
+if (!['webkit', 'chromium'].includes(browserName)) throw new Error('Use webkit or chromium.');
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
@@ -88,8 +90,13 @@ try {
     if (!ready) await new Promise((resolve) => setTimeout(resolve, 100));
   }
   check('Isolated assistant app ready', ready);
-  stage = 'WebKit launch';
-  browser = await webkit.launch({ headless: true });
+  stage = `${browserName} launch`;
+  browser = await (browserName === 'webkit' ? webkit : chromium).launch({
+    headless: true,
+    ...(browserName === 'chromium' && process.env.HOSTED_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.HOSTED_CHROMIUM_EXECUTABLE }
+      : {}),
+  });
   context = await browser.newContext({
     viewport: { width: 390, height: 844 },
     serviceWorkers: 'block',
@@ -103,7 +110,7 @@ try {
   await page.getByRole('button', { name: 'Sign in securely' }).click();
   stage = 'password navigation';
   await page.waitForURL(origin + '/', { timeout: 15000 });
-  check('WebKit private workspace sign-in', true);
+  check(`${browserName} private workspace sign-in`, true);
   stage = 'fixture inventory setup';
   const itemId = randomUUID();
   const initial = await workspace();

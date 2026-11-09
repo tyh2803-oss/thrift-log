@@ -36,6 +36,10 @@ export function Settings({ onImport }: { onImport: () => void }) {
                     ...w.settings,
                     timezone: String(f.get('timezone')),
                     monthlyGoal: parseMoney(String(f.get('goal'))),
+                    estimatedSellingExpenses:
+                      String(f.get('sellingEstimate') || '').trim() === ''
+                        ? null
+                        : parseMoney(String(f.get('sellingEstimate'))),
                   },
                 })
               )
@@ -69,6 +73,26 @@ export function Settings({ onImport }: { onImport: () => void }) {
               required
             />
           </label>
+          <label className="field">
+            <span>Estimated selling expenses per item ($)</span>
+            <input
+              name="sellingEstimate"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Unknown"
+              defaultValue={
+                w.settings.estimatedSellingExpenses === null
+                  ? ''
+                  : w.settings.estimatedSellingExpenses / 100
+              }
+            />
+          </label>
+          <p className="hint">
+            Used only for potential profit in the pipeline. Include expected fees, seller shipping
+            and direct costs. Blank means unknown; enter 0 only when no selling expenses are
+            expected.
+          </p>
           <div className="actions">
             <Button type="submit">Save preferences</Button>
             <Button
@@ -86,6 +110,22 @@ export function Settings({ onImport }: { onImport: () => void }) {
           </div>
         </form>
         <h3>Dashboard widgets</h3>
+        <div className="detail-row">
+          <label className="grow">
+            <input
+              type="checkbox"
+              checked={w.settings.pipelineVisible}
+              onChange={(e) =>
+                void dispatch({
+                  type: 'settings',
+                  value: { ...w.settings, pipelineVisible: e.target.checked },
+                })
+              }
+            />{' '}
+            Inventory Pipeline
+          </label>
+          <small>Below financial KPIs</small>
+        </div>
         {(['chart', 'sales', 'shows', 'activity'] as const).map((key) => {
           const index = w.settings.widgets.indexOf(key);
           return (

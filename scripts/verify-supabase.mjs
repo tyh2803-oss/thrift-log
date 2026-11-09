@@ -20,7 +20,8 @@ if (!status.ready) {
   try {
     const { data, error } = await client.rpc('verify_thrift_log');
     report('Schema verification RPC is available', !error && !!data);
-    if (!error && data) report('Financial ledger schema version', data.schemaVersion >= 3);
+    if (!error && data)
+      report('Financial ledger and item fulfillment schema version', data.schemaVersion >= 4);
     if (!error && data)
       for (const key of [
         'tablesPresent',
@@ -31,6 +32,7 @@ if (!status.ready) {
         'privatePhotoReadPolicy',
         'financialLedger',
         'shipmentStorage',
+        'itemFulfillment',
       ])
         report(key, data[key] === true);
     const { data: bucket, error: bucketError } = await client.storage.getBucket('inventory-photos');

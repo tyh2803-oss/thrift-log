@@ -3113,3 +3113,40 @@ th {
 .assistant-extraction { overflow-wrap: anywhere; min-width: 0; }
 .assistant-edit-fields select, .assistant-edit-fields input { min-width: 0; max-width: 100%; }
 @media (max-width: 700px) { .assistant-edit-fields input, .assistant-edit-fields select { font-size: 16px; } }
+
+/* Current physical inventory, independent of the dashboard's reporting period. */
+.pipeline-widget { margin: 0 0 24px; padding: 22px; }
+.pipeline-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.pipeline-heading h2 { font-size: 19px; }
+.pipeline-heading p { color: var(--muted); font-size: 12px; margin-top: 5px; }
+.pipeline-heading p span { display: inline-flex; align-items: center; gap: 4px; }
+.pipeline-toggle button { min-height: 36px; min-width: 64px; }
+.pipeline-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.pipeline-stage { position: relative; border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; min-width: 0; transition: border-color .15s,background .15s; }
+.pipeline-stage:hover { border-color: var(--green); background: var(--bg); }
+.pipeline-stage-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; gap: 5px; color: #737d75; }
+.pipeline-for-sale .pipeline-stage-title { color: #52758a; }
+.pipeline-sold .pipeline-stage-title { color: #876982; }
+.pipeline-shipped .pipeline-stage-title { color: var(--green); }
+.pipeline-count { display: block; font-size: 30px; line-height: 1.2; font-weight: 550; margin: 18px 0 13px; }
+.pipeline-count small { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
+.pipeline-money { font-size: 19px; font-weight: 550; overflow-wrap: anywhere; }
+.pipeline-value-label { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.pipeline-card-notes { min-height: 32px; margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-content: end; }
+.pipeline-card-notes > span { font-size: 10px; background: var(--light-green); color: var(--green); padding: 2px 6px; border-radius: 4px; }
+.pipeline-card-notes > small { color: var(--muted); width: 100%; font-size: 11px; }
+.pipeline-arrow { position: absolute; right: -16px; top: 50%; color: var(--muted); z-index: 1; background: var(--card); }
+.pipeline-stage:last-child .pipeline-arrow { display: none; }
+.pipeline-details { margin-top: 16px; color: var(--muted); font-size: 12px; }
+.pipeline-details summary { cursor: pointer; color: var(--green); }
+.pipeline-details > p { margin-top: 10px; max-width: 950px; }
+.pipeline-breakdowns { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 15px; margin-top: 16px; }
+.pipeline-breakdowns strong { color: var(--text); }
+.pipeline-filter-banner { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 16px; background: var(--light-green); border-radius: 10px; margin-bottom: 16px; }
+.pipeline-filter-banner p { font-size: 12px; color: var(--muted); }
+.pipeline-sale-item { display: flex; align-items: center; gap: 10px; }
+.pipeline-market-filter { margin-bottom: 14px; max-width: 230px; }
+.fulfillment-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.fulfillment-item > small { display: block; color: var(--muted); margin: 4px 0 10px; }
+@media(max-width: 800px) { .pipeline-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .pipeline-stage:nth-child(2) .pipeline-arrow { display: none; } .pipeline-breakdowns { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width: 550px) { .pipeline-widget { padding: 16px; } .pipeline-heading { flex-direction: column; align-items: stretch; gap: 12px; } .pipeline-toggle { width: 100%; justify-content: space-between; } .pipeline-toggle button { flex: 1; min-height: 40px; font-size: 13px; } .pipeline-stage { padding: 13px; } .pipeline-money { font-size: 18px; } .pipeline-filter-banner { align-items: flex-start; flex-direction: column; } }

@@ -30,6 +30,8 @@ import { WorkspaceProvider, useWorkspace } from '@/lib/use-workspace';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
 import { duration, laborMs } from '@/lib/finance';
+import { lineFulfillment } from '@/lib/fulfillment-state';
+import { readPipelineStage } from '@/lib/pipeline';
 import type { Session } from '@/lib/model';
 import { Home } from './home';
 import { Inventory } from './inventory';
@@ -54,18 +56,32 @@ export function ThriftApp({
   section,
   demo,
   email,
+  pipeline,
 }: {
+  pipeline?: string;
   section: string;
   demo: boolean;
   email?: string;
 }) {
   return (
     <WorkspaceProvider demo={demo}>
-      <Shell section={section} email={email} />
+      <Shell section={section} email={email} pipeline={pipeline} />
     </WorkspaceProvider>
   );
 }
-function Shell({ section, email }: { section: string; email?: string }) {
+function Shell({
+  section,
+  email,
+  pipeline,
+}: {
+  section: string;
+  email?: string;
+  pipeline?: string;
+}) {
+  const pipelineStage = readPipelineStage(pipeline || null);
+  const inventoryStage =
+    pipelineStage === 'unlisted' || pipelineStage === 'for-sale' ? pipelineStage : null;
+  const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
   const { now, w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
   const router = useRouter();
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
@@ -173,8 +189,11 @@ function Shell({ section, email }: { section: string; email?: string }) {
   const fulfill = w.orders.filter(
     (o) =>
       o.status === 'Completed' &&
-      o.fulfillment === 'Unfulfilled' &&
-      o.lines.some((l) => !returnedItemIds(w, o.id).has(l.itemId)),
+      o.lines.some(
+        (l) =>
+          !returnedItemIds(w, o.id).has(l.itemId) &&
+          lineFulfillment(o, l.itemId).status === 'Unfulfilled',
+      ),
   );
   const missing = w.items.filter((i) => i.cost === 0 && i.status !== 'Archived');
   const stale = w.listings.filter(
@@ -340,18 +359,19 @@ function Shell({ section, email }: { section: string; email?: string }) {
               <p>{subtitles[section]}</p>
             </div>
             <div className="heading-actions">
-              {['home', 'sales', 'activity', 'insights'].includes(section) && (
-                <select
-                  aria-label="Date range"
-                  className="date-filter"
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value as Period)}
-                >
-                  {periods.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              )}
+              {['home', 'sales', 'activity', 'insights'].includes(section) &&
+                !(section === 'sales' && salesStage) && (
+                  <select
+                    aria-label="Date range"
+                    className="date-filter"
+                    value={period}
+                    onChange={(e) => setPeriod(e.target.value as Period)}
+                  >
+                    {periods.map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                )}
               <div className="popover-anchor">
                 <Button onClick={() => setQuick(!quick)}>
                   <Plus size={17} />
@@ -415,7 +435,7 @@ function Shell({ section, email }: { section: string; email?: string }) {
               </div>
             </div>
           </div>
-          {period === 'Custom' && (
+          {period === 'Custom' && !(section === 'sales' && salesStage) && (
             <div className="custom-dates">
               <label>
                 From{' '}
@@ -523,10 +543,18 @@ function Shell({ section, email }: { section: string; email?: string }) {
             <>
               {section === 'home' && <Home range={range} onEdit={edit} />}{' '}
               {section === 'inventory' && (
-                <Inventory search={search} onEdit={edit} onImport={() => setImporting(true)} />
+                <Inventory
+                  key={inventoryStage || 'all'}
+                  pipelineStage={inventoryStage}
+                  search={search}
+                  onEdit={edit}
+                  onImport={() => setImporting(true)}
+                />
               )}{' '}
               {section === 'sales' && (
                 <Sales
+                  key={salesStage || 'all'}
+                  pipelineStage={salesStage}
                   search={search}
                   range={range}
                   onEdit={edit}
