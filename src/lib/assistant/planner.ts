@@ -1,7 +1,8 @@
+import { matchInventory } from './matching';
 import { applyCommand } from '../commands';
 import { zoneMidnight } from '../dates';
 import { itemIsSold } from '../ledger';
-import { orderSchema, type Command, type Item, type Order, type Workspace } from '../model';
+import { orderSchema, itemSchema, listingSchema, type Command, type Workspace } from '../model';
 import { orderTotals, lineProfits } from '../money';
 import { batchSchema, type DraftBatch, type DraftRow } from './drafts';
 
@@ -59,16 +60,17 @@ function importedSource(w: Workspace, row: DraftRow) {
   });
 }
 export function previewRow(w: Workspace, row: DraftRow): Preview {
-  const issues: string[] = [];
-  const commands: Command[] = [];
-  const r = row.facts;
-  const date = importDate(r.date, w.settings.timezone);
+  const issues: string[] = [],
+    commands: Command[] = [];
+  const r = row.facts,
+    date = importDate(r.date, w.settings.timezone);
   let duplicateId: string | null = null,
     duplicateKind: Preview['duplicateKind'] = null;
   if (!r.marketplace) issues.push('Choose the marketplace.');
   if (r.currency !== 'USD')
     issues.push('Confirm the amounts are USD. Currency conversion is not supported.');
-  if (!date) issues.push('Enter a valid date (YYYY-MM-DD or timestamp with timezone).');
+  if ((r.kind === 'sale' && !date) || (r.date && !date))
+    issues.push('Enter a valid date (YYYY-MM-DD or timestamp with timezone).');
   if (date && Date.parse(date) > Date.now() + 300000)
     issues.push('The record date cannot be in the future.');
   if (r.kind === 'other') issues.push('This screenshot is not a sale or active listing.');
@@ -76,37 +78,90 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     issues.push('Review and acknowledge the extraction warnings.');
   if (row.matches.length !== r.lines.length)
     issues.push('Every physical line needs an inventory match.');
-  const costs: (number | null)[] = [];
-  const items: (Item | undefined)[] = [];
+  const costs: (number | null)[] = [],
+    itemIds: string[] = [];
   row.matches.forEach((match, i) => {
     const line = r.lines[i];
     if (!line) return;
-    const item = w.items.find((item) => item.id === match.itemId);
-    items.push(item);
-    // Zero in legacy inventory is potentially missing; require an explicit free-item confirmation.
+    let item = w.items.find((v) => v.id === match.itemId);
+    if (match.itemId && match.newItem)
+      issues.push(`Line ${i + 1}: choose existing or new inventory, not both.`);
+    const proposed = match.newItem;
+    const storedCost = match.costOverride ?? item?.cost;
     const cost = item
-      ? item.cost === 0 && !match.confirmZeroCost
+      ? storedCost === 0 && !match.confirmZeroCost && match.costOverride == null
         ? null
-        : item.cost
-      : (match.newItem?.cost ?? null);
+        : storedCost!
+      : (proposed?.cost ?? null);
+    if (item && match.costOverride != null && match.costOverride !== item.cost) {
+      item = { ...item, cost: match.costOverride };
+      commands.push({ type: 'item', value: item });
+    }
     costs.push(cost);
-    if (!item)
-      issues.push(
-        `Line ${i + 1}: select an inventory item${r.kind === 'listing' ? ' or create one' : ''}.`,
-      );
+    if (!item && proposed) {
+      if (w.items.some((v) => v.id === proposed.id))
+        issues.push(`Line ${i + 1}: this proposed item already exists. Select it from inventory.`);
+      const candidates = matchInventory(w, r, line);
+      if (candidates.some((c) => c.exact))
+        issues.push(
+          `Line ${i + 1}: an exact inventory identifier already exists. Select that item instead of creating a duplicate.`,
+        );
+      if (!proposed.confirmedDistinct)
+        issues.push(
+          `Line ${i + 1}: confirm this is a new physical item after checking possible matches.`,
+        );
+      const purchasedAt = importDate(proposed.purchasedAt, w.settings.timezone);
+      if (!purchasedAt) issues.push(`Line ${i + 1}: enter the acquisition date for new inventory.`);
+      if (purchasedAt && Date.parse(purchasedAt) > (date ? Date.parse(date) : Date.now()))
+        issues.push(`Line ${i + 1}: acquisition cannot be after the sale/listing date.`);
+      if (!line.title?.trim()) issues.push(`Line ${i + 1}: a new inventory item needs a title.`);
+      const parsed = itemSchema.safeParse({
+        id: proposed.id,
+        sku: proposed.sku,
+        title: line.title || '',
+        brand: line.brand || '',
+        size: line.size || '',
+        color: line.color || '',
+        category: line.category || 'Other',
+        condition: line.condition || '',
+        description: line.description || '',
+        cost: cost ?? 0,
+        asking: line.price ?? 0,
+        purchasedAt: purchasedAt || new Date(0).toISOString(),
+        status: 'Purchased',
+        createdAt: new Date().toISOString(),
+        notes: 'Added through approved screenshot import.',
+      });
+      if (parsed.success) {
+        item = parsed.data;
+        commands.push({ type: 'item', value: parsed.data });
+      } else
+        issues.push(
+          `Line ${i + 1}: check the new item SKU, title and attribute lengths (up to 500 characters).`,
+        );
+    }
+    if (!item) issues.push(`Line ${i + 1}: select an inventory item or create one.`);
     if (cost === null)
       issues.push(
         `Line ${i + 1}: purchase cost is unknown${item?.cost === 0 ? '; confirm free inventory if zero is correct' : ''}.`,
       );
-    if (item && ['Archived'].includes(item.status))
-      issues.push(`Line ${i + 1}: archived inventory needs review.`);
+    if (item) {
+      itemIds.push(item.id);
+      if (item.status === 'Archived')
+        issues.push(`Line ${i + 1}: archived inventory needs review.`);
+    }
     if (line.price === null) issues.push(`Line ${i + 1}: enter the merchandise price.`);
   });
-  if (row.matches.some((m) => m.newItem))
-    issues.push('New inventory creation is not yet available at this checkpoint.');
-  const itemIds = row.matches.map((m) => m.itemId).filter(Boolean);
   if (new Set(itemIds).size !== itemIds.length)
     issues.push('A physical item appears more than once in this record.');
+  const prior = importedSource(w, row);
+  if (prior) {
+    duplicateId = prior.id;
+    duplicateKind = 'import';
+    issues.push('This screenshot record has already been imported.');
+  }
+  let totals: Preview['totals'] = null,
+    profits: Preview['profits'] = [];
   if (r.kind === 'sale') {
     if (r.status !== 'completed')
       issues.push(
@@ -133,17 +188,10 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         'This sale appears to already be recorded. View the original order to reconcile it.',
       );
     }
-    const prior = importedSource(w, row);
-    if (prior && !duplicateId) {
-      duplicateId = prior.id;
-      duplicateKind = 'import';
-      issues.push('This screenshot record has already been imported.');
-    }
     row.matches.forEach((m, i) => {
       if (m.itemId && itemIsSold(w, m.itemId)) {
         const sold = w.orders.find(
           (o) =>
-            o.status === 'Completed' &&
             o.lines.some((l) => l.itemId === m.itemId) &&
             itemIsSold({ ...w, orders: [o] }, m.itemId!),
         );
@@ -156,59 +204,116 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         );
       }
     });
-  } else if (r.kind === 'listing')
-    issues.push('Listing approval is not yet available at this checkpoint.');
-  let totals: Preview['totals'] = null,
-    profits: Preview['profits'] = [];
-  const allPrices = r.lines.every((l) => l.price !== null);
-  if (
-    r.kind === 'sale' &&
-    allPrices &&
-    costs.length === r.lines.length &&
-    costs.every((c) => c !== null) &&
-    r.marketplace
-  ) {
-    // Missing selling amounts are zero only for this explicitly provisional estimate, never for a commit.
-    const order: Order = orderSchema.parse({
-      id: row.id,
-      marketplace: r.marketplace,
-      externalId: r.externalOrderId || '',
-      date: date || new Date(0).toISOString(),
-      showId: null,
-      lines: r.lines.map((l, i) => ({
-        itemId: row.matches[i]?.itemId || row.matches[i]?.newItem?.id || row.id,
-        price: l.price!,
-        costBasis: costs[i]!,
-      })),
-      fees: r.fees ?? 0,
-      processing: r.processing ?? 0,
-      shipping: r.shipping ?? 0,
-      shippingCollected: r.shippingCollected ?? 0,
-      discount: r.discount ?? 0,
-      refund: r.refund ?? 0,
-      other: r.other ?? 0,
-      packaging: 0,
-      feeCredit: 0,
-      adjustment: 0,
-      tips: 0,
-      type: 'Sale',
-      status: 'Completed',
-      fulfillment: 'Unfulfilled',
-      payout: 'Pending',
-      provenance: 'Screenshot assistant',
-      importKey: `assistant:${row.id}`,
-    });
-    totals = orderTotals(order);
-    profits = lineProfits(order);
-    if (!issues.length) {
-      try {
-        applyCommand(w, { type: 'order', value: order });
-        commands.push({ type: 'order', value: order });
-      } catch (e) {
-        issues.push(e instanceof Error ? e.message : 'Sale validation failed.');
-      }
+    if (
+      r.lines.every((l) => l.price !== null) &&
+      costs.length === r.lines.length &&
+      costs.every((c) => c !== null) &&
+      r.marketplace
+    ) {
+      // Null selling amounts are zero only in this explicitly provisional estimate, never in a ready operation.
+      const parsed = orderSchema.safeParse({
+        id: row.id,
+        marketplace: r.marketplace,
+        externalId: r.externalOrderId || '',
+        date: date || new Date(0).toISOString(),
+        showId: null,
+        lines: r.lines.map((l, i) => ({
+          itemId: row.matches[i]?.itemId || row.matches[i]?.newItem?.id || row.id,
+          price: l.price!,
+          costBasis: costs[i]!,
+        })),
+        fees: r.fees ?? 0,
+        processing: r.processing ?? 0,
+        shipping: r.shipping ?? 0,
+        shippingCollected: r.shippingCollected ?? 0,
+        discount: r.discount ?? 0,
+        refund: r.refund ?? 0,
+        other: r.other ?? 0,
+        packaging: 0,
+        feeCredit: 0,
+        adjustment: 0,
+        tips: 0,
+        type: 'Sale',
+        status: 'Completed',
+        fulfillment: 'Unfulfilled',
+        payout: 'Pending',
+        provenance: 'Screenshot assistant',
+        importKey: `assistant:${row.id}`,
+      });
+      if (parsed.success) {
+        totals = orderTotals(parsed.data);
+        profits = lineProfits(parsed.data);
+        commands.push({ type: 'order', value: parsed.data });
+      } else issues.push('Check the order identifier and required financial fields.');
     }
+  } else if (r.kind === 'listing') {
+    if (r.status !== 'active')
+      issues.push('Only active marketplace listings can be imported here.');
+    r.lines.forEach((line, i) => {
+      const match = row.matches[i],
+        itemId = match?.itemId || match?.newItem?.id;
+      if (!itemId || !r.marketplace || line.price === null) return;
+      const byId = w.listings.filter(
+        (l) =>
+          l.marketplace === r.marketplace &&
+          ((line.listingId && l.externalId === line.listingId) || (line.url && l.url === line.url)),
+      );
+      const sameItem = w.listings.filter(
+        (l) => l.itemId === itemId && l.marketplace === r.marketplace,
+      );
+      const existing =
+        byId.length === 1 ? byId[0] : sameItem.length === 1 ? sameItem[0] : undefined;
+      if (byId.length > 1 || (sameItem.length > 1 && !byId.length))
+        issues.push(
+          `Line ${i + 1}: more than one marketplace listing matches. Reconcile the existing listings first.`,
+        );
+      if (existing && existing.itemId !== itemId)
+        issues.push(
+          `Line ${i + 1}: that marketplace listing is linked to a different inventory item.`,
+        );
+      if (existing?.externalId && line.listingId && existing.externalId !== line.listingId)
+        issues.push(
+          `Line ${i + 1}: the existing listing has a different external ID. Reconcile it before updating.`,
+        );
+      const listedAt = date || existing?.listedAt;
+      if (!listedAt)
+        issues.push(`Line ${i + 1}: enter the listing date. An unknown date will not be invented.`);
+      if (
+        existing?.status === 'Active' &&
+        existing.price === line.price &&
+        (!line.listingId || existing.externalId === line.listingId) &&
+        (!line.url || existing.url === line.url)
+      ) {
+        duplicateId = existing.id;
+        duplicateKind = 'listing';
+        issues.push(
+          `Line ${i + 1}: this listing is already recorded with the same price and identifiers.`,
+        );
+      }
+      const suffix = ((parseInt(row.id.slice(-8), 16) ^ i) >>> 0).toString(16).padStart(8, '0');
+      const parsed = listingSchema.safeParse({
+        id: existing?.id || row.id.slice(0, -8) + suffix,
+        itemId,
+        marketplace: r.marketplace,
+        price: line.price,
+        originalPrice: existing?.originalPrice ?? line.price,
+        externalId: line.listingId || existing?.externalId || '',
+        url: line.url || existing?.url || '',
+        listedAt: listedAt || new Date(0).toISOString(),
+        status: 'Active',
+        format: existing?.format || 'Fixed price',
+        lastSync: existing?.lastSync ?? null,
+      });
+      if (parsed.success) commands.push({ type: 'listing', value: parsed.data });
+      else issues.push(`Line ${i + 1}: check listing identifiers and use an HTTPS URL.`);
+    });
   }
+  if (!issues.length)
+    try {
+      commands.reduce(applyCommand, w);
+    } catch (e) {
+      issues.push(e instanceof Error ? e.message : 'Record validation failed.');
+    }
   return {
     row,
     ready: !issues.length && !!commands.length,
@@ -218,7 +323,7 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     costs,
     totals,
     profits,
-    commands,
+    commands: issues.length ? [] : commands,
   };
 }
 export function previewBatch(w: Workspace, input: DraftBatch) {

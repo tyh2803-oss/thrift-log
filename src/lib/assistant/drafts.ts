@@ -7,11 +7,13 @@ const newItemSchema = z.object({
   sku: z.string().max(500),
   cost: z.number().int().min(0).max(100_000_000).nullable(),
   purchasedAt: z.string().max(100),
+  confirmedDistinct: z.boolean().default(false),
 });
 export const draftLineSchema = z.object({
   itemId: z.string().uuid().nullable(),
   newItem: newItemSchema.nullable(),
   confirmZeroCost: z.boolean(),
+  costOverride: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 export const draftRowSchema = z.object({
   id: z.string().uuid(),

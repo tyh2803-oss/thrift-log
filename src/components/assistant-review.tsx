@@ -395,6 +395,168 @@ function ReviewRow({
                     I confirm this item was acquired for $0.
                   </label>
                 )}
+                {!selected && !row.matches[i].newItem && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      onChange({
+                        ...row,
+                        matches: row.matches.map((m, j) =>
+                          j === i
+                            ? {
+                                ...m,
+                                itemId: null,
+                                newItem: {
+                                  id: crypto.randomUUID(),
+                                  sku: line.sku || `AI-${row.id.slice(0, 8)}-${i + 1}`,
+                                  cost: null,
+                                  purchasedAt: '',
+                                  confirmedDistinct: false,
+                                },
+                              }
+                            : m,
+                        ),
+                      })
+                    }
+                  >
+                    Create new physical item
+                  </Button>
+                )}
+                {row.matches[i].newItem && (
+                  <div className="assistant-new-item">
+                    <strong>New inventory · Not saved</strong>
+                    <div className="form-grid">
+                      <label className="field">
+                        <span>New SKU, line {i + 1}</span>
+                        <input
+                          value={row.matches[i].newItem!.sku}
+                          maxLength={500}
+                          onChange={(e) =>
+                            onChange({
+                              ...row,
+                              matches: row.matches.map((m, j) =>
+                                j === i
+                                  ? { ...m, newItem: { ...m.newItem!, sku: e.target.value } }
+                                  : m,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                      <AmountField
+                        label={`Purchase cost, line ${i + 1}`}
+                        value={row.matches[i].newItem!.cost}
+                        onChange={(cost) =>
+                          onChange({
+                            ...row,
+                            matches: row.matches.map((m, j) =>
+                              j === i ? { ...m, newItem: { ...m.newItem!, cost } } : m,
+                            ),
+                          })
+                        }
+                      />
+                      <label className="field">
+                        <span>Acquisition date, line {i + 1}</span>
+                        <input
+                          type="date"
+                          value={row.matches[i].newItem!.purchasedAt}
+                          onChange={(e) =>
+                            onChange({
+                              ...row,
+                              matches: row.matches.map((m, j) =>
+                                j === i
+                                  ? {
+                                      ...m,
+                                      newItem: { ...m.newItem!, purchasedAt: e.target.value },
+                                    }
+                                  : m,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={row.matches[i].newItem!.confirmedDistinct}
+                        onChange={(e) =>
+                          onChange({
+                            ...row,
+                            matches: row.matches.map((m, j) =>
+                              j === i
+                                ? {
+                                    ...m,
+                                    newItem: { ...m.newItem!, confirmedDistinct: e.target.checked },
+                                  }
+                                : m,
+                            ),
+                          })
+                        }
+                      />
+                      I checked inventory and confirm this is a new physical item.
+                    </label>
+                  </div>
+                )}
+                {selected && (
+                  <details>
+                    <summary>Correct stored purchase cost</summary>
+                    <p className="hint">
+                      Currently {money(selected.cost)} in inventory. An approved correction changes
+                      this item’s acquisition cost; previous sale cost snapshots remain unchanged.
+                    </p>
+                    <AmountField
+                      label={`Corrected purchase cost, line ${i + 1}`}
+                      value={row.matches[i].costOverride ?? null}
+                      onChange={(costOverride) =>
+                        onChange({
+                          ...row,
+                          matches: row.matches.map((m, j) =>
+                            j === i ? { ...m, costOverride: costOverride ?? undefined } : m,
+                          ),
+                        })
+                      }
+                    />
+                  </details>
+                )}
+                <details>
+                  <summary>Item attributes and listing identifiers</summary>
+                  <div className="form-grid">
+                    {(
+                      [
+                        'title',
+                        'brand',
+                        'size',
+                        'color',
+                        'category',
+                        'condition',
+                        'description',
+                        'sku',
+                        'listingId',
+                        'url',
+                      ] as const
+                    ).map((key) => (
+                      <label className="field" key={key}>
+                        <span>
+                          {key === 'listingId' ? 'Listing ID' : key === 'url' ? 'Listing URL' : key}
+                          , line {i + 1}
+                        </span>
+                        <input
+                          value={line[key] || ''}
+                          maxLength={key === 'url' ? 2000 : 500}
+                          onChange={(e) =>
+                            update({
+                              lines: r.lines.map((l, j) =>
+                                j === i ? { ...l, [key]: e.target.value || null } : l,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </details>
                 <AmountField
                   label={`${r.kind === 'listing' ? 'Listing' : 'Sale'} price, line ${i + 1}`}
                   value={line.price}
