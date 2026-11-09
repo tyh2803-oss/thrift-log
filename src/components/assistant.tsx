@@ -8,8 +8,9 @@ import { prepareImage } from '@/lib/assistant/images';
 import { screenshotSchema, DEFAULT_BATCH_LIMIT, BATCH_BYTES_LIMIT } from '@/lib/assistant/schema';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
-import { createBatch, type DraftBatch } from '@/lib/assistant/drafts';
+import { batchSchema, createBatch, type DraftBatch } from '@/lib/assistant/drafts';
 import { AssistantReview } from './assistant-review';
+import { correctBatch } from '@/lib/assistant/corrections';
 
 type Attachment = { id: string; file: File; url: string };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; images?: Attachment[] };
@@ -18,13 +19,15 @@ export function Assistant({
   onOpen,
   onClose,
   scope,
+  onView,
 }: {
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
   scope: string;
+  onView: (kind: 'order' | 'listing', id: string) => void;
 }) {
-  const { demo, w } = useWorkspace();
+  const { demo, w, saving, error: workspaceError, approveAssistant, notify } = useWorkspace();
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,10 +35,33 @@ export function Assistant({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [config, setConfig] = useState<{ enabled: boolean; batchLimit: number } | null>(null);
+  const [restored, setRestored] = useState(false);
+  const storageKey = `thrift-log.draft.assistant.${scope}`;
   const urls = useRef(new Set<string>());
   const lock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const raw = sessionStorage.getItem(storageKey);
+        if (raw) setBatch(batchSchema.parse(JSON.parse(raw)));
+      } catch {
+        setError('A saved assistant draft could not be restored. Existing records are unchanged.');
+      }
+      setRestored(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [storageKey]);
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      if (batch) sessionStorage.setItem(storageKey, JSON.stringify(batch));
+      else sessionStorage.removeItem(storageKey);
+    } catch {
+      /* Keep the in-memory draft if this browser blocks session storage. */
+    }
+  }, [batch, storageKey, restored]);
   useEffect(() => {
     const all = urls.current;
     return () => all.forEach(URL.revokeObjectURL);
@@ -104,6 +130,22 @@ export function Assistant({
   async function send() {
     if (lock.current || (!text.trim() && !attachments.length)) return;
     const prompt = text.trim() || 'Review these screenshots.';
+    if (!attachments.length && batch) {
+      try {
+        const corrected = correctBatch(batch, prompt, w);
+        if (corrected.changed) setBatch(corrected.batch);
+        setMessages((old) => [
+          ...old.slice(-38),
+          { id: crypto.randomUUID(), role: 'user', text: prompt },
+          { id: crypto.randomUUID(), role: 'assistant', text: corrected.message },
+        ]);
+        setText('');
+        setError('');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'That correction could not be applied.');
+      }
+      return;
+    }
     if (!attachments.length) {
       setMessages((old) => [
         ...old,
@@ -120,6 +162,12 @@ export function Assistant({
     if (demo) {
       setError(
         'Sign in to your private workspace to analyze screenshots. Demo records stay separate.',
+      );
+      return;
+    }
+    if (batch?.rows.length) {
+      setError(
+        'Finish reviewing or cancel the pending batch before analyzing more screenshots. Your pending edits are preserved.',
       );
       return;
     }
@@ -153,6 +201,35 @@ export function Assistant({
           ? e.message
           : 'Screenshot analysis failed. Your attachments are ready to retry.',
       );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  async function approve(ids: string[]) {
+    if (lock.current || !batch) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      if (await approveAssistant(batch, ids)) {
+        setBatch((current) =>
+          current
+            ? current.rows.some((r) => !ids.includes(r.id))
+              ? { ...current, rows: current.rows.filter((r) => !ids.includes(r.id)) }
+              : null
+            : null,
+        );
+        setMessages((old) => [
+          ...old.slice(-39),
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            text: `Saved ${ids.length} approved record${ids.length === 1 ? '' : 's'}. Inventory, listings and financial reports are updated. Unresolved records remain pending.`,
+          },
+        ]);
+        notify('Approved screenshot records saved.');
+      }
     } finally {
       lock.current = false;
       setBusy(false);
@@ -216,13 +293,22 @@ export function Assistant({
                   )}
                 </div>
               ))}
-              {batch && <AssistantReview batch={batch} />}
-              {busy && <p role="status">Reading screenshots…</p>}
+              {batch && (
+                <AssistantReview
+                  batch={batch}
+                  onChange={setBatch}
+                  onApprove={(ids) => void approve(ids)}
+                  onCancel={() => setBatch(null)}
+                  busy={busy || saving}
+                  onView={onView}
+                />
+              )}
+              {busy && <p role="status">Working on your screenshots…</p>}
               <div ref={end} />
             </div>
-            {error && (
+            {(error || workspaceError) && (
               <div className="error-box" role="alert">
-                {error}
+                {error || workspaceError}
               </div>
             )}
             {!!attachments.length && (

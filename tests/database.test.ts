@@ -277,3 +277,42 @@ it('isolates the new ledger, receipt, and shipment tables with RLS', async () =>
     await db.exec('reset role');
   }
 });
+
+it('commits assistant-approved sales and provenance with the existing ledger and revision transaction', async () => {
+  const { assistantWorkspace, extractedSale, extractedLine } = await import('./helpers/assistant');
+  const { createBatch } = await import('../src/lib/assistant/drafts');
+  const { approvalCommands, previewBatch } = await import('../src/lib/assistant/planner');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { metrics } = await import('../src/lib/finance');
+  const owner = '44444444-4444-4444-8444-444444444444';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  const w = assistantWorkspace();
+  const batch = createBatch(
+    [
+      {
+        hash: 'a'.repeat(64),
+        name: 'sale.png',
+        extraction: {
+          records: [extractedSale({ lines: [extractedLine({ listingId: 'listing-1' })] })],
+          message: '',
+        },
+      },
+    ],
+    w,
+  );
+  const next = approvalCommands(w, batch, [batch.rows[0].id]).reduce(applyCommand, w);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(loaded.items).toHaveLength(1);
+  expect(loaded.orders).toHaveLength(1);
+  expect(loaded.imports[0].mapping.format).toBe('assistant-v1');
+  expect(loaded.items[0].status).toBe('Sold');
+  expect(loaded.listings.find((l) => l.marketplace === 'Depop')?.status).toBe('Needs delisting');
+  expect(metrics(loaded, 0, Infinity).profit).toBe(2600);
+  expect(previewBatch(loaded, batch)[0].ready).toBe(false);
+  await expect(
+    db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]),
+  ).rejects.toThrow('revision_conflict');
+});

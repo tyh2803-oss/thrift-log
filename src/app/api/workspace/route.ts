@@ -1,38 +1,15 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { adminClient, requireUser, checkOrigin } from '@/lib/supabase/server';
-import { commandSchema, emptyWorkspace, workspaceSchema } from '@/lib/model';
+import { commandSchema } from '@/lib/model';
 import { ConfigurationError, DatabaseReadinessError } from '@/lib/supabase/config';
 import { applyCommand } from '@/lib/commands';
+import { loadWorkspace } from '@/lib/supabase/workspace';
 export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
-async function load(userId: string) {
-  const client = adminClient();
-  const { data: readiness, error: readinessError } = await client.rpc('verify_thrift_log');
-  const checks = [
-    'tablesPresent',
-    'rlsEnabled',
-    'clientWritesBlocked',
-    'privatePhotosBucket',
-    'serverRpcRestricted',
-    'privatePhotoReadPolicy',
-    'financialLedger',
-    'shipmentStorage',
-  ];
-  if (
-    readinessError ||
-    !readiness ||
-    readiness.schemaVersion < 3 ||
-    checks.some((key) => readiness[key] !== true)
-  )
-    throw new DatabaseReadinessError();
-  const { data, error } = await client.rpc('load_workspace', { p_user_id: userId });
-  if (error) throw new Error('Database unavailable. Check the migration and server configuration.');
-  return data ? workspaceSchema.parse(data) : emptyWorkspace();
-}
 export async function GET() {
   try {
-    return NextResponse.json(await load((await requireUser()).id), options);
+    return NextResponse.json(await loadWorkspace((await requireUser()).id), options);
   } catch (e) {
     return failure(e);
   }
@@ -49,7 +26,7 @@ export async function POST(request: Request) {
         commands: z.array(commandSchema).min(1).max(1000),
       })
       .parse(JSON.parse(text));
-    const current = await load(user.id);
+    const current = await loadWorkspace(user.id);
     if (current.revision !== body.revision)
       return NextResponse.json(
         { error: 'Your workspace changed in another tab. Refresh and try again.' },

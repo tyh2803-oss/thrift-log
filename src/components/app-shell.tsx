@@ -638,6 +638,18 @@ function Shell({ section, email }: { section: string; email?: string }) {
         onOpen={() => setAssistant(true)}
         onClose={() => setAssistant(false)}
         scope={demo ? 'demo' : email || 'private'}
+        onView={(kind, id) => {
+          const value =
+            kind === 'order'
+              ? w.orders.find((o) => o.id === id)
+              : w.listings.find((l) => l.id === id);
+          if (value) {
+            setAssistant(false);
+            if (kind === 'order')
+              edit({ kind: 'order', value: value as import('@/lib/model').Order });
+            else edit({ kind: 'listing', value: value as import('@/lib/model').Listing });
+          }
+        }}
       />
       {notice && (
         <div className="toast" role="status">

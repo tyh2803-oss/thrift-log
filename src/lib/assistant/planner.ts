@@ -242,3 +242,60 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
     return preview;
   });
 }
+
+/** Only explicit row IDs may produce commands; a single invalid selected row rejects the batch. */
+export function approvalCommands(
+  w: Workspace,
+  input: DraftBatch,
+  rowIds: string[],
+  at = new Date().toISOString(),
+): Command[] {
+  const batch = batchSchema.parse(input);
+  if (!rowIds.length || new Set(rowIds).size !== rowIds.length)
+    throw new Error('Select at least one ready record, without duplicates.');
+  const previews = previewBatch(w, batch);
+  const commands: Command[] = [];
+  for (const id of rowIds) {
+    const p = previews.find((p) => p.row.id === id);
+    if (!p || !p.row.included || !p.ready)
+      throw new Error(
+        p?.issues.join(' ') || 'A selected row is no longer ready. Review the batch again.',
+      );
+    const row = p.row;
+    const screenshot = batch.screenshots.find((s) => s.hash === row.sourceHash);
+    if (!screenshot || !screenshot.extraction.records[row.recordIndex])
+      throw new Error('The original screenshot extraction is missing.');
+    commands.push(...p.commands, {
+      type: 'import',
+      value: {
+        id: row.id,
+        filename: `screenshots-${batch.id}.json`,
+        kind: row.facts.kind === 'sale' ? 'Sales' : 'Listings',
+        importedAt: at,
+        rawCsv: JSON.stringify({
+          version: 1,
+          batchId: batch.id,
+          rows: [{ sourceHash: row.sourceHash, recordIndex: row.recordIndex }],
+          screenshot: { hash: screenshot.hash, name: screenshot.name },
+          extracted: screenshot.extraction.records[row.recordIndex],
+          corrected: row.facts,
+          matches: row.matches,
+        }),
+        mapping: { format: 'assistant-v1', batchId: batch.id },
+        recordIds: p.commands.flatMap((c) => ('id' in c.value ? [c.value.id] : [])),
+      },
+    });
+  }
+  commands.reduce(applyCommand, w);
+  return commands;
+}
+export function alreadyApproved(w: Workspace, batch: DraftBatch, rowIds: string[]) {
+  return (
+    rowIds.length > 0 &&
+    rowIds.every((id) =>
+      w.imports.some(
+        (i) => i.id === id && i.mapping.format === 'assistant-v1' && i.mapping.batchId === batch.id,
+      ),
+    )
+  );
+}
