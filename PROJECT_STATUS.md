@@ -59,6 +59,14 @@ Whatnot/eBay official documentation requests returned HTTP 403. Required domains
 - Receipts, advanced category/subcategory management, batch bulk updates beyond ready-to-list, draft photo/selection recovery, estimated-net-proceeds scenarios.
 - General offline private-data synchronization, actual iOS device testing, larger-data pagination/incremental persistence, backup/restore UI, optional AI features.
 
+## Future feature request: Inventory-to-sale pipeline (backlog, not for implementation now)
+
+- Add a simple, visual pipeline/summary showing both **number of unique physical items** and **dollar amount** at each stage: **Inventory (unlisted items) → For Sale (listed items) → Sold → Shipped**.
+- Make stages clickable to filter underlying inventory/orders; keep the design compact and uncluttered, ideally a Home widget with optional deeper details.
+- Define dollar values consistently: unlisted and for-sale stages should distinguish **inventory cost** from **potential asking value**; sold and shipped stages should distinguish **realized sale revenue** from **profit**, rather than aggregating incomparable values.
+- Avoid double-counting cross-listed physical items. Treat 'Sold' as sold but not yet shipped for pipeline purposes, and 'Shipped' as fulfilled sales; historical period/status filters should remain clear.
+- **Do not implement yet.** Save this as an intentional product-roadmap item for a future session.
+
 ## Next priorities
 
 1. Owner applies/verifies missing hosted migrations and Auth/Storage settings from authenticated local Codex using the saved handoff. Cloud development does not depend on this.
