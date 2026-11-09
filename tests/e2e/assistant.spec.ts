@@ -1,0 +1,24 @@
+import { test, expect } from '@playwright/test';
+const image = {name:'sale.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')};
+test('assistant attachments, private analysis boundary, and responsive chat',async ({page}) => {
+  await page.goto('/demo');
+  await expect(page.getByText('Fictional sample data, saved in this browser.')).toBeVisible();
+  await page.getByRole('button',{name:'Open AI assistant'}).click();
+  const dialog=page.getByRole('dialog');
+  await expect(dialog.getByRole('heading',{name:'Your Thrift Log assistant'})).toBeVisible();
+  await dialog.getByLabel('Screenshot files').setInputFiles(image);
+  await expect(dialog.getByRole('button',{name:'Remove sale.jpg'})).toBeVisible();
+  await dialog.getByLabel('Message assistant').fill('Log this sale.');
+  await dialog.getByRole('button',{name:'Send',exact:true}).click();
+  await expect(dialog.getByRole('alert')).toContainText('Sign in');
+  const bounds=await dialog.boundingBox();
+  const viewport=page.viewportSize()!;
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(viewport.width+1);
+  await dialog.getByRole('button',{name:'Close dialog'}).click();
+  await page.getByRole('button',{name:'Open AI assistant'}).click();
+  await expect(dialog.getByRole('button',{name:'Remove sale.jpg'})).toBeVisible();
+  await dialog.getByRole('button',{name:'Remove sale.jpg'}).click();
+  await expect(dialog.getByRole('button',{name:'Remove sale.jpg'})).toHaveCount(0);
+  await dialog.getByRole('button',{name:'Clear chat'}).click();
+});

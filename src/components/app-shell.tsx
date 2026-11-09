@@ -39,6 +39,7 @@ import { Insights } from './insights';
 import { Settings } from './settings';
 import { Editor, type EditorTarget } from './editor';
 import { Importer } from './importer';
+import { Assistant } from './assistant';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 import { Badge, Empty } from './shared';
@@ -74,6 +75,7 @@ function Shell({ section, email }: { section: string; email?: string }) {
   const [customEnd, setCustomEnd] = useState('');
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [importing, setImporting] = useState(false);
+  const [assistant, setAssistant] = useState(false);
   const [quick, setQuick] = useState(false);
   const [timerMenu, setTimerMenu] = useState(false);
   const [notifications, setNotifications] = useState(false);
@@ -358,6 +360,15 @@ function Shell({ section, email }: { section: string; email?: string }) {
                 </Button>
                 {quick && (
                   <div className="popover quick-menu">
+                    <button
+                      onClick={() => {
+                        setAssistant(true);
+                        setQuick(false);
+                      }}
+                    >
+                      <CircleHelp size={17} />
+                      AI assistant
+                    </button>
                     <button onClick={() => edit({ kind: 'item' })}>
                       <Package size={17} />
                       Add item
@@ -622,6 +633,12 @@ function Shell({ section, email }: { section: string; email?: string }) {
         />
       )}{' '}
       {importing && <Importer onClose={() => setImporting(false)} />}{' '}
+      <Assistant
+        open={assistant}
+        onOpen={() => setAssistant(true)}
+        onClose={() => setAssistant(false)}
+        scope={demo ? 'demo' : email || 'private'}
+      />
       {notice && (
         <div className="toast" role="status">
           {notice}
