@@ -14,11 +14,12 @@ export async function loadWorkspace(userId: string) {
     'privatePhotoReadPolicy',
     'financialLedger',
     'shipmentStorage',
+    'itemFulfillment',
   ];
   if (
     readinessError ||
     !readiness ||
-    readiness.schemaVersion < 3 ||
+    readiness.schemaVersion < 4 ||
     checks.some((key) => readiness[key] !== true)
   )
     throw new DatabaseReadinessError();

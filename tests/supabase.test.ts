@@ -49,7 +49,8 @@ beforeEach(() => {
     data:
       name === 'verify_thrift_log'
         ? {
-            schemaVersion: 3,
+            schemaVersion: 4,
+            itemFulfillment: true,
             tablesPresent: true,
             rlsEnabled: true,
             clientWritesBlocked: true,
@@ -219,6 +220,6 @@ it('refuses an old database schema instead of pretending to save new ledger reco
   mocks.rpc.mockResolvedValue({ data: { schemaVersion: 2 }, error: null });
   const response = await workspace();
   expect(response.status).toBe(503);
-  expect((await response.json()).error).toContain('202611090003');
+  expect((await response.json()).error).toContain('20261109203443');
   expect(mocks.rpc.mock.calls.map((args) => args[0])).toEqual(['verify_thrift_log']);
 });

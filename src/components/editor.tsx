@@ -317,6 +317,8 @@ export function Editor({ target, onClose }: { target: EditorTarget; onClose: () 
               type,
               status: s('status'),
               fulfillment: s('fulfillment'),
+              amountsConfirmed: f.get('amountsConfirmed') === 'on',
+              itemFulfillments: old?.itemFulfillments,
               payout: s('payout'),
               provenance: old?.provenance || 'Manual entry',
               importKey: old?.importKey || '',
@@ -1050,6 +1052,17 @@ export function Editor({ target, onClose }: { target: EditorTarget; onClose: () 
               hours.
             </p>
           </>
+        )}
+        {target.kind === 'order' && (
+          <label className="check-row">
+            <input
+              type="checkbox"
+              name="amountsConfirmed"
+              defaultChecked={target.value?.amountsConfirmed ?? false}
+            />
+            I confirm the purchase cost and all selling amounts, including any $0 fees or shipping,
+            are known.
+          </label>
         )}
         <div className="form-footer">
           <Button type="button" variant="outline" onClick={onClose}>

@@ -1,3 +1,4 @@
+import { fulfillmentRollup } from './fulfillment-state';
 import { applyOperational } from './operational-commands';
 import { itemIsSold, returnedItemIds } from './ledger';
 import { commandSchema, workspaceSchema, type Command, type Workspace } from './model';
@@ -100,7 +101,39 @@ export function applyCommand(current: Workspace, input: Command): Workspace {
             'This order has dated ledger entries. Reverse or add a dated adjustment instead of rewriting its financial basis.',
           );
       }
+      if (old && o.itemFulfillments === undefined) o.itemFulfillments = old.itemFulfillments;
+      if (old && o.amountsConfirmed === undefined) o.amountsConfirmed = old.amountsConfirmed;
+      if (
+        old &&
+        o.fulfillment !== old.fulfillment &&
+        JSON.stringify(o.itemFulfillments) === JSON.stringify(old.itemFulfillments)
+      )
+        o.itemFulfillments = [];
+      if (o.itemFulfillments?.length) {
+        if (o.status !== 'Completed')
+          throw new Error('Item fulfillment requires a completed order.');
+        if (new Set(o.itemFulfillments.map((e) => e.itemId)).size !== o.itemFulfillments.length)
+          throw new Error('Each item has one fulfillment state.');
+        for (const entry of o.itemFulfillments) {
+          if (!o.lines.some((l) => l.itemId === entry.itemId))
+            throw new Error('Fulfillment item is not in this order.');
+          if (
+            entry.status === 'Unfulfilled'
+              ? entry.date !== null
+              : entry.date !== null &&
+                (Date.parse(entry.date) < Date.parse(o.date) ||
+                  Date.parse(entry.date) > Date.now() + 300000)
+          )
+            throw new Error('Use a valid fulfillment date on or after the sale.');
+        }
+        if (o.fulfillment !== fulfillmentRollup(o))
+          throw new Error('Order fulfillment must agree with its physical items.');
+      }
       const linkedPackage = w.shipments.find((s) => s.orderIds.includes(o.id));
+      if (linkedPackage && o.itemFulfillments?.length)
+        throw new Error(
+          'Update grouped orders through their package. Item-level fulfillment is for orders outside a whole-order package.',
+        );
       if (
         linkedPackage &&
         o.fulfillment !==

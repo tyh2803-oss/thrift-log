@@ -54,7 +54,7 @@ export function readConfiguration(env: SupabaseEnvironment) {
 export class DatabaseReadinessError extends Error {
   constructor() {
     super(
-      'The private database needs all repository migrations through 202611090003 and verified RLS/storage policies. Apply and verify them locally before saving records.',
+      'The private database needs all repository migrations through 20261109203443 and verified RLS/storage policies. Apply and verify them locally before saving records.',
     );
   }
 }

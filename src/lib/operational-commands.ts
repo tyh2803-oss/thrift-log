@@ -163,6 +163,10 @@ export function applyOperational(
       );
     const orders = s.orderIds.map((id) => w.orders.find((o) => o.id === id));
     for (const order of orders) {
+      if (order?.itemFulfillments?.length)
+        throw new Error(
+          'This order has item-level fulfillment. Reset its item statuses before grouping the whole order into a package.',
+        );
       if (!order || order.marketplace !== s.marketplace || order.status !== 'Completed')
         throw new Error('Group recognized orders from one marketplace into a shipment.');
       if (

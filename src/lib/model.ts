@@ -56,6 +56,11 @@ export const listingSchema = z.object({
   format: z.enum(['Fixed price', 'Auction']).default('Fixed price'),
   lastSync: date.nullable().default(null),
 });
+export const itemFulfillmentSchema = z.object({
+  itemId: id,
+  status: z.enum(['Unfulfilled', 'Shipped', 'Delivered', 'Handed over']),
+  date: date.nullable(),
+});
 export const orderSchema = z.object({
   id,
   marketplace: z.enum(marketplaces),
@@ -77,6 +82,8 @@ export const orderSchema = z.object({
   type: z.enum(['Sale', 'Giveaway', 'Tip']),
   status: z.enum(['Completed', 'Cancelled', 'Returned']),
   fulfillment: z.enum(['Unfulfilled', 'Shipped', 'Delivered']),
+  itemFulfillments: z.array(itemFulfillmentSchema).max(500).optional(),
+  amountsConfirmed: z.boolean().optional(),
   payout: z.enum(['Pending', 'Paid']),
   provenance: text.default('Manual entry'),
   importKey: text.default(''),
@@ -187,6 +194,8 @@ export const importSchema = z.object({
   recordIds: z.array(id).max(1000),
 });
 export const settingsSchema = z.object({
+  pipelineVisible: z.boolean().default(true),
+  estimatedSellingExpenses: cents.nullable().default(null),
   currency: z.literal('USD').default('USD'),
   timezone: z.string().max(100).default('America/New_York'),
   theme: z.enum(['light', 'dark']).default('light'),

@@ -32,6 +32,15 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261109203443_inventory_pipeline_fulfillment.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
 });
 afterAll(async () => {
   await db?.close();
@@ -100,7 +109,8 @@ it('verifies all application RLS and restricted RPC grants under the actual serv
       'select public.verify_thrift_log() as checks',
     );
     expect(result.rows[0].checks).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
+      itemFulfillment: true,
       financialLedger: true,
       shipmentStorage: true,
       tablesPresent: true,
@@ -367,4 +377,61 @@ it('round-trips new assistant inventory and listings atomically without changing
     activeListings: 3,
   });
   expect(loaded.orders).toHaveLength(0);
+});
+
+it('persists partial item fulfillment and amount confirmation with the existing revision transaction', async () => {
+  const { assistantWorkspace } = await import('./helpers/assistant');
+  const { orderSchema } = await import('../src/lib/model');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { setItemFulfillment } = await import('../src/lib/fulfillment-state');
+  const { inventoryPipeline } = await import('../src/lib/pipeline');
+  const owner = '66666666-6666-4666-8666-666666666666';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  let w = assistantWorkspace();
+  w.items.push({ ...w.items[0], id: crypto.randomUUID(), sku: 'SECOND' });
+  const order = orderSchema.parse({
+    id: crypto.randomUUID(),
+    marketplace: 'Vinted',
+    date: '2026-11-01T12:00:00Z',
+    lines: w.items.map((i) => ({ itemId: i.id, price: 4500, costBasis: i.cost })),
+    discount: 0,
+    shippingCollected: 0,
+    fees: 400,
+    processing: 0,
+    shipping: 300,
+    packaging: 0,
+    other: 0,
+    refund: 0,
+    feeCredit: 0,
+    adjustment: 0,
+    tips: 0,
+    type: 'Sale',
+    status: 'Completed',
+    fulfillment: 'Unfulfilled',
+    payout: 'Pending',
+    amountsConfirmed: true,
+  });
+  w = applyCommand(w, { type: 'order', value: order });
+  w = applyCommand(w, {
+    type: 'order',
+    value: setItemFulfillment(w.orders[0], w.items[0].id, 'Shipped', '2026-11-02T12:00:00Z'),
+  });
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(w)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(loaded.orders[0].amountsConfirmed).toBe(true);
+  expect(loaded.orders[0].itemFulfillments).toHaveLength(2);
+  expect(inventoryPipeline(loaded).groups.sold.count).toBe(1);
+  expect(inventoryPipeline(loaded).groups.shipped.count).toBe(1);
+  const invalid = structuredClone(loaded);
+  invalid.orders[0].itemFulfillments![0].itemId = crypto.randomUUID();
+  await expect(
+    db.query('select public.commit_workspace($1,1,$2::jsonb)', [owner, JSON.stringify(invalid)]),
+  ).rejects.toThrow('invalid_item_fulfillment');
+  const latest = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(latest.revision).toBe(1);
+  expect(latest.orders[0].itemFulfillments).toEqual(loaded.orders[0].itemFulfillments);
 });

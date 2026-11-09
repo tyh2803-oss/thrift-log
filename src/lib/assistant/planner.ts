@@ -238,6 +238,7 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         fulfillment: 'Unfulfilled',
         payout: 'Pending',
         provenance: 'Screenshot assistant',
+        amountsConfirmed: saleAmounts.every((key) => r[key] !== null),
         importKey: `assistant:${row.id}`,
       });
       if (parsed.success) {
