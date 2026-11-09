@@ -32,3 +32,52 @@ export const extractedSale = (patch: Partial<ExtractedRecord> = {}): ExtractedRe
   warnings: [],
   ...patch,
 });
+
+import { itemSchema, emptyWorkspace, type Workspace } from '../../src/lib/model';
+export function assistantWorkspace(): Workspace {
+  const w = emptyWorkspace();
+  w.items = [
+    itemSchema.parse({
+      id: '11111111-1111-4111-8111-111111111111',
+      sku: 'JACKET-1',
+      title: 'Blue Carhartt Workwear Jacket',
+      brand: 'Carhartt',
+      size: 'L',
+      color: 'Blue',
+      cost: 1200,
+      asking: 5500,
+      purchasedAt: '2026-10-01T12:00:00Z',
+      status: 'Listed',
+      createdAt: '2026-10-01T12:00:00Z',
+    }),
+  ];
+  w.listings = [
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      itemId: w.items[0].id,
+      marketplace: 'Vinted',
+      externalId: 'listing-1',
+      url: 'https://vinted.test/items/1',
+      price: 4500,
+      originalPrice: 5000,
+      listedAt: '2026-10-02T12:00:00Z',
+      status: 'Active',
+      format: 'Fixed price',
+      lastSync: null,
+    },
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      itemId: w.items[0].id,
+      marketplace: 'Depop',
+      externalId: 'depop-1',
+      url: '',
+      price: 5500,
+      originalPrice: 5500,
+      listedAt: '2026-10-02T12:00:00Z',
+      status: 'Active',
+      format: 'Fixed price',
+      lastSync: null,
+    },
+  ];
+  return w;
+}

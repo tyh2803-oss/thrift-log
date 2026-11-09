@@ -5,14 +5,11 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Paperclip, Send, X, Trash2 } from 'lucide-react';
 import { useWorkspace } from '@/lib/use-workspace';
 import { prepareImage } from '@/lib/assistant/images';
-import {
-  screenshotSchema,
-  DEFAULT_BATCH_LIMIT,
-  BATCH_BYTES_LIMIT,
-  type Screenshot,
-} from '@/lib/assistant/schema';
+import { screenshotSchema, DEFAULT_BATCH_LIMIT, BATCH_BYTES_LIMIT } from '@/lib/assistant/schema';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
+import { createBatch, type DraftBatch } from '@/lib/assistant/drafts';
+import { AssistantReview } from './assistant-review';
 
 type Attachment = { id: string; file: File; url: string };
 type Message = { id: string; role: 'user' | 'assistant'; text: string; images?: Attachment[] };
@@ -27,11 +24,11 @@ export function Assistant({
   onClose: () => void;
   scope: string;
 }) {
-  const { demo } = useWorkspace();
+  const { demo, w } = useWorkspace();
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [screenshots, setScreenshots] = useState<Screenshot[]>([]);
+  const [batch, setBatch] = useState<DraftBatch | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [config, setConfig] = useState<{ enabled: boolean; batchLimit: number } | null>(null);
@@ -101,7 +98,7 @@ export function Assistant({
     urls.current.clear();
     setAttachments([]);
     setMessages([]);
-    setScreenshots([]);
+    setBatch(null);
     setError('');
   }
   async function send() {
@@ -136,7 +133,7 @@ export function Assistant({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       const extracted = screenshotSchema.array().parse(data.screenshots);
-      setScreenshots(extracted);
+      setBatch(createBatch(extracted, w));
       setMessages((old) => [
         ...old,
         { id: crypto.randomUUID(), role: 'user', text: prompt, images: attachments },
@@ -219,18 +216,7 @@ export function Assistant({
                   )}
                 </div>
               ))}
-              {screenshots.map((s) => (
-                <div key={s.hash} className="assistant-extraction">
-                  <strong>{s.name}</strong>
-                  {s.extraction.records.map((r, i) => (
-                    <p key={i}>
-                      {r.lines.map((l) => l.title || 'Untitled item').join(', ')} ·{' '}
-                      {r.marketplace || 'Marketplace unknown'} · {r.status}
-                    </p>
-                  ))}
-                  <small>Extracted screenshot facts · Not saved</small>
-                </div>
-              ))}
+              {batch && <AssistantReview batch={batch} />}
               {busy && <p role="status">Reading screenshots…</p>}
               <div ref={end} />
             </div>
