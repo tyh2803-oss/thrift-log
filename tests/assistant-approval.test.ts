@@ -221,3 +221,19 @@ it('approves five unknown active listings in one Supabase RPC and replays withou
   expect((await replay.json()).replayed).toBe(true);
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
 });
+
+import { applyBatchCost } from '../src/lib/assistant/review-bulk';
+it('accepts four cost-only new listings through one Supabase transaction with no routine confirmation flags', async () => {
+  const w = emptyWorkspace(),
+    initial = fiveUnknownListings(w);
+  initial.rows = initial.rows.slice(0, 4);
+  const batch = applyBatchCost(w, initial, 'same', '5');
+  mocks.load.mockResolvedValue(w);
+  expect(batch.rows.every((r) => !r.matches[0].newItem!.confirmedDistinct)).toBe(true);
+  const response = await POST(request({ batch, rowIds: batch.rows.map((r) => r.id) }));
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.workspace.items).toHaveLength(4);
+  expect(body.workspace.listings).toHaveLength(4);
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+});

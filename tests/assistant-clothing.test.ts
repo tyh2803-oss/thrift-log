@@ -1,3 +1,4 @@
+import { matchInventory } from '../src/lib/assistant/matching';
 import { it, expect, vi } from 'vitest';
 import sharp from 'sharp';
 vi.mock('server-only', () => ({}));
@@ -124,6 +125,9 @@ it('saves corrected visual detail and original text only through approved comman
       confirmedDistinct: true,
     },
   };
+  batch.rows[0].matches[0].dismissedCandidateIds = matchInventory(w, record, record.lines[0]).map(
+    (c) => c.item.id,
+  );
   const before = JSON.stringify(w);
   expect(previewBatch(w, batch)[0].ready).toBe(true);
   expect(JSON.stringify(w)).toBe(before);

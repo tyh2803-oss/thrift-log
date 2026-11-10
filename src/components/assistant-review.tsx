@@ -1,4 +1,8 @@
 'use client';
+import { createPortal } from 'react-dom';
+import { BatchTools } from './assistant-batch-tools';
+import { CompactListing } from './assistant-compact-listing';
+import { updateReviewRow } from '@/lib/assistant/review-bulk';
 import { Trash2 } from 'lucide-react';
 import { LifecycleFields, eventNames } from './assistant-lifecycle-fields';
 import { blockingWarnings } from '@/lib/assistant/warnings';
@@ -25,8 +29,10 @@ export function AssistantReview({
   busy,
   onView,
   sourceUrls,
+  footerHost,
 }: {
   sourceUrls?: ReadonlyMap<string, string>;
+  footerHost?: HTMLElement | null;
   batch: DraftBatch;
   onChange: (b: DraftBatch) => void;
   onApprove: (ids: string[]) => void;
@@ -37,7 +43,7 @@ export function AssistantReview({
   const { w, refresh } = useWorkspace();
   const previews = previewBatch(w, batch);
   const ready = previews.filter((p) => p.row.included && p.ready);
-  const included = previews.filter((p) => p.row.included);
+  const unresolved = previews.filter((p) => p.row.included && !p.ready);
   const [confirmClear, setConfirmClear] = useState(false);
   const stale = batch.revision !== w.revision;
   const reviewRef = useRef<HTMLElement>(null);
@@ -48,7 +54,6 @@ export function AssistantReview({
       card.querySelector<HTMLElement>('[data-review-missing="true"]:not(:disabled)') ||
       card.querySelector<HTMLElement>('[data-review-issues]') ||
       card;
-    // A malformed optional detail can still block saving; reveal it before focusing.
     for (
       let parent = target.parentElement;
       parent && parent !== card;
@@ -58,110 +63,136 @@ export function AssistantReview({
     target.scrollIntoView({ block: 'center', behavior: 'instant' });
     target.focus({ preventScroll: true });
   }
-  function change(row: DraftRow) {
-    onChange({ ...batch, rows: batch.rows.map((r) => (r.id === row.id ? row : r)) });
-  }
-  return (
-    <section ref={reviewRef} aria-label="Import batch review" className="assistant-review">
-      <h3>{batch.rows.length} records found</h3>
-      <div className="assistant-review-progress">
-        <strong aria-live="polite">
-          {ready.length} ready · {included.length - ready.length} unresolved
+  const approve = () => onApprove(ready.map((p) => p.row.id));
+  const asking = new Map<string, number>();
+  for (const p of ready.filter((p) => p.row.facts.kind === 'listing'))
+    p.row.matches.forEach((m, i) => {
+      const id = m.itemId || m.newItem?.id;
+      const price = p.row.facts.lines[i]?.price;
+      if (id && price != null) asking.set(id, Math.min(asking.get(id) ?? price, price));
+    });
+  const pendingItems = [
+    ...new Map(
+      batch.rows.flatMap((row) =>
+        row.matches.flatMap((match, i) =>
+          match.newItem
+            ? [
+                [
+                  match.newItem.id,
+                  {
+                    id: match.newItem.id,
+                    title: row.facts.lines[i]?.title || match.newItem.sku,
+                    match,
+                  },
+                ] as const,
+              ]
+            : [],
+        ),
+      ),
+    ).values(),
+  ];
+  const footer = (
+    <div className="compact-approval-footer">
+      <div aria-live="polite">
+        <strong>
+          {asking.size &&
+          asking.size !== ready.length &&
+          ready.every((p) => p.row.facts.kind === 'listing')
+            ? `${asking.size} physical items · ${ready.length} listings ready`
+            : `${ready.length} ${ready.length === 1 ? 'item' : 'items'} ready`}
         </strong>
-        {!!(included.length - ready.length) && (
-          <Button disabled={busy} variant="outline" onClick={reviewMissing}>
-            Review missing information
-          </Button>
-        )}
-        <small>
-          Complete the fields and new-item confirmations below, then approve the ready records
-          together.
-        </small>
+        <span> · {money([...asking.values()].reduce((a, b) => a + b, 0))} asking value</span>
+        {!!unresolved.length && <small>{unresolved.length} unresolved · stay pending</small>}
       </div>
-      {batch.screenshots.flatMap((s) =>
-        (s.extraction.notes || []).map((note, i) => (
-          <p className="hint" key={`${s.hash}-${i}`}>
-            {note}
-          </p>
-        )),
+      <Button disabled={busy || stale || !ready.length} onClick={approve}>
+        {busy ? 'Saving…' : `Approve All (${ready.length})`}
+      </Button>
+    </div>
+  );
+  return (
+    <section
+      ref={reviewRef}
+      aria-label="Import batch review"
+      className="assistant-review compact-review"
+    >
+      <BatchTools
+        batch={batch}
+        w={w}
+        busy={busy}
+        onChange={onChange}
+        onClear={() => setConfirmClear(true)}
+        onReview={reviewMissing}
+        onApprove={approve}
+        readyCount={stale ? 0 : ready.length}
+        unresolvedCount={unresolved.length}
+      />
+      {stale && (
+        <div className="error-box">
+          <p>Workspace changed. Review the refreshed preview.</p>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => onChange({ ...batch, revision: w.revision })}
+          >
+            Use updated preview
+          </Button>
+        </div>
+      )}
+      {confirmClear && (
+        <div role="alert" className="assistant-clear-confirm">
+          <p>Discard all pending proposals? Saved records stay intact.</p>
+          <Button variant="outline" disabled={busy} onClick={onCancel}>
+            Discard pending drafts
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirmClear(false)}>
+            Keep drafts
+          </Button>
+        </div>
       )}
       {batch.context && batch.rows.length > 1 && (
-        <p className="hint">
-          Choose the listing card for the selected inventory item. Other cards remain excluded; none
-          will create new inventory.
-        </p>
+        <small>
+          Choose the listing for the selected inventory item; other cards stay excluded.
+        </small>
       )}
-      {previews.map((p, index) => (
-        <ReviewRow
-          key={p.row.id}
-          preview={p}
-          source={batch.screenshots.find((s) => s.hash === p.row.sourceHash)}
-          contextItemId={batch.context?.itemId}
-          imageUrl={sourceUrls?.get(p.row.sourceHash)}
-          index={index}
-          onChange={change}
-          onRemove={() => onChange(removeDraft(batch, p.row.id))}
-          busy={busy}
-          onView={onView}
-        />
-      ))}
-      <div className="assistant-batch-totals">
-        <strong>
-          {ready.length} ready · {included.length - ready.length} unresolved ·{' '}
-          {previews.length - included.length} excluded
-        </strong>
-        <p>
-          Confirmed sales revenue: {money(ready.reduce((n, p) => n + (p.totals?.revenue || 0), 0))}
-        </p>
-        <p>
-          Ready sales purchase costs:{' '}
-          {money(
-            ready
-              .filter((p) => p.row.facts.kind === 'sale')
-              .reduce((n, p) => n + p.costs.reduce<number>((a, c) => a + (c ?? 0), 0), 0),
-          )}
-        </p>
-        <p>Ready sales profit: {money(ready.reduce((n, p) => n + (p.totals?.profit || 0), 0))}</p>
-        {stale && (
-          <div className="error-box">
-            <p>Your workspace changed. Review the current preview before approving.</p>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => onChange({ ...batch, revision: w.revision })}
-            >
-              Use updated preview
-            </Button>
-          </div>
+      {previews.map((p, index) => {
+        const props = {
+          key: p.row.id,
+          preview: p,
+          source: batch.screenshots.find((s) => s.hash === p.row.sourceHash),
+          contextItemId: batch.context?.itemId,
+          imageUrl: sourceUrls?.get(p.row.sourceHash),
+          index,
+          onChange: (row: DraftRow) => onChange(updateReviewRow(batch, row)),
+          onRemove: () => onChange(removeDraft(batch, p.row.id)),
+          busy,
+          onView,
+        };
+        return p.row.facts.kind === 'listing' ? (
+          <CompactListing {...props} w={w} pendingItems={pendingItems} key={p.row.id} />
+        ) : (
+          <ReviewRow {...props} key={p.row.id} />
+        );
+      })}
+      {previews.some((p) => p.row.facts.kind !== 'listing') && (
+        <details>
+          <summary>Batch financial summary</summary>
+          <p>
+            Confirmed sales revenue:{' '}
+            {money(ready.reduce((n, p) => n + (p.totals?.revenue || 0), 0))}
+          </p>
+          <p>Ready sales profit: {money(ready.reduce((n, p) => n + (p.totals?.profit || 0), 0))}</p>
+        </details>
+      )}
+      <details className="compact-batch-diagnostics">
+        <summary>Batch sources and refresh</summary>
+        {batch.screenshots.flatMap((s) =>
+          (s.extraction.notes || []).map((note, i) => <p key={`${s.hash}-${i}`}>{note}</p>),
         )}
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refresh()}>
           Refresh workspace
         </Button>
-        <small>Only included, ready records will be saved. Unresolved records stay pending.</small>
-      </div>
-      <div className="actions assistant-approval-actions">
-        <Button
-          disabled={busy || stale || !ready.length}
-          onClick={() => onApprove(ready.map((p) => p.row.id))}
-        >
-          {busy ? 'Saving…' : `Approve All Ready (${ready.length})`}
-        </Button>
-        <Button variant="outline" disabled={busy} onClick={() => setConfirmClear(true)}>
-          Clear All
-        </Button>
-        {confirmClear && (
-          <div className="assistant-clear-confirm" role="alert">
-            <p>Discard all pending drafts? Saved inventory and accounting records stay intact.</p>
-            <Button variant="outline" disabled={busy} onClick={onCancel}>
-              Discard pending drafts
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirmClear(false)}>
-              Keep drafts
-            </Button>
-          </div>
-        )}
-      </div>
+      </details>
+      {footerHost ? createPortal(footer, footerHost) : footer}
     </section>
   );
 }

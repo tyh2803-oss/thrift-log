@@ -69,3 +69,14 @@ export function matchInventory(
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 }
+
+/** Shared brand/size alone is useful for search, but insufficient to block a new physical draft. */
+export function plausibleInventoryMatches(
+  w: Workspace,
+  record: ExtractedRecord,
+  line: ExtractedLine,
+) {
+  return matchInventory(w, record, line).filter(
+    (candidate) => candidate.exact || candidate.score >= 55,
+  );
+}

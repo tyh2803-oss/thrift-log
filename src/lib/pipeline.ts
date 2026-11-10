@@ -119,7 +119,13 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
       const audit = JSON.parse(receipt.rawCsv);
       const facts = audit.corrected;
       for (const m of audit.matches || []) {
-        if (m.newItem?.cost === 0 && m.newItem.confirmedDistinct) freeCosts.add(m.newItem.id);
+        if (
+          m.newItem?.cost === 0 &&
+          (m.newItem.confirmedDistinct ||
+            (audit.authorization?.kind === 'final-approval' &&
+              audit.authorization.newItemIds?.includes(m.newItem.id)))
+        )
+          freeCosts.add(m.newItem.id);
         if (m.itemId && (m.confirmZeroCost || m.costOverride === 0)) freeCosts.add(m.itemId);
       }
       const o = w.orders.find((o) => o.id === receipt.id);

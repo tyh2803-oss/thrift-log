@@ -13,11 +13,13 @@ export function ListingInventory({
   w,
   contextItemId,
   onChange,
+  pendingItems = [],
 }: {
   row: DraftRow;
   index: number;
   w: Workspace;
   contextItemId?: string;
+  pendingItems?: { id: string; title: string; match: DraftRow['matches'][number] }[];
   onChange: (row: DraftRow) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -51,7 +53,11 @@ export function ListingInventory({
               newItem:
                 itemId || contextItemId
                   ? null
-                  : newInventoryDraft(row.facts.lines[index].sku, m.purchaseCost ?? null),
+                  : newInventoryDraft(
+                      row.facts.lines[index].sku,
+                      m.purchaseCost ?? null,
+                      w.settings.timezone,
+                    ),
               costOverride: undefined,
               costCorrection: false,
               costInput: undefined,
@@ -113,6 +119,42 @@ export function ListingInventory({
             ))}
         </>
       )}
+      {!contextItemId && match.newItem && pendingItems.some((p) => p.id !== match.newItem!.id) && (
+        <label className="field">
+          <span>Same physical item as another proposal</span>
+          <select
+            value=""
+            onChange={(e) => {
+              const target = pendingItems.find((p) => p.id === e.target.value);
+              if (!target) return;
+              onChange({
+                ...row,
+                matches: row.matches.map((m, i) =>
+                  i === index
+                    ? {
+                        ...m,
+                        newItem: structuredClone(target.match.newItem),
+                        costInput: target.match.costInput,
+                        purchaseCost: target.match.purchaseCost,
+                        costAllocation: target.match.costAllocation,
+                        dismissedCandidateIds: target.match.dismissedCandidateIds,
+                      }
+                    : m,
+                ),
+              });
+            }}
+          >
+            <option value="">Keep separate physical item</option>
+            {pendingItems
+              .filter((p) => p.id !== match.newItem!.id)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
       {!contextItemId && !selected && !match.newItem && (
         <Button
           type="button"
@@ -123,32 +165,32 @@ export function ListingInventory({
           Create new physical item draft
         </Button>
       )}
-      {match.newItem && (
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={match.newItem.confirmedDistinct}
-            data-review-missing={!match.newItem.confirmedDistinct}
-            onChange={(e) =>
+      {match.newItem &&
+        candidates.some(
+          (c) => !c.exact && c.score >= 55 && !match.dismissedCandidateIds?.includes(c.item.id),
+        ) && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
               onChange({
                 ...row,
                 matches: row.matches.map((m, i) =>
                   i === index
                     ? {
                         ...m,
-                        newItem: { ...m.newItem!, confirmedDistinct: e.target.checked },
+                        dismissedCandidateIds: candidates
+                          .filter((c) => !c.exact)
+                          .map((c) => c.item.id),
                       }
                     : m,
                 ),
               })
             }
-          />
-          I checked inventory and confirm this is a new physical item.
-        </label>
-      )}
-      {match.newItem && (
-        <small>Review possible matches before confirming. Nothing is created until approval.</small>
-      )}
+          >
+            Create a different physical item
+          </Button>
+        )}
     </div>
   );
 }

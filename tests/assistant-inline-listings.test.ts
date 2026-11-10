@@ -1,3 +1,4 @@
+import { matchInventory } from '../src/lib/assistant/matching';
 import { it, expect } from 'vitest';
 import { assistantWorkspace, extractedSale, extractedLine } from './helpers/assistant';
 import { createBatch, batchSchema } from '../src/lib/assistant/drafts';
@@ -73,6 +74,9 @@ it('retains cost entry before explicit new-item creation and rejects incomplete/
     cost: row.matches[0].purchaseCost!,
     confirmedDistinct: true,
   };
+  row.matches[0].dismissedCandidateIds = matchInventory(w, row.facts, row.facts.lines[0]).map(
+    (c) => c.item.id,
+  );
   batch.rows[0] = row;
   expect(previewBatch(w, batch)[0].ready).toBe(true);
   row = changeListingCost(w, row, 0, '');

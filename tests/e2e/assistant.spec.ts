@@ -81,6 +81,7 @@ test('assistant draft corrections, conflict recovery, approval, and reload witho
     animations: 'disabled',
     path: `test-results/assistant-review-${page.viewportSize()!.width}.png`,
   });
+  await dialog.getByText('Message assistant / add screenshots', { exact: true }).click();
   await dialog.getByLabel('Message assistant').fill('The first item sold for $35.');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(dialog.getByText('Net profit: $16.00', { exact: true })).toBeVisible();
@@ -99,16 +100,17 @@ test('assistant draft corrections, conflict recovery, approval, and reload witho
     w.revision++;
     localStorage.setItem(key, JSON.stringify(w));
   });
-  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (1)', exact: true }).click();
   await expect(dialog.getByRole('alert')).toContainText('workspace changed');
   expect(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!).orders.length,
     ),
   ).toBe(0);
+  await dialog.getByText('Batch sources and refresh', { exact: true }).click();
   await dialog.getByRole('button', { name: 'Refresh workspace', exact: true }).click();
   await dialog.getByRole('button', { name: 'Use updated preview', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (1)', exact: true }).click();
   await expect(dialog.getByText(/Saved 1 approved record/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Mark Shipped', exact: true }).click();
   await expect(dialog.getByText(/Fulfillment saved/)).toBeVisible();
@@ -175,23 +177,17 @@ test('listing review creates new inventory only after cost entry and updates exi
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog');
   const rows = dialog.locator('.assistant-extraction');
+  await rows.nth(1).locator('.compact-listing-details > summary').click();
   await expect(rows.nth(1).getByText('Suggested new physical item · Not saved')).toBeVisible();
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (1)', exact: true })).toBeEnabled();
   await rows.nth(1).getByLabel('Purchase Cost ($)', { exact: true }).fill('15');
   await rows.nth(1).getByLabel('Acquisition date, line 1', { exact: true }).fill('2026-10-02');
-  await rows
-    .nth(1)
-    .getByText('I checked inventory and confirm this is a new physical item.')
-    .click();
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }),
-  ).toBeEnabled();
+
+  await expect(dialog.getByRole('button', { name: 'Approve All (2)', exact: true })).toBeEnabled();
   expect(
     await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!).items.length),
   ).toBe(1);
-  await dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (2)', exact: true }).click();
   await expect(dialog.getByText(/Saved 2 approved records/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Close dialog' }).click();
   await page
@@ -218,9 +214,7 @@ test('listing review creates new inventory only after cost entry and updates exi
   );
   await page.reload();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (0)', exact: true })).toBeDisabled();
 });
 
 test('clothing cards expose evidence, editable vintage and uncertain marketplace without saving', async ({
@@ -285,37 +279,31 @@ test('clothing cards expose evidence, editable vintage and uncertain marketplace
   await expect(rows.nth(0)).toContainText('Collegiate pullover jacket');
   await expect(rows.nth(0)).toContainText('Potentially vintage');
   await expect(rows.nth(0)).toContainText('Age unverified');
-  await expect(rows.nth(0).getByRole('img')).toHaveCount(1);
+  await expect(rows.nth(0).locator('.assistant-listing-thumbnail img')).toHaveCount(1);
+  await rows.nth(0).locator('.compact-listing-details > summary').click();
+  await rows.nth(0).getByText('Source evidence and diagnostics', { exact: true }).click();
   await rows.nth(0).getByText('Visual evidence and original text', { exact: true }).click();
   await expect(rows.nth(0)).toContainText('Pullover silhouette visible');
   await expect(rows.nth(0)).toContainText('Original card text');
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
-  await rows.nth(0).getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Approve All (0)', exact: true })).toBeDisabled();
+
   await rows
     .nth(0)
     .getByRole('combobox', { name: 'Marketplace', exact: true })
     .selectOption('Vinted');
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (1)', exact: true })).toBeEnabled();
   await rows.nth(0).getByText('Edit additional details', { exact: true }).click();
   await rows
     .nth(0)
     .getByRole('combobox', { name: 'Vintage classification', exact: true })
     .selectOption('Vintage confirmed');
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (1)', exact: true })).toBeEnabled();
   await expect(rows.nth(0)).toContainText('Potentially vintage');
   await rows
     .nth(0)
     .getByRole('combobox', { name: 'Vintage classification', exact: true })
     .selectOption('Insufficient evidence');
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (1)', exact: true })).toBeEnabled();
   await page.screenshot({
     animations: 'disabled',
     path: `test-results/clothing-review-${page.viewportSize()!.width}.png`,
@@ -369,7 +357,8 @@ test('inline listing costs, prices, marketplaces and details remain independent 
     'inputmode',
     'decimal',
   );
-  await expect(first).toContainText('Potential gross profit: Cost needed');
+  await expect(first).toContainText('Est. gross profit');
+  await first.locator('.compact-listing-details > summary').click();
   await first.getByLabel('Purchase Cost ($)', { exact: true }).fill('13.27');
   await first.getByLabel('Listing Price ($)', { exact: true }).fill('45.50');
   await first.getByRole('combobox', { name: 'Marketplace', exact: true }).selectOption('eBay');
@@ -377,6 +366,7 @@ test('inline listing costs, prices, marketplaces and details remain independent 
   await expect(first).toContainText('Estimated net profit: $29.73');
   await expect(second.getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('');
   await second.getByLabel('Purchase Cost ($)', { exact: true }).fill('0');
+  await second.locator('.compact-listing-details > summary').click();
   await second.getByLabel('Listing Price ($)', { exact: true }).fill('5.01');
   await second.getByRole('combobox', { name: 'Marketplace', exact: true }).selectOption('Whatnot');
   await expect(second).toContainText('Potential gross profit: $5.01');
@@ -387,21 +377,14 @@ test('inline listing costs, prices, marketplaces and details remain independent 
   // New drafts are automatic; physical identity still requires explicit confirmation.
   for (const row of [first, second]) {
     await row.getByLabel('Acquisition date, line 1', { exact: true }).fill('2026-10-02');
-    await row
-      .getByText('I checked inventory and confirm this is a new physical item.', { exact: true })
-      .click();
   }
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (2)', exact: true })).toBeEnabled();
   await first.getByLabel('Purchase Cost ($)', { exact: true }).fill('1.234');
   await expect(first.getByLabel('Purchase Cost ($)', { exact: true })).toHaveAttribute(
     'aria-invalid',
     'true',
   );
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (1)', exact: true })).toBeEnabled();
   await first.getByLabel('Purchase Cost ($)', { exact: true }).fill('13.27');
   await page.reload();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
@@ -411,15 +394,16 @@ test('inline listing costs, prices, marketplaces and details remain independent 
   expect(before).toEqual(w);
   const fits = await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth);
   expect(fits).toBe(true);
-  await first.getByRole('button', { name: 'Skip', exact: true }).scrollIntoViewIfNeeded();
+  await first.locator('.compact-listing-details > summary').click();
+  await expect(first.getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('13.27');
   await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }),
+    dialog.getByRole('button', { name: 'Approve All (2)', exact: true }),
   ).toBeInViewport();
   await page.screenshot({
     animations: 'disabled',
     path: `test-results/inline-listings-${page.viewportSize()!.width}.png`,
   });
-  await dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (2)', exact: true }).click();
   await expect(dialog.getByText(/Saved 2 approved records/)).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
   expect(saved.items).toHaveLength(3);
@@ -485,9 +469,9 @@ test('batch trash and confirmed Clear All discard only drafts and partial approv
     rows = dialog.locator('.assistant-extraction');
   await expect(rows).toHaveCount(3);
   await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
+    dialog.getByRole('button', { name: 'Approve All (1)', exact: true }),
   ).toBeInViewport();
-  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (1)', exact: true }).click();
   await expect(rows).toHaveCount(2);
   const current = await page.evaluate(() => ({
     w: JSON.parse(localStorage.getItem('thrift-log.demo.v1')!),
@@ -496,17 +480,18 @@ test('batch trash and confirmed Clear All discard only drafts and partial approv
   expect(current.b.revision).toBe(current.w.revision);
   expect(current.w.items).toHaveLength(1);
   expect(current.w.listings[0].price).toBe(4800);
+  await dialog.getByText('Message assistant / add screenshots', { exact: true }).click();
   await dialog.getByLabel('Message assistant').fill('The first item cost me $8.');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(rows.nth(0).getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('8');
   await dialog.getByLabel('Message assistant').fill('Approve everything');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(dialog.getByText(/0 records are ready/)).toBeVisible();
+  await expect(dialog.getByText(/1 records are ready/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Remove pending record 1', exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('Pending jeans');
   await dialog.getByRole('button', { name: 'Clear All', exact: true }).click();
-  await expect(dialog.getByText(/Discard all pending drafts/)).toBeVisible();
+  await expect(dialog.getByText(/Discard all pending proposals/)).toBeVisible();
   await dialog.getByRole('button', { name: 'Keep drafts', exact: true }).click();
   await expect(rows).toHaveCount(1);
   await dialog.getByRole('button', { name: 'Clear All', exact: true }).click();
@@ -557,9 +542,7 @@ test('mixed sale and shipment drafts approve together and create one physical sa
   await page.reload();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog');
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (2)', exact: true })).toBeEnabled();
   await expect(dialog.getByRole('button', { name: 'Mark Shipped', exact: true })).toHaveCount(0);
   const order = dialog.getByRole('combobox', { name: 'Existing order', exact: true });
   await expect(order).toHaveValue(batch.rows[1].id);
@@ -568,7 +551,7 @@ test('mixed sale and shipment drafts approve together and create one physical sa
       () => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!).orders.length,
     ),
   ).toBe(0);
-  await dialog.getByRole('button', { name: 'Approve All Ready (2)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (2)', exact: true }).click();
   await expect(dialog.getByText(/Saved 2 approved records/)).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
   expect(saved.orders).toHaveLength(1);
@@ -600,30 +583,9 @@ test('five unknown listing screenshots can be completed inline and approved toge
   const dialog = page.getByRole('dialog'),
     rows = dialog.locator('.assistant-extraction');
   await expect(rows).toHaveCount(5);
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
-  const shortcut = dialog.getByRole('button', { name: 'Review missing information', exact: true });
-  await shortcut.click();
-  await expect(
-    rows.first().getByRole('checkbox', {
-      name: 'I checked inventory and confirm this is a new physical item.',
-    }),
-  ).toBeFocused();
-  for (let index = 0; index < 5; index++) {
-    const row = rows.nth(index);
-    await expect(row.getByText('To become Ready:', { exact: true })).toBeVisible();
-    await row
-      .getByRole('checkbox', {
-        name: 'I checked inventory and confirm this is a new physical item.',
-      })
-      .check();
-    await row.getByLabel('Acquisition date, line 1', { exact: true }).fill('2026-10-01');
-  }
-  // Dates and confirmations alone must never turn missing costs into free inventory.
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (0)', exact: true })).toBeDisabled();
+  const shortcut = dialog.getByRole('button', { name: /Review unresolved/ });
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0);
   await shortcut.click();
   await expect(rows.first().getByLabel('Purchase Cost ($)', { exact: true })).toBeFocused();
   for (let index = 0; index < 5; index++) {
@@ -640,9 +602,7 @@ test('five unknown listing screenshots can be completed inline and approved toge
       ).toBeFocused();
     }
   }
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (5)', exact: true }),
-  ).toBeEnabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (5)', exact: true })).toBeEnabled();
   await expect(dialog.locator('.assistant-readiness')).toHaveCount(0);
   expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(
@@ -655,7 +615,7 @@ test('five unknown listing screenshots can be completed inline and approved toge
   // Pending edits survive reload without opening Edit or any nested detail menu.
   await page.reload();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
-  await dialog.getByRole('button', { name: 'Approve All Ready (5)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (5)', exact: true }).click();
   await expect(dialog.getByText(/Saved 5 approved records/)).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
   expect(saved.items).toHaveLength(5);
@@ -708,8 +668,9 @@ test('inline inventory suggestions reuse a physical item and missing-information
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog'),
     row = dialog.locator('.assistant-extraction');
-  await expect(row.getByText('Suggested new physical item · Not saved')).toBeVisible();
-  await row.getByRole('button', { name: /Use possible match:/ }).click();
+  await expect(row.getByText('Possible existing item', { exact: true })).toBeVisible();
+  await row.getByRole('button', { name: `Use ${w.items[0].sku}`, exact: true }).click();
+  await row.locator('.compact-listing-details > summary').click();
   await expect(row.getByLabel('Acquisition date, line 1', { exact: true })).toHaveCount(0);
   await expect(row.getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('12');
   await expect(row.getByLabel('Purchase Cost ($)', { exact: true })).toHaveAttribute(
@@ -722,13 +683,11 @@ test('inline inventory suggestions reuse a physical item and missing-information
   const date = row.getByLabel('Listing date (workspace timezone)', { exact: true });
   await date.fill('invalid date');
   await row.getByText('Edit additional details', { exact: true }).click();
-  await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
-  await dialog.getByRole('button', { name: 'Review missing information', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Approve All (0)', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Review unresolved/ }).click();
   await expect(date).toBeFocused();
   await date.fill(''); // Original listing date is optional.
-  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All (1)', exact: true }).click();
   await expect(dialog.getByText(/Saved 1 approved record/)).toBeVisible();
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
   expect(saved.items).toEqual(w.items);

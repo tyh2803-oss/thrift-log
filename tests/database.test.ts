@@ -1,3 +1,4 @@
+import { matchInventory } from '../src/lib/assistant/matching';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, afterAll, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
@@ -366,6 +367,11 @@ it('round-trips new assistant inventory and listings atomically without changing
       confirmedDistinct: true,
     },
   };
+  batch.rows[0].matches[0].dismissedCandidateIds = matchInventory(
+    w,
+    batch.rows[0].facts,
+    batch.rows[0].facts.lines[0],
+  ).map((c) => c.item.id);
   const next = approvalCommands(w, batch, [batch.rows[0].id]).reduce(applyCommand, w);
   await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
   const loaded = workspaceSchema.parse(
@@ -486,4 +492,29 @@ it('atomically persists five new assistant inventory records and listings throug
   expect(
     (await db.query('select id from public.items where user_id=$1', [owner])).rows,
   ).toHaveLength(5);
+});
+
+import { applyBatchCost } from '../src/lib/assistant/review-bulk';
+it('persists four new listings from costs alone with explicit final-approval authorization', async () => {
+  const owner = crypto.randomUUID(),
+    w = emptyWorkspace();
+  await db.query('insert into auth.users values ($1)', [owner]);
+  const batch = fiveUnknownListings(w);
+  batch.rows = batch.rows.slice(0, 4);
+  const costed = applyBatchCost(w, batch, 'split', '10.01');
+  const next = approvalCommands(
+    w,
+    costed,
+    costed.rows.map((r) => r.id),
+  ).reduce(applyCommand, w);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(loaded.items).toHaveLength(4);
+  expect(loaded.listings).toHaveLength(4);
+  expect(loaded.items.reduce((n, i) => n + i.cost, 0)).toBe(1001);
+  expect(loaded.items.every((i) => i.notes.includes('assumed and accepted'))).toBe(true);
+  expect(inventoryPipeline(loaded).groups['for-sale'].count).toBe(4);
+  expect(JSON.parse(loaded.imports[0].rawCsv).authorization.kind).toBe('final-approval');
 });

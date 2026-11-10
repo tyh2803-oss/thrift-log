@@ -1,7 +1,8 @@
+import { pendingIdentityConflicts } from './review-bulk';
 import { listingAmount, listingCost } from './listing-review';
 import { blockingWarnings } from './warnings';
 import { isLifecycle, lifecyclePreview } from './lifecycle';
-import { matchInventory } from './matching';
+import { matchInventory, plausibleInventoryMatches } from './matching';
 import { listingEvidenceIssue, requireMarketplaceReview } from './vision';
 import { clothingDescription } from './clothing';
 import { applyCommand } from '../commands';
@@ -66,7 +67,14 @@ function importedSource(w: Workspace, row: DraftRow) {
     }
   });
 }
-export function previewRow(w: Workspace, row: DraftRow): Preview {
+export function previewRow(
+  w: Workspace,
+  row: DraftRow,
+  identity: { inventory: Workspace; createdDraftIds: ReadonlySet<string> } = {
+    inventory: w,
+    createdDraftIds: new Set(),
+  },
+): Preview {
   const issues: string[] = [],
     commands: Command[] = [];
   const r = row.facts,
@@ -123,7 +131,10 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
   row.matches.forEach((match, i) => {
     const line = r.lines[i];
     if (!line) return;
-    let item = w.items.find((v) => v.id === match.itemId);
+    let item = w.items.find(
+      (v) =>
+        v.id === match.itemId || (v.id === match.newItem?.id && identity.createdDraftIds.has(v.id)),
+    );
     if (match.itemId && match.newItem)
       issues.push(`Line ${i + 1}: choose existing or new inventory, not both.`);
     for (const [field, raw] of [
@@ -158,13 +169,30 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         issues.push(
           `Line ${i + 1}: an exact inventory identifier already exists. Select that item instead of creating a duplicate.`,
         );
-      if (!proposed.confirmedDistinct)
+      if (
+        r.kind === 'listing' &&
+        plausibleInventoryMatches(identity.inventory, r, line).some(
+          (c) => !c.exact && !match.dismissedCandidateIds?.includes(c.item.id),
+        )
+      )
+        issues.push(
+          `Line ${i + 1}: Possible existing item. Choose a match or create a different physical item.`,
+        );
+      if (r.kind !== 'listing' && !proposed.confirmedDistinct)
         issues.push(
           `Line ${i + 1}: confirm this is a new physical item after checking possible matches.`,
         );
       const purchasedAt = importDate(proposed.purchasedAt, w.settings.timezone);
       if (!purchasedAt) issues.push(`Line ${i + 1}: enter the acquisition date for new inventory.`);
-      if (purchasedAt && Date.parse(purchasedAt) > (date ? Date.parse(date) : Date.now()))
+      // An explicitly labeled listing-date assumption is provisional, not historical evidence.
+      // Confirmed acquisition dates and every sale retain the chronological safeguard.
+      const acquisitionDeadline =
+        r.kind === 'listing' && proposed.assumedAcquisitionDate
+          ? Date.now()
+          : date
+            ? Date.parse(date)
+            : Date.now();
+      if (purchasedAt && Date.parse(purchasedAt) > acquisitionDeadline)
         issues.push(`Line ${i + 1}: acquisition cannot be after the sale/listing date.`);
       if (!line.title?.trim()) issues.push(`Line ${i + 1}: a new inventory item needs a title.`);
       const parsed = itemSchema.safeParse({
@@ -182,7 +210,15 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         purchasedAt: purchasedAt || new Date(0).toISOString(),
         status: 'Purchased',
         createdAt: new Date().toISOString(),
-        notes: match.notes || 'Added through approved screenshot import.',
+        notes: [
+          proposed.assumedAcquisitionDate
+            ? `Acquisition date ${proposed.purchasedAt} was assumed and accepted at import approval.`
+            : '',
+          match.notes || 'Added through approved screenshot import.',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .slice(0, 500),
       });
       if (parsed.success) {
         item = parsed.data;
@@ -195,7 +231,7 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     if (!item) issues.push(`Line ${i + 1}: select an inventory item or create one.`);
     if (cost === null && (r.kind !== 'listing' || !match.itemId))
       issues.push(
-        `Line ${i + 1}: purchase cost is unknown${item?.cost === 0 ? '; confirm free inventory if zero is correct' : ''}.`,
+        `Line ${i + 1}: purchase cost is unknown${match.itemId && item?.cost === 0 ? '; confirm free inventory if zero is correct' : ''}.`,
       );
     if (item) {
       itemIds.push(item.id);
@@ -387,6 +423,16 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
   let next = w;
   const seen = new Map<string, string>();
   const listingTargets = new Set<string>();
+  const createdDraftIds = new Set<string>();
+  const identityConflicts = pendingIdentityConflicts(batch);
+  const draftValues = new Map<string, Set<string>>();
+  for (const row of batch.rows.filter((r) => r.included && r.facts.kind === 'listing'))
+    for (const m of row.matches)
+      if (m.newItem) {
+        const values = draftValues.get(m.newItem.id) || new Set<string>();
+        values.add(JSON.stringify([m.newItem.sku, m.newItem.cost, m.newItem.purchasedAt]));
+        draftValues.set(m.newItem.id, values);
+      }
   const corrections = new Map<string, Set<number>>();
   for (const row of batch.rows.filter((r) => r.included))
     for (const m of row.matches) {
@@ -400,7 +446,21 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
     row.facts.kind === 'listing' ? 0 : row.facts.kind === 'sale' ? 1 : 2;
   const planned = new Map<string, Preview>();
   for (const row of [...batch.rows].sort((a, b) => rank(a) - rank(b))) {
-    const preview = previewRow(next, row);
+    const preview = previewRow(next, row, { inventory: w, createdDraftIds });
+    if (row.matches.some((m) => m.newItem && identityConflicts.has(m.newItem.id))) {
+      preview.issues.unshift(
+        'Conflicting duplicate identifiers. Link these proposals to one physical item or discard the duplicate.',
+      );
+      preview.ready = false;
+      preview.commands = [];
+    }
+    if (row.matches.some((m) => m.newItem && (draftValues.get(m.newItem.id)?.size || 0) > 1)) {
+      preview.issues.push(
+        'Cross-listings disagree on purchase cost, SKU or acquisition date. Use one value for this physical item.',
+      );
+      preview.ready = false;
+      preview.commands = [];
+    }
     if (row.matches.some((m) => m.itemId && (corrections.get(m.itemId)?.size || 0) > 1)) {
       preview.issues.push(
         'Conflicting acquisition-cost corrections for the same physical item. Use one cost before approving.',
@@ -458,7 +518,12 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
       preview.ready = false;
     }
     if (row.included && key) seen.set(key, row.id);
-    if (row.included && preview.ready) next = preview.commands.reduce(applyCommand, next);
+    if (row.included && preview.ready) {
+      for (const command of preview.commands)
+        if (command.type === 'item' && !w.items.some((item) => item.id === command.value.id))
+          createdDraftIds.add(command.value.id);
+      next = preview.commands.reduce(applyCommand, next);
+    }
     planned.set(row.id, preview);
   }
   return batch.rows.map((row) => planned.get(row.id)!);
@@ -483,12 +548,14 @@ export function approvalCommands(
     const kind = batch.rows.find((r) => r.id === id)?.facts.kind;
     return kind === 'listing' ? 0 : kind === 'sale' ? 1 : 2;
   };
-  for (const id of [...rowIds].sort((a, b) => rank(a) - rank(b))) {
+  for (const id of [...rowIds].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      batch.rows.findIndex((r) => r.id === a) - batch.rows.findIndex((r) => r.id === b),
+  )) {
     const p = previews.find((p) => p.row.id === id);
     if (!p || !p.row.included || !p.ready)
-      throw new Error(
-        p?.issues.join(' ') || 'A selected row is no longer ready. Review the batch again.',
-      );
+      throw new Error(p?.issues[0] || 'A selected row is no longer ready. Review the batch again.');
     const row = p.row;
     const screenshot = batch.screenshots.find((s) => s.hash === row.sourceHash);
     if (
@@ -531,6 +598,10 @@ export function approvalCommands(
             confirmPackage: row.confirmPackage,
             confirmPhysicalReturn: row.confirmPhysicalReturn,
             applyRefund: row.applyRefund,
+          },
+          authorization: {
+            kind: 'final-approval',
+            newItemIds: row.matches.flatMap((m) => (m.newItem ? [m.newItem.id] : [])),
           },
           matches: row.matches,
           context: batch.context,

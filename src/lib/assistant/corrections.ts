@@ -28,7 +28,7 @@ export function correctBatch(
     const ready = previewBatch(w, batch).filter((p) => p.row.included && p.ready).length;
     return {
       batch: input,
-      message: `${ready} records are ready. Tap Approve All Ready (${ready}) to confirm the validated batch; unresolved records stay pending.`,
+      message: `${ready} records are ready. Tap Approve All (${ready}) to confirm the validated batch; unresolved records stay pending.`,
       changed: false,
     };
   }

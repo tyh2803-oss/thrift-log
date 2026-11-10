@@ -1,6 +1,26 @@
 import { parseMoney } from '../money';
 import type { Workspace } from '../model';
 import type { DraftRow } from './drafts';
+/** Only a durable import receipt proves that a stored zero was intentionally approved. */
+export function confirmedFreeInventory(w: Workspace, itemId: string) {
+  return w.imports.some((receipt) => {
+    if (receipt.mapping.format !== 'assistant-v1') return false;
+    try {
+      const audit = JSON.parse(receipt.rawCsv);
+      return (audit.matches || []).some(
+        (m: DraftRow['matches'][number]) =>
+          (m.itemId === itemId && (m.confirmZeroCost || m.costOverride === 0)) ||
+          (m.newItem?.id === itemId &&
+            m.newItem.cost === 0 &&
+            (m.newItem.confirmedDistinct ||
+              (audit.authorization?.kind === 'final-approval' &&
+                audit.authorization.newItemIds?.includes(itemId)))),
+      );
+    } catch {
+      return false;
+    }
+  });
+}
 /** Preserve incomplete typing in the draft while keeping all financial values in cents. */
 export function listingAmount(raw: string): { value: number | null; error: string | null } {
   if (!raw.trim()) return { value: null, error: null };
@@ -22,7 +42,12 @@ export function listingCost(w: Workspace, row: DraftRow, index: number) {
     return null;
   if (item) {
     const value = m.costOverride ?? item.cost;
-    return value === 0 && !m.confirmZeroCost && m.costOverride == null ? null : value;
+    return value === 0 &&
+      !m.confirmZeroCost &&
+      m.costOverride == null &&
+      !confirmedFreeInventory(w, item.id)
+      ? null
+      : value;
   }
   return m?.newItem?.cost ?? m?.purchaseCost ?? null;
 }
@@ -56,6 +81,7 @@ export function changeListingCost(
     throw new Error('Choose Correct cost before proposing an acquisition-cost change.');
   const { value } = listingAmount(raw);
   match.costInput = raw;
+  match.costAllocation = { mode: 'individual' };
   if (item) {
     if (value !== null && value !== item.cost) match.costCorrection = true;
     match.costOverride = value === item.cost ? undefined : value;

@@ -3,17 +3,28 @@ import { extractedRecordSchema, screenshotSchema, type Screenshot } from './sche
 import { listingEvidenceIssue } from './vision';
 import { matchInventory } from './matching';
 import { type Item, type Workspace } from '../model';
+import { localDay } from '../dates';
 const newItemSchema = z.object({
   id: z.string().uuid(),
   sku: z.string().max(500),
   cost: z.number().int().min(0).max(100_000_000).nullable(),
   purchasedAt: z.string().max(100),
+  // Legacy sale drafts still use this confirmation; listing authorization is final approval.
   confirmedDistinct: z.boolean().default(false),
+  assumedAcquisitionDate: z.boolean().optional(),
 });
 export const draftLineSchema = z.object({
   itemId: z.string().uuid().nullable(),
   newItem: newItemSchema.nullable(),
   confirmZeroCost: z.boolean(),
+  costAllocation: z
+    .object({
+      mode: z.enum(['same', 'split', 'individual']),
+      total: z.number().int().min(0).optional(),
+      count: z.number().int().min(1).optional(),
+    })
+    .optional(),
+  dismissedCandidateIds: z.array(z.string().uuid()).max(500).optional(),
   purchaseCost: z.number().int().min(0).max(100_000_000).nullable().optional(),
   costInput: z.string().max(100).optional(),
   priceInput: z.string().max(100).optional(),
@@ -49,13 +60,18 @@ export const batchSchema = z.object({
 export type DraftRow = z.infer<typeof draftRowSchema>;
 export type DraftBatch = z.infer<typeof batchSchema>;
 /** A proposal has no business effect until its identity, cost and date are approved. */
-export function newInventoryDraft(sku: string | null, cost: number | null = null) {
+export function newInventoryDraft(
+  sku: string | null,
+  cost: number | null = null,
+  timezone?: string,
+) {
   const id = crypto.randomUUID();
   return {
     id,
     sku: sku || `AI-${id}`,
     cost,
-    purchasedAt: '',
+    purchasedAt: timezone ? localDay(new Date(), timezone) : '',
+    assumedAcquisitionDate: timezone ? true : undefined,
     confirmedDistinct: false,
   };
 }
@@ -68,6 +84,7 @@ export function createBatch(
   const unique = screenshots.filter(
     (s, i) => screenshots.findIndex((v) => v.hash === s.hash) === i,
   );
+  const physicalDrafts = new Map<string, ReturnType<typeof newInventoryDraft>>();
   const single = unique.reduce((n, s) => n + s.extraction.records.length, 0) === 1;
   return {
     context,
@@ -96,12 +113,22 @@ export function createBatch(
               };
             const candidates = matchInventory(w, record, line);
             const exact = candidates.filter((c) => c.exact);
+            const key =
+              line.sku?.trim().toLowerCase() ||
+              (line.listingId || line.externalProductId || line.url
+                ? `${record.marketplace}:${line.listingId || line.externalProductId || line.url}`
+                : '');
+            let proposal =
+              !exact.length && record.kind === 'listing' && record.status === 'active'
+                ? newInventoryDraft(line.sku, null, w.settings.timezone)
+                : null;
+            if (proposal && key) {
+              proposal = structuredClone(physicalDrafts.get(key) || proposal);
+              physicalDrafts.set(key, proposal);
+            }
             return {
               itemId: exact.length === 1 ? exact[0].item.id : null,
-              newItem:
-                !exact.length && record.kind === 'listing' && record.status === 'active'
-                  ? newInventoryDraft(line.sku)
-                  : null,
+              newItem: proposal,
               confirmZeroCost: false,
             };
           }),
@@ -122,7 +149,7 @@ export function removeDraft(batch: DraftBatch, id: string): DraftBatch {
   return { ...batch, rows: batch.rows.filter((row) => row.id !== id) };
 }
 /** Upgrade older tab drafts without losing valid edits or original source indices. */
-export function sanitizeBatch(input: DraftBatch): DraftBatch {
+export function sanitizeBatch(input: DraftBatch, timezone = 'UTC'): DraftBatch {
   const batch = structuredClone(input);
   batch.rows = batch.rows.flatMap((row) => {
     if (row.facts.kind !== 'listing') return [row];
@@ -154,7 +181,15 @@ export function sanitizeBatch(input: DraftBatch): DraftBatch {
       if (row.facts.kind === 'listing' && row.facts.status === 'active')
         row.matches.forEach((match, i) => {
           if (!match.itemId && !match.newItem && row.facts.lines[i])
-            match.newItem = newInventoryDraft(row.facts.lines[i].sku, match.purchaseCost ?? null);
+            match.newItem = newInventoryDraft(
+              row.facts.lines[i].sku,
+              match.purchaseCost ?? null,
+              timezone,
+            );
+          if (match.newItem && !match.newItem.purchasedAt) {
+            match.newItem.purchasedAt = localDay(new Date(), timezone);
+            match.newItem.assumedAcquisitionDate = true;
+          }
         });
   return batch;
 }

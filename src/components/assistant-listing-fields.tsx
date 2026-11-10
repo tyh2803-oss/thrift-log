@@ -65,8 +65,12 @@ export function ListingFields({
   onChange,
   contextItemId,
   issues,
+  compactReview = false,
+  pendingItems,
 }: {
   contextItemId?: string;
+  compactReview?: boolean;
+  pendingItems?: { id: string; title: string; match: DraftRow['matches'][number] }[];
   issues: string[];
   row: DraftRow;
   index: number;
@@ -117,16 +121,19 @@ export function ListingFields({
         index={index}
         w={w}
         contextItemId={contextItemId}
+        pendingItems={pendingItems}
         onChange={onChange}
       />
       <div className="assistant-listing-money">
-        <CurrencyInput
-          label="Purchase Cost"
-          raw={cost}
-          missing={(!item && potential.cost === null) || (!!match.costCorrection && !cost.trim())}
-          readOnly={!!item && item.cost > 0 && !correcting}
-          onChange={(raw) => onChange(changeListingCost(w, row, index, raw))}
-        />
+        {!compactReview && (
+          <CurrencyInput
+            label="Purchase Cost"
+            raw={cost}
+            missing={(!item && potential.cost === null) || (!!match.costCorrection && !cost.trim())}
+            readOnly={!!item && item.cost > 0 && !correcting}
+            onChange={(raw) => onChange(changeListingCost(w, row, index, raw))}
+          />
+        )}
         <CurrencyInput
           label="Listing Price"
           raw={price}
@@ -177,7 +184,11 @@ export function ListingFields({
                     i === index
                       ? {
                           ...m,
-                          newItem: { ...m.newItem!, purchasedAt: e.target.value },
+                          newItem: {
+                            ...m.newItem!,
+                            purchasedAt: e.target.value,
+                            assumedAcquisitionDate: false,
+                          },
                         }
                       : m,
                   ),
@@ -195,6 +206,11 @@ export function ListingFields({
             />
           </label>
         </div>
+      )}
+      {match.newItem?.assumedAcquisitionDate && (
+        <small>
+          Acquisition date is an assumption; final approval accepts it. Change if purchased earlier.
+        </small>
       )}
       <small>Blank cost means unknown. Enter 0 only for inventory acquired free.</small>
       {(row.facts.currency !== 'USD' || eventMissing) && (

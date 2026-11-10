@@ -6,18 +6,24 @@ Open the floating **Assistant** button or **Quick add → AI assistant** from an
 
 The assistant reads active listings, completed sales and saved-order lifecycle events (shipment/delivery, cancellation, refund and physical return). It shows one batch of proposals; it does not insert business records during extraction, matching or editing. Match suggestions from similar titles require a choice. A unique exact listing ID, product ID recorded as a listing ID, SKU or listing URL can select inventory automatically.
 
-For active listings, review inventory suggestions and search/select existing inventory directly on each card. Unmatched listings automatically get an **unsaved** physical-item draft; confirm that each is distinct after checking inventory, then enter its purchase cost and acquisition date inline. The card lists every readiness blocker. **Review missing information** scrolls to and focuses the first incomplete control, revealing an invalid detail if needed. Original listing date, vintage age and nonessential descriptions are optional. **Edit** preserves additional record corrections and the existing sale-matching workflow. Original screenshot facts and corrected facts are shown separately under **Extraction and corrections**. Stored acquisition costs are retrieved automatically. Legacy zero costs need explicit free-item confirmation or correction for sales and financial previews; an existing-item listing can remain ready while its cost is unknown. New inventory requires known cost, acquisition date, SKU, title and confirmation that it is a distinct physical item. Unknown attributes remain blank.
+Active listings use compact cards, collapsed by default. Each shows a small source crop, title, marketplace, asking price, inline purchase cost and estimated gross profit. No per-item distinct-inventory checkbox is required. A unique exact match selects existing inventory. Strong approximate matches appear as **Possible existing item** and require selecting the candidate or choosing **Create different item**; shared brand/size alone remains an optional search suggestion. Exact identifier conflicts cannot be dismissed into duplicate inventory. Final **Approve All** explicitly authorizes the reviewed new physical records and produces a durable authorization receipt.
+
+**Batch Cost** offers **Same cost per item**, **Split total cost** and **Individual costs**. Apply a value to all eligible new physical drafts, or use **Choose items** for a smaller set. Existing inventory costs and ambiguous/conflicting identities are excluded. Split allocation uses deterministic integer-cent remainders, and linked marketplace views of one physical draft receive the same cost. Each affected card shows its allocation source. Individual overrides update that physical draft's linked views and survive expansion and reload. Exact shared SKUs identify pending cross-listings automatically; when screenshots have no shared identifier, explicitly choose **Same physical item as another proposal** in the expanded inventory controls. Similar titles never silently merge physical inventory.
+
+New acquisition dates default to the workspace's local current date, clearly labeled as assumptions accepted by final approval. A batch date picker replaces them with the user's actual acquisition date. The saved inventory notes and import receipt preserve whether the date was assumed. A provisional date assumption does not turn an optional historical listing date into a routine blocker; user-specified acquisition dates retain chronological validation, future dates remain invalid, and sale-date safeguards are unchanged. Unknown costs remain blank, intentional zero and zero-cent allocations are valid, and stored legacy zeros remain unknown unless a receipt or explicit correction confirms them.
+
+Expand a card to correct marketplace, price, title/brand/category, size/color/condition, vintage classification, acquisition date, inventory identity and other details. Evidence, vintage discussion and diagnostics stay out of the collapsed checklist. **Review unresolved** focuses the first incomplete control, opening details only for an actual exception. The normal four-item flow needs four purchase-cost entries and one final approval. Descriptions, vintage age and original listing date are optional. **Edit** continues to support existing sale and lifecycle review.
 
 Typical conversational corrections include:
 
 - “The second item sold for $35.”
 - “The jacket shipping cost was $5, not $3.”
 - “That was Depop, not Vinted.” (asks for a record number if ambiguous)
-- “The third item is the blue Nike hoodie in my inventory.” (requires a unique explicit name; otherwise use Edit)
+- “The third item is the blue Nike hoodie in my inventory.” (requires a unique explicit name; otherwise choose inventory in the review)
 
 Corrections are a bounded deterministic parser, not an unrestricted conversational agent. Unsupported requests explain the supported edits. Use **line 2** with a record number for multi-item price/match changes. Buyer-paid platform shipping is never assumed to be seller income. Arbitrary financial operations, voice and analytics chat are future capabilities.
 
-Uncheck records to exclude them, or use the trash icon to remove one pending row. Clear All asks for confirmation and discards only pending drafts, keeping saved records intact. **Approve All Ready** saves only the included ready records in one transaction; unresolved/excluded records stay in the pending batch. Cancel clears a pending batch. Missing fees, shipping, discounts and direct costs stay unknown until entered or explicitly confirmed as zero. Profit with missing amounts is provisional, and an unknown purchase cost has no calculated profit.
+Use Skip in expanded listing details (or the existing inclusion checkbox for sales) to exclude a record, or use the trash icon to remove one pending proposal. Clear All asks for confirmation and discards only pending drafts, keeping saved records intact. **Approve All** saves only the included ready records in one transaction; unresolved/excluded records stay in the pending batch. Cancel clears a pending batch. Missing fees, shipping, discounts and direct costs stay unknown until entered or explicitly confirmed as zero. Profit with missing amounts is provisional, and an unknown purchase cost has no calculated profit.
 
 An accepted offer, pending payment, refund or unknown status cannot be posted as a new completed sale. Refund/return imports match an existing order and post approved dated ledger events; prior-order corrections remain in the existing ledger workflow. An existing order can be opened from the duplicate warning. The command layer continues to protect physical returns, resale dates, posted cost snapshots and cross-listing alerts.
 
@@ -122,7 +128,7 @@ This opt-in test loads the ignored local environment, makes a billable real visi
 
 ## Inline listing review
 
-Each listing card exposes **Purchase Cost ($)**, **Listing Price ($)** and **Marketplace** without opening Edit or a dialog. Cost inputs start blank when unknown, use the mobile decimal keyboard, accept at most two decimal places and store cents. An entered `0` is a known zero; clearing the field returns it to unknown. Invalid/incomplete currency text stays in the tab draft and blocks that row’s approval rather than silently rounding or saving zero.
+Each collapsed listing card exposes **Purchase Cost ($)**. Expand its chevron to edit **Listing Price ($)**, **Marketplace** and other extracted details without opening a separate dialog. Cost inputs start blank when unknown, use the mobile decimal keyboard, accept at most two decimal places and store cents. An entered `0` is a known zero; clearing the field returns it to unknown. Invalid/incomplete currency text stays in the tab draft and blocks that row’s approval rather than silently rounding or saving zero.
 
 Matched inventory uses its stored acquisition cost. Choose **Correct cost** to propose an explicit correction, or **Cancel cost correction** to keep the stored amount. Approval applies the existing validated inventory command; historical sale cost snapshots, SKU, photos and sourcing history are preserved. Cross-listed proposals cannot specify conflicting acquisition costs for the same physical item. An intentional cost correction can accompany an otherwise unchanged existing listing without adding a duplicate listing.
 
@@ -130,7 +136,7 @@ Matched inventory uses its stored acquisition cost. Choose **Correct cost** to p
 
 Use **Edit additional details** for title, brand, category, garment type, size, color, condition, vintage, date, identifiers/URL, description and notes. Original visual evidence and marketplace identification remain separate. Notes save on new inventory; corrections and notes for matched inventory stay with the import provenance, avoiding silent changes to existing descriptive/history fields. New physical items still require explicit distinct-item confirmation, SKU and acquisition date as well as a known cost. Entering a cost alone never creates inventory.
 
-Edits survive card expansion/collapse and tab reload through the existing pending-draft storage. **Approve All Ready** stays visible at the bottom of the scrolling review, approving only included ready records. Incomplete rows remain pending. No permanent records or source screenshots are saved during editing.
+Edits survive card expansion/collapse and tab reload through the existing pending-draft storage. **Approve All** remains in a reserved footer outside the scrolling review, approving only included ready records. Incomplete rows remain pending. No permanent records or source screenshots are saved during editing.
 
 ## Smart batches and inventory lifecycle
 
@@ -140,7 +146,7 @@ Empty/generic listings, incomplete edge cards and reliable repeated views do not
 
 Mixed batches retain separate source hashes, marketplaces, event types and operations. Listings and sales are planned before dependent fulfillment events regardless of upload order. The review can link to a proposed sale in the same batch; that shipment cannot commit on its own if the required sale is excluded. Repeated order IDs, source receipts and conflicting listing views stay unresolved rather than creating duplicate transactions or silently overwriting a price. Unresolved drafts retain the database-confirmed revision after a partial approval.
 
-Optional listing dates, vintage age and existing inventory cost do not prevent an otherwise valid existing-item listing. Unknown costs remain visible as unknown; new physical items require acquisition cost/date and explicit distinct-item confirmation. Unverified vintage claims remain potentially vintage. Optional garment observations do not require a financial-warning acknowledgment, while financial/unknown warnings and missing monetary values still protect sales and adjustments.
+Optional listing dates, vintage age and existing inventory cost do not prevent an otherwise valid existing-item listing. Unknown costs remain visible as unknown; new physical listings require a known acquisition cost and a valid acquisition date (the labeled date assumption is accepted by final approval). Plausible matches require a specific candidate decision; final approval authorizes new inventory when no conflict remains. Unverified vintage claims remain potentially vintage. Optional garment observations do not require a financial-warning acknowledgment, while financial/unknown warnings and missing monetary values still protect sales and adjustments.
 
 ### Fulfillment and accounting
 
@@ -150,7 +156,7 @@ Refunds never automatically restock items. A physical return needs explicit conf
 
 ### Conversation commands
 
-- **Log all these / Approve everything:** reports ready records and directs the user to the authoritative Approve All Ready control; a chat message never silently commits.
+- **Log all these / Approve everything:** reports ready records and directs the user to the authoritative Approve All control; a chat message never silently commits.
 - **Add all these to listed:** prepares applicable selected listing/ambiguous records, preserving completed sales and fulfillment events.
 - **Remove the fifth item:** removes only that numbered pending row; the source index and other drafts stay intact.
 - **The second item cost me $8:** proposes the exact-cent acquisition cost, clearly marking an existing-item correction for approval.

@@ -15,6 +15,7 @@ import {
   type DraftBatch,
   type ListingContext,
 } from '@/lib/assistant/drafts';
+import { reconcileApprovedDrafts } from '@/lib/assistant/review-bulk';
 import { AssistantReview } from './assistant-review';
 import { marketplaceContextFromText } from '@/lib/assistant/vision';
 import { prepareSpokenFulfillment, appendConversationRow } from '@/lib/assistant/conversation';
@@ -53,6 +54,7 @@ export function Assistant({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [batch, setBatch] = useState<DraftBatch | null>(null);
+  const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null);
   const [recentOrders, setRecentOrders] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -69,14 +71,14 @@ export function Assistant({
     const timer = setTimeout(() => {
       try {
         const raw = sessionStorage.getItem(storageKey);
-        if (raw) setBatch(sanitizeBatch(batchSchema.parse(JSON.parse(raw))));
+        if (raw) setBatch(sanitizeBatch(batchSchema.parse(JSON.parse(raw)), w.settings.timezone));
       } catch {
         setError('A saved assistant draft could not be restored. Existing records are unchanged.');
       }
       setRestored(true);
     }, 0);
     return () => clearTimeout(timer);
-  }, [storageKey]);
+  }, [storageKey, w.settings.timezone]);
   useEffect(() => {
     if (!restored) return;
     try {
@@ -106,9 +108,17 @@ export function Assistant({
       ignore = true;
     };
   }, [open, demo]);
+  const reviewBatchId = batch?.id;
   useEffect(() => {
+    if (reviewBatchId) {
+      if (!busy)
+        end.current?.parentElement
+          ?.querySelector('.assistant-review')
+          ?.scrollIntoView({ block: 'start' });
+      return;
+    }
     end.current?.scrollIntoView({ block: 'nearest' });
-  }, [messages, busy]);
+  }, [messages, busy, reviewBatchId]);
   const limit = config?.batchLimit || DEFAULT_BATCH_LIMIT;
   async function add(files: File[]) {
     if (lock.current) return;
@@ -303,11 +313,14 @@ export function Assistant({
         setBatch((current) =>
           current
             ? current.rows.some((r) => !ids.includes(r.id))
-              ? {
-                  ...current,
-                  revision: confirmed.revision,
-                  rows: current.rows.filter((r) => !ids.includes(r.id)),
-                }
+              ? reconcileApprovedDrafts(
+                  {
+                    ...current,
+                    revision: confirmed.revision,
+                    rows: current.rows.filter((r) => !ids.includes(r.id)),
+                  },
+                  confirmed,
+                )
               : null
             : null,
         );
@@ -410,6 +423,7 @@ export function Assistant({
               {batch && (
                 <AssistantReview
                   batch={batch}
+                  footerHost={footerHost}
                   sourceUrls={sourceUrls}
                   onChange={setBatch}
                   onApprove={(ids) => void approve(ids)}
@@ -447,69 +461,75 @@ export function Assistant({
                 ))}
               </div>
             )}
-            <form
-              className="assistant-composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-            >
-              <textarea
-                aria-label="Message assistant"
-                disabled={busy}
-                placeholder="Log these sales…"
-                value={text}
-                maxLength={2000}
-                onChange={(e) => setText(e.target.value)}
-                onPaste={(e) => {
-                  const files = Array.from(e.clipboardData.files);
-                  if (files.length) {
-                    e.preventDefault();
-                    void add(files);
-                  }
+            <div ref={setFooterHost} className="assistant-review-footer-host" />
+            <details className="assistant-compose-disclosure" open={batch ? undefined : true}>
+              <summary className={batch ? undefined : 'sr-only'}>
+                Message assistant / add screenshots
+              </summary>
+              <form
+                className="assistant-composer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void send();
                 }}
-              />
-              <div className="actions">
-                <Button
-                  type="button"
-                  variant="ghost"
+              >
+                <textarea
+                  aria-label="Message assistant"
                   disabled={busy}
-                  aria-label="Attach screenshots"
-                  onClick={() => fileInput.current?.click()}
-                >
-                  <Paperclip size={17} />
-                  <span>Add images</span>
-                </Button>
+                  placeholder="Log these sales…"
+                  value={text}
+                  maxLength={2000}
+                  onChange={(e) => setText(e.target.value)}
+                  onPaste={(e) => {
+                    const files = Array.from(e.clipboardData.files);
+                    if (files.length) {
+                      e.preventDefault();
+                      void add(files);
+                    }
+                  }}
+                />
+                <div className="actions">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    aria-label="Attach screenshots"
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <Paperclip size={17} />
+                    <span>Add images</span>
+                  </Button>
+                  <small>
+                    {attachments.length}/{limit}
+                  </small>
+                  <Button disabled={busy || (!text.trim() && !attachments.length)} type="submit">
+                    <Send size={16} />
+                    {busy ? 'Reading…' : 'Send'}
+                  </Button>
+                </div>
+                <input
+                  ref={fileInput}
+                  className="sr-only"
+                  aria-label="Screenshot files"
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => {
+                    void add(Array.from(e.target.files || []));
+                    e.target.value = '';
+                  }}
+                />
+              </form>
+              <div className="assistant-footer">
                 <small>
-                  {attachments.length}/{limit}
+                  Review before saving · {scope === 'demo' ? 'Demo' : 'Private workspace'}
                 </small>
-                <Button disabled={busy || (!text.trim() && !attachments.length)} type="submit">
-                  <Send size={16} />
-                  {busy ? 'Reading…' : 'Send'}
+                <Button variant="ghost" size="sm" disabled={busy} onClick={clear}>
+                  <Trash2 size={13} />
+                  Clear chat
                 </Button>
               </div>
-              <input
-                ref={fileInput}
-                className="sr-only"
-                aria-label="Screenshot files"
-                type="file"
-                multiple
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) => {
-                  void add(Array.from(e.target.files || []));
-                  e.target.value = '';
-                }}
-              />
-            </form>
-            <div className="assistant-footer">
-              <small>
-                Review before saving · {scope === 'demo' ? 'Demo' : 'Private workspace'}
-              </small>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={clear}>
-                <Trash2 size={13} />
-                Clear chat
-              </Button>
-            </div>
+            </details>
           </div>
         </Dialog>
       )}

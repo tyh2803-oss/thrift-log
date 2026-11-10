@@ -257,7 +257,7 @@ it('recognizes batch-wide instructions, cost corrections, draft removal and sale
       lines: [extractedLine({ sku: w.items[0].sku })],
     }),
   ]);
-  expect(correctBatch(b, 'Approve everything', w).message).toContain('Approve All Ready');
+  expect(correctBatch(b, 'Approve everything', w).message).toContain('Approve All (1)');
   const cost = correctBatch(b, 'The second item cost me $8.', w);
   expect(cost.batch.rows[1].matches[0].costOverride).toBe(800);
   const removed = correctBatch(cost.batch, 'Remove the first item', w);

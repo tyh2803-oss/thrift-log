@@ -10,10 +10,12 @@ export function ClothingPreview({
   line,
   source,
   url,
+  thumbnailOnly = false,
 }: {
   line: ExtractedLine;
   source?: Screenshot;
   url?: string;
+  thumbnailOnly?: boolean;
 }) {
   const [aspect, setAspect] = useState(1);
   const c = line.clothing;
@@ -25,7 +27,7 @@ export function ClothingPreview({
   const width = valid ? (box.right - box.left) / 1000 : 1;
   const height = valid ? (box.bottom - box.top) / 1000 : 1;
   return (
-    <div className="assistant-garment">
+    <div className={thumbnailOnly ? 'assistant-listing-thumbnail' : 'assistant-garment'}>
       {src && (
         <div className="assistant-product-image" style={{ aspectRatio: (aspect * width) / height }}>
           <img
@@ -42,56 +44,58 @@ export function ClothingPreview({
           />
         </div>
       )}
-      <div>
-        <p>
-          {[
-            line.brand,
-            c?.garmentType || line.category,
-            line.size && `Size ${line.size}`,
-            line.condition,
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'Garment details unknown'}
-        </p>
-        <p>{[line.color, c?.design, c?.fit].filter(Boolean).join(' · ')}</p>
-        {c && (
-          <>
-            <strong>
-              {c.vintage.classification === 'Vintage confirmed' &&
-              (!c.vintage.confirmedByUser || !c.vintage.ageEvidence?.trim())
-                ? 'Potentially vintage'
-                : c.vintage.classification}
-            </strong>
-            <small>
-              {c.vintage.classification === 'Vintage confirmed' &&
-              c.vintage.confirmedByUser &&
-              !!c.vintage.ageEvidence?.trim()
-                ? c.vintage.ageEvidence
-                : 'Age unverified'}
-            </small>
-            {c.partial && (
-              <p className="hint">Partly visible card — confirm the associated details.</p>
-            )}
-            <details>
-              <summary>Visual evidence and original text</summary>
-              <p>Marketplace title: {c.originalTitle || 'Not visible'}</p>
-              <p>Visible lettering: {c.visibleText || 'Not determined'}</p>
-              <p>
-                Material: {c.material || 'Not determined'} · Style: {c.style || 'Not determined'}
-              </p>
-              {c.evidence.map((e, i) => (
-                <p key={i}>
-                  <strong>{e.field}</strong> · {e.source.replaceAll('_', ' ')}: {e.note}
+      {!thumbnailOnly && (
+        <div>
+          <p>
+            {[
+              line.brand,
+              c?.garmentType || line.category,
+              line.size && `Size ${line.size}`,
+              line.condition,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Garment details unknown'}
+          </p>
+          <p>{[line.color, c?.design, c?.fit].filter(Boolean).join(' · ')}</p>
+          {c && (
+            <>
+              <strong>
+                {c.vintage.classification === 'Vintage confirmed' &&
+                (!c.vintage.confirmedByUser || !c.vintage.ageEvidence?.trim())
+                  ? 'Potentially vintage'
+                  : c.vintage.classification}
+              </strong>
+              <small>
+                {c.vintage.classification === 'Vintage confirmed' &&
+                c.vintage.confirmedByUser &&
+                !!c.vintage.ageEvidence?.trim()
+                  ? c.vintage.ageEvidence
+                  : 'Age unverified'}
+              </small>
+              {c.partial && (
+                <p className="hint">Partly visible card — confirm the associated details.</p>
+              )}
+              <details>
+                <summary>Visual evidence and original text</summary>
+                <p>Marketplace title: {c.originalTitle || 'Not visible'}</p>
+                <p>Visible lettering: {c.visibleText || 'Not determined'}</p>
+                <p>
+                  Material: {c.material || 'Not determined'} · Style: {c.style || 'Not determined'}
                 </p>
-              ))}
-              {c.vintage.evidence.map((e, i) => (
-                <p key={i}>Vintage evidence: {e}</p>
-              ))}
-              {c.vintage.followUp && <p className="hint">{c.vintage.followUp}</p>}
-            </details>
-          </>
-        )}
-      </div>
+                {c.evidence.map((e, i) => (
+                  <p key={i}>
+                    <strong>{e.field}</strong> · {e.source.replaceAll('_', ' ')}: {e.note}
+                  </p>
+                ))}
+                {c.vintage.evidence.map((e, i) => (
+                  <p key={i}>Vintage evidence: {e}</p>
+                ))}
+                {c.vintage.followUp && <p className="hint">{c.vintage.followUp}</p>}
+              </details>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

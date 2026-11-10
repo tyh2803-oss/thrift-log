@@ -7,7 +7,7 @@ import { createBatch, sanitizeBatch } from '../src/lib/assistant/drafts';
 import { inventoryPipeline } from '../src/lib/pipeline';
 import { applyCommand } from '../src/lib/commands';
 
-it('proposes five unsaved items, requires identity, cost and date, then saves exactly five items and listings', () => {
+it('proposes five unsaved items and needs only costs before final approval creates inventory', () => {
   const w = emptyWorkspace(),
     batch = fiveUnknownListings(w);
   const ids = batch.rows.map((r) => r.id);
@@ -16,13 +16,13 @@ it('proposes five unsaved items, requires identity, cost and date, then saves ex
   expect(new Set(batch.rows.map((r) => r.matches[0].newItem!.id)).size).toBe(5);
   for (const preview of previewBatch(w, batch)) {
     expect(preview.issues.join(' ')).toContain('purchase cost is unknown');
-    expect(preview.issues.join(' ')).toContain('acquisition date');
-    expect(preview.issues.join(' ')).toContain('confirm this is a new physical item');
+    expect(preview.issues).toHaveLength(1);
+    expect(preview.row.matches[0].newItem?.assumedAcquisitionDate).toBe(true);
   }
   expect(() => approvalCommands(w, batch, ids)).toThrow();
   for (const row of batch.rows) {
     row.matches[0].newItem!.purchasedAt = '2026-10-01';
-    row.matches[0].newItem!.confirmedDistinct = true;
+    expect(row.matches[0].newItem!.confirmedDistinct).toBe(false);
   }
   expect(previewBatch(w, batch).every((p) => !p.ready && p.issues.length === 1)).toBe(true);
   // An intentional zero differs from the other four missing acquisition costs.
@@ -67,9 +67,9 @@ it('blocks repeated external listing identities within the same batch even when 
   }
   batch.rows[1].facts.lines[0].listingId = batch.rows[0].facts.lines[0].listingId;
   const previews = previewBatch(w, batch);
-  expect(previews[0].ready).toBe(true);
+  expect(previews[0].ready).toBe(false);
   expect(previews[1].ready).toBe(false);
-  expect(previews[1].issues.join(' ')).toContain('exact inventory identifier already exists');
+  expect(previews[1].issues.join(' ')).toContain('Conflicting duplicate identifiers');
   expect(() =>
     approvalCommands(
       w,
@@ -82,8 +82,8 @@ it('blocks repeated external listing identities within the same batch even when 
     batch,
     previews.filter((p) => p.ready).map((p) => p.row.id),
   ).reduce(applyCommand, w);
-  expect(saved.items).toHaveLength(4);
-  expect(saved.listings).toHaveLength(4);
+  expect(saved.items).toHaveLength(3);
+  expect(saved.listings).toHaveLength(3);
 });
 
 it('upgrades older pending cards without losing cost entries or explicit matches', () => {

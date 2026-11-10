@@ -3216,3 +3216,69 @@ th {
 .assistant-readiness li { margin: 4px 0; }
 .assistant-extraction [data-review-missing="true"] { scroll-margin-block: 100px; }
 .assistant-extraction [data-review-missing="true"]:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
+/* Cost-first import checklist; footer reserves layout space outside the scrolling thread. */
+.assistant-review-footer-host { flex-shrink: 0; }
+.assistant-review-footer-host:empty { display: none; }
+.compact-approval-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border-top: 1px solid var(--border); padding: 10px 0; font-size: 12px; }
+.compact-approval-footer small { display: block; color: var(--muted); }
+.compact-approval-footer > .btn { min-height: 44px; flex-shrink: 0; }
+.assistant-compose-disclosure { flex-shrink: 0; padding-bottom: 6px; }
+.assistant-compose-disclosure > summary { cursor: pointer; color: var(--green); min-height: 32px; font-size: 12px; }
+.assistant-compose-disclosure .assistant-composer { margin-top: 6px; }
+.compact-batch-toolbar { margin: 0 0 10px; font-size: 11px; }
+.compact-batch-toolbar .actions { gap: 2px; flex-wrap: wrap; }
+.compact-batch-toolbar .btn { min-height: 40px; padding: 6px 8px; font-size: 11px; }
+.compact-batch-date { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.compact-batch-date input { font-size: 16px; min-height: 36px; width: 140px; padding: 2px 4px; }
+.compact-batch-date small { color: var(--muted); flex: 1 1 145px; }
+.compact-batch-cost { display: grid; gap: 8px; padding: 10px; min-width: 0; border: 1px solid var(--border); margin-top: 8px; border-radius: 8px; }
+.compact-batch-cost input:not([type=checkbox]), .compact-batch-cost select { min-height: 44px; font-size: 16px; min-width: 0; }
+.compact-batch-amount { display: flex; align-items: end; gap: 8px; }
+.compact-batch-amount > label { min-width: 0; flex: 1; }
+.assistant-extraction.assistant-compact-card { position: relative; margin: 6px 0; padding: 6px 10px; border-radius: 10px; }
+.compact-listing-heading { display: flex; align-items: center; gap: 8px; padding-right: 76px; min-height: 44px; }
+.assistant-listing-thumbnail { position: relative; width: 40px; height: 44px; flex: 0 0 40px; border-radius: 5px; overflow: hidden; }
+.assistant-listing-thumbnail .assistant-product-image { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.compact-no-photo { display: grid; place-items: center; background: var(--light-green); color: var(--green); }
+.compact-listing-title { min-width: 0; line-height: 1.25; }
+.compact-listing-title > strong { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.compact-listing-title > small { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; }
+.compact-ready { color: var(--green); }
+.compact-pending { color: #a97726; }
+.compact-listing-cost { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: center; margin-top: 3px; }
+.compact-listing-cost .field { margin: 0; gap: 1px; }
+.compact-listing-cost .field > span, .compact-listing-profit > span { font-size: 10px; color: var(--muted); }
+.compact-listing-cost input { min-height: 44px; width: 100%; min-width: 0; font-size: 16px; padding: 6px 8px; }
+.compact-listing-cost input[readonly] { background: var(--bg); }
+.compact-listing-profit { line-height: 1.2; }
+.compact-listing-profit > span, .compact-listing-profit strong, .compact-listing-profit small { display: block; }
+.compact-listing-profit strong { font-size: 15px; }
+.compact-listing-profit small { font-size: 10px; color: var(--muted); min-height: 12px; }
+.compact-trash { position: absolute; top: 7px; right: 5px; min-height: 44px; width: 36px; padding: 4px; }
+.compact-listing-details > summary { position: absolute; top: 7px; right: 41px; width: 36px; height: 44px; display: grid; place-items: center; list-style: none; }
+.compact-listing-details > summary::-webkit-details-marker { display: none; }
+.compact-listing-details[open] > summary svg { transform: rotate(180deg); }
+.assistant-compact-card .compact-listing-details { margin: 0; }
+.compact-expanded-fields { padding-top: 12px; }
+.compact-listing-issue { color: #996d20; font-size: 11px; text-align: left; padding: 3px 0; width: 100%; }
+.compact-match-exception { font-size: 11px; padding: 6px 0; }
+.compact-match-exception .actions { flex-wrap: wrap; gap: 4px; }
+.compact-match-exception .btn { min-height: 40px; font-size: 11px; }
+.compact-batch-diagnostics { font-size: 11px; }
+.compact-review input, .compact-review select, .compact-review button { scroll-margin-block: 25px; }
+@media (max-width: 700px) {
+  .assistant-panel:has(.compact-review) .dialog-heading { padding: 12px 16px; }
+  .assistant-panel:has(.compact-review) .dialog-heading h2 { font-size: 18px; }
+  .assistant-panel:has(.compact-review) .dialog-heading p { display: none; }
+  .assistant-panel:has(.compact-review) .assistant-body { padding: 0 12px; gap: 4px; }
+  .compact-listing-title > strong { font-size: 12px; }
+  .compact-approval-footer { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+}
+.assistant-compact-card .compact-listing-details { padding: 0; border: 0; background: transparent; }
+.compact-listing-details[open] > summary { margin: 0; }
+.assistant-compose-disclosure { border: 0; border-radius: 0; padding: 0; }
+.assistant-compose-disclosure[open] > summary { margin-bottom: 6px; }
+.assistant-panel:has(.compact-review) .assistant-thread { scroll-padding-block: 20px; padding-bottom: 16px; }
+/* Keep focus scrolling inside the checklist; the dialog heading and approval footer stay put. */
+.dialog-content.assistant-panel { overflow: hidden; overflow: clip; }
