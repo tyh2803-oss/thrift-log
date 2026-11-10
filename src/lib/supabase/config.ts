@@ -51,13 +51,23 @@ export function readConfiguration(env: SupabaseEnvironment) {
   };
 }
 
-/** Plain HTTP cookies are only permitted for a browser visiting this machine. */
+/** Allow HTTP on loopback, or private IPv4 hosts only in local development. */
 export function secureSessionCookie(request: Request) {
   const url = new URL(request.url);
   // Next may use an internal hostname in request.url; use the browser's Host.
   const destination = new URL(`${url.protocol}//${request.headers.get('host') || url.host}`);
+  const host = destination.hostname;
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(host);
+  const octets = host.split('.').map(Number);
+  const privateIPv4 =
+    /^\d+\.\d+\.\d+\.\d+$/.test(host) &&
+    octets.every((n) => Number.isInteger(n) && n >= 0 && n <= 255) &&
+    (octets[0] === 10 ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168));
   return !(
-    url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(destination.hostname)
+    url.protocol === 'http:' &&
+    (loopback || (process.env.NODE_ENV === 'development' && privateIPv4))
   );
 }
 

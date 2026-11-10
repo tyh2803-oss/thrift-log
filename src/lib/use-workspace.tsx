@@ -16,7 +16,7 @@ type Value = {
   notice: string;
   dispatch: (c: Command | Command[]) => Promise<boolean>;
   refresh: () => Promise<void>;
-  approveAssistant: (batch: DraftBatch, rowIds: string[]) => Promise<boolean>;
+  approveAssistant: (batch: DraftBatch, rowIds: string[]) => Promise<Workspace | false>;
   notify: (s: string) => void;
   resetDemo: () => void;
 };
@@ -159,7 +159,7 @@ export function WorkspaceProvider({
           if (!response.ok) throw new Error(data.error);
           install(workspaceSchema.parse(data.workspace));
         }
-        return true;
+        return ref.current;
       } catch (e) {
         setError(
           e instanceof Error

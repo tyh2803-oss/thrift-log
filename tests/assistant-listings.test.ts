@@ -66,7 +66,11 @@ describe('listing imports share physical inventory', () => {
         lines: [extractedLine({ sku: 'JACKET-1', listingId: 'ebay-1' })],
       }),
     );
-    expect(previewBatch(assistantWorkspace(), add)[0].issues.join(' ')).toContain('listing date');
+    expect(previewBatch(assistantWorkspace(), add)[0].ready).toBe(true);
+    const planned = previewBatch(assistantWorkspace(), add)[0].commands.find(
+      (c) => c.type === 'listing',
+    );
+    expect(planned?.value).toHaveProperty('listedAt');
   });
   it('requires known acquisition cost, date and explicit new-physical-item confirmation', () => {
     const w = assistantWorkspace(),

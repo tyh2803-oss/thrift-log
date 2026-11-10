@@ -1,5 +1,13 @@
 'use client';
+import { Trash2 } from 'lucide-react';
+import { LifecycleFields, eventNames } from './assistant-lifecycle-fields';
+import { blockingWarnings } from '@/lib/assistant/warnings';
+import { isLifecycle } from '@/lib/assistant/lifecycle';
+import { removeDraft } from '@/lib/assistant/drafts';
 import { useState } from 'react';
+import { ListingFields } from './assistant-listing-fields';
+import { ClothingPreview, ClothingEditor } from './assistant-clothing';
+import { correctedMarketplace } from '@/lib/assistant/vision';
 import { previewBatch, saleAmounts, amountLabels, type Preview } from '@/lib/assistant/planner';
 import { matchInventory } from '@/lib/assistant/matching';
 import type { DraftBatch, DraftRow } from '@/lib/assistant/drafts';
@@ -16,7 +24,9 @@ export function AssistantReview({
   onCancel,
   busy,
   onView,
+  sourceUrls,
 }: {
+  sourceUrls?: ReadonlyMap<string, string>;
   batch: DraftBatch;
   onChange: (b: DraftBatch) => void;
   onApprove: (ids: string[]) => void;
@@ -28,6 +38,7 @@ export function AssistantReview({
   const previews = previewBatch(w, batch);
   const ready = previews.filter((p) => p.row.included && p.ready);
   const included = previews.filter((p) => p.row.included);
+  const [confirmClear, setConfirmClear] = useState(false);
   const stale = batch.revision !== w.revision;
   function change(row: DraftRow) {
     onChange({ ...batch, rows: batch.rows.map((r) => (r.id === row.id ? row : r)) });
@@ -35,13 +46,29 @@ export function AssistantReview({
   return (
     <section aria-label="Import batch review" className="assistant-review">
       <h3>{batch.rows.length} records found</h3>
+      {batch.screenshots.flatMap((s) =>
+        (s.extraction.notes || []).map((note, i) => (
+          <p className="hint" key={`${s.hash}-${i}`}>
+            {note}
+          </p>
+        )),
+      )}
+      {batch.context && batch.rows.length > 1 && (
+        <p className="hint">
+          Choose the listing card for the selected inventory item. Other cards remain excluded; none
+          will create new inventory.
+        </p>
+      )}
       {previews.map((p, index) => (
         <ReviewRow
           key={p.row.id}
           preview={p}
           source={batch.screenshots.find((s) => s.hash === p.row.sourceHash)}
+          contextItemId={batch.context?.itemId}
+          imageUrl={sourceUrls?.get(p.row.sourceHash)}
           index={index}
           onChange={change}
+          onRemove={() => onChange(removeDraft(batch, p.row.id))}
           busy={busy}
           onView={onView}
         />
@@ -76,21 +103,32 @@ export function AssistantReview({
             </Button>
           </div>
         )}
-        <div className="actions">
-          <Button
-            disabled={busy || stale || !ready.length}
-            onClick={() => onApprove(ready.map((p) => p.row.id))}
-          >
-            {busy ? 'Saving…' : `Approve All Ready (${ready.length})`}
-          </Button>
-          <Button variant="outline" disabled={busy} onClick={onCancel}>
-            Cancel batch
-          </Button>
-        </div>
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refresh()}>
           Refresh workspace
         </Button>
         <small>Only included, ready records will be saved. Unresolved records stay pending.</small>
+      </div>
+      <div className="actions assistant-approval-actions">
+        <Button
+          disabled={busy || stale || !ready.length}
+          onClick={() => onApprove(ready.map((p) => p.row.id))}
+        >
+          {busy ? 'Saving…' : `Approve All Ready (${ready.length})`}
+        </Button>
+        <Button variant="outline" disabled={busy} onClick={() => setConfirmClear(true)}>
+          Clear All
+        </Button>
+        {confirmClear && (
+          <div className="assistant-clear-confirm" role="alert">
+            <p>Discard all pending drafts? Saved inventory and accounting records stay intact.</p>
+            <Button variant="outline" disabled={busy} onClick={onCancel}>
+              Discard pending drafts
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmClear(false)}>
+              Keep drafts
+            </Button>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -111,6 +149,7 @@ function AmountField({
         type="number"
         min="0"
         step="0.01"
+        inputMode="decimal"
         value={value === null ? '' : value / 100}
         placeholder="Unknown"
         onChange={(e) => {
@@ -127,13 +166,19 @@ function AmountField({
 function ReviewRow({
   preview: p,
   source,
+  imageUrl,
+  contextItemId,
   index,
   onChange,
   busy,
   onView,
+  onRemove,
 }: {
+  onRemove: () => void;
   preview: Preview;
   source?: Screenshot;
+  imageUrl?: string;
+  contextItemId?: string;
   index: number;
   onChange: (r: DraftRow) => void;
   busy: boolean;
@@ -158,42 +203,166 @@ function ReviewRow({
             onChange={(e) => onChange({ ...row, included: e.target.checked })}
           />
           <strong>
-            {index + 1}. {r.lines.map((l) => l.title || 'Untitled item').join(', ')}
+            {index + 1}.{' '}
+            {r.lines
+              .map(
+                (l) =>
+                  l.title ||
+                  (isLifecycle(r.kind)
+                    ? `Existing order ${r.externalOrderId || row.orderId || ''}`
+                    : 'Item details needed'),
+              )
+              .join(', ') ||
+              `Existing order ${r.externalOrderId || row.orderId || '— confirm identity'}`}
           </strong>
         </label>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Remove pending record ${index + 1}`}
+          disabled={busy}
+          onClick={onRemove}
+        >
+          <Trash2 size={16} />
+        </Button>
         <Badge tone={p.ready ? 'green' : 'amber'}>{p.ready ? 'Ready' : 'Needs review'}</Badge>
         <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(!editing)}>
           {editing ? 'Done' : 'Edit'}
         </Button>
       </div>
+      <LifecycleFields
+        relatedOrder={p.relatedOrder}
+        row={row}
+        w={w}
+        busy={busy}
+        onChange={onChange}
+      />
       <p>
-        {r.marketplace || 'Marketplace unknown'} · {r.kind} · {r.date || 'Date unknown'}
+        {r.marketplace || 'Marketplace unknown'} · {r.event ? eventNames[r.event.type] : r.kind} ·{' '}
+        {r.date || 'Date unknown'}
       </p>
-      {row.matches.map((m, i) => {
-        const item = w.items.find((v) => v.id === m.itemId);
-        return (
-          <div className="detail-row" key={i}>
-            {item && <ItemPhoto item={item} />}
-            <span>
-              {item
-                ? `Inventory: ${item.title} · ${item.sku}`
-                : m.newItem
-                  ? 'New inventory proposed'
-                  : 'Inventory match needed'}
-              <small>
-                Purchase cost ({item ? 'inventory' : 'required'}):{' '}
-                {p.costs[i] === null || p.costs[i] === undefined ? 'Unknown' : money(p.costs[i])}
-              </small>
-            </span>
-          </div>
-        );
-      })}
-      <p>
-        {r.kind === 'listing' ? 'Asking price' : 'Sale price'}:{' '}
-        {r.lines.some((l) => l.price === null)
-          ? 'Unknown'
-          : money(r.lines.reduce((n, l) => n + l.price!, 0))}
-      </p>
+      {r.marketplaceIdentification && (
+        <details>
+          <summary>
+            Marketplace:{' '}
+            {r.marketplaceIdentification.confirmedByUser
+              ? 'confirmed by you'
+              : r.marketplaceIdentification.confidence}
+          </summary>
+          {r.marketplaceIdentification.evidence.map((e, i) => (
+            <p key={i}>{e}</p>
+          ))}
+          {!r.marketplace && <p className="hint">Confirm the marketplace in Edit.</p>}
+        </details>
+      )}
+      {r.kind === 'listing' && !r.date && (
+        <small>
+          Original screenshot date unknown; existing listing dates are preserved. New listings use
+          approval time.
+        </small>
+      )}
+      {r.lines.map((line, i) => (
+        <div key={i}>
+          <ClothingPreview line={line} source={source} url={imageUrl} />
+          {r.kind === 'listing' && (
+            <ListingFields
+              row={row}
+              index={i}
+              w={w}
+              busy={busy}
+              previewCost={p.costs[i] ?? null}
+              onChange={onChange}
+            />
+          )}
+        </div>
+      ))}
+      <div className="actions">
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
+          Match Existing Item
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || !row.included}
+          onClick={() => onChange({ ...row, included: false })}
+        >
+          Skip
+        </Button>
+      </div>
+      {contextItemId && !row.matches.some((m) => m.itemId === contextItemId) && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy || r.kind !== 'listing' || r.lines.length !== 1}
+          onClick={() =>
+            onChange({
+              ...row,
+              included: true,
+              matches: [{ itemId: contextItemId, newItem: null, confirmZeroCost: false }],
+            })
+          }
+        >
+          Link this listing to selected item
+        </Button>
+      )}
+      {!isLifecycle(r.kind) &&
+        row.matches.map((m, i) => {
+          const item = w.items.find((v) => v.id === m.itemId);
+          return (
+            <div className="detail-row" key={i}>
+              {item && <ItemPhoto item={item} />}
+              <span>
+                {item
+                  ? `Inventory: ${item.title} · ${item.sku}`
+                  : m.newItem
+                    ? 'New inventory proposed'
+                    : 'Inventory match needed'}
+                <small>
+                  Purchase cost ({item ? 'inventory' : 'required'}):{' '}
+                  {p.costs[i] === null || p.costs[i] === undefined ? 'Unknown' : money(p.costs[i])}
+                </small>
+              </span>
+            </div>
+          );
+        })}
+      {!isLifecycle(r.kind) && (
+        <p>
+          {r.kind === 'listing'
+            ? 'Asking price'
+            : r.kind === 'sale'
+              ? 'Sale price'
+              : 'Observed price (event unconfirmed)'}
+          :{' '}
+          {r.lines.some((l) => l.price === null)
+            ? 'Unknown'
+            : money(r.lines.reduce((n, l) => n + l.price!, 0))}
+        </p>
+      )}
+      {r.kind === 'sale' && !editing && (
+        <div className="assistant-sale-inline">
+          {r.lines.map((line, i) => (
+            <AmountField
+              key={i}
+              label={`Sale price, item ${i + 1}`}
+              value={line.price}
+              onChange={(price) =>
+                update({ lines: r.lines.map((l, j) => (j === i ? { ...l, price } : l)) })
+              }
+            />
+          ))}
+          <details>
+            <summary>Edit selling expenses</summary>
+            {saleAmounts.map((key) => (
+              <AmountField
+                key={key}
+                label={amountLabels[key]}
+                value={r[key]}
+                onChange={(value) => update({ [key]: value })}
+              />
+            ))}
+          </details>
+        </div>
+      )}
       {r.kind === 'sale' && (
         <>
           <p>
@@ -229,33 +398,45 @@ function ReviewRow({
             {warning}
           </p>
         ))}
-        {!!r.warnings.length && (
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={row.acknowledgedWarnings}
-              disabled={busy}
-              onChange={(e) => onChange({ ...row, acknowledgedWarnings: e.target.checked })}
-            />
-            I reviewed these extraction warnings and corrected the details.
-          </label>
-        )}
+        {(r.kind === 'sale' || r.kind === 'refund' || (r.kind === 'return' && row.applyRefund)) &&
+          !!blockingWarnings(r).length && (
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={row.acknowledgedWarnings}
+                disabled={busy}
+                onChange={(e) => onChange({ ...row, acknowledgedWarnings: e.target.checked })}
+              />
+              I reviewed these extraction warnings and corrected the details.
+            </label>
+          )}
       </details>
-      {editing && (
+      {editing && !isLifecycle(r.kind) && (
         <fieldset disabled={busy} className="assistant-edit-fields">
           <div className="form-grid">
-            <label className="field">
-              <span>Marketplace</span>
-              <select
-                value={r.marketplace || ''}
-                onChange={(e) => update({ marketplace: e.target.value as typeof r.marketplace })}
-              >
-                <option value="">Choose marketplace</option>
-                {marketplaces.map((m) => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-            </label>
+            {r.kind !== 'listing' && (
+              <label className="field">
+                <span>Marketplace</span>
+                <select
+                  value={r.marketplace || ''}
+                  onChange={(e) => {
+                    const marketplace = (e.target.value || null) as typeof r.marketplace;
+                    update({
+                      marketplace,
+                      marketplaceIdentification: correctedMarketplace(
+                        r.marketplaceIdentification,
+                        marketplace,
+                      ),
+                    });
+                  }}
+                >
+                  <option value="">Choose marketplace</option>
+                  {marketplaces.map((m) => (
+                    <option key={m}>{m}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="field">
               <span>Currency</span>
               <select
@@ -304,15 +485,17 @@ function ReviewRow({
           </label>
           {r.lines.map((line, i) => {
             const candidates = matchInventory(w, r, line);
-            const inventory = search
-              ? w.items
-                  .filter((v) =>
-                    `${v.title} ${v.sku} ${v.brand} ${v.size}`
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                  )
-                  .slice(0, 30)
-              : candidates.map((c) => c.item);
+            const inventory = contextItemId
+              ? w.items.filter((v) => v.id === contextItemId)
+              : search
+                ? w.items
+                    .filter((v) =>
+                      `${v.title} ${v.sku} ${v.brand} ${v.size}`
+                        .toLowerCase()
+                        .includes(search.toLowerCase()),
+                    )
+                    .slice(0, 30)
+                : candidates.map((c) => c.item);
             const selected = w.items.find((v) => v.id === row.matches[i]?.itemId);
             if (selected && !inventory.some((v) => v.id === selected.id))
               inventory.unshift(selected);
@@ -331,6 +514,11 @@ function ReviewRow({
                         matches: row.matches.map((m, j) =>
                           j === i
                             ? {
+                                ...m,
+                                costOverride: undefined,
+                                costInput: undefined,
+                                costCorrection: false,
+                                purchaseCost: undefined,
                                 itemId: e.target.value || null,
                                 newItem: null,
                                 confirmZeroCost: false,
@@ -348,7 +536,8 @@ function ReviewRow({
                     ))}
                   </select>
                 </label>
-                {!search &&
+                {!contextItemId &&
+                  !search &&
                   candidates
                     .filter((c) => !c.exact)
                     .slice(0, 3)
@@ -362,7 +551,16 @@ function ReviewRow({
                             ...row,
                             matches: row.matches.map((m, j) =>
                               j === i
-                                ? { itemId: c.item.id, newItem: null, confirmZeroCost: false }
+                                ? {
+                                    ...m,
+                                    costOverride: undefined,
+                                    costInput: undefined,
+                                    costCorrection: false,
+                                    purchaseCost: undefined,
+                                    itemId: c.item.id,
+                                    newItem: null,
+                                    confirmZeroCost: false,
+                                  }
                                 : m,
                             ),
                           })
@@ -382,7 +580,7 @@ function ReviewRow({
                         </span>
                       </button>
                     ))}
-                {selected?.cost === 0 && (
+                {selected?.cost === 0 && r.kind !== 'listing' && (
                   <label className="check-row">
                     <input
                       type="checkbox"
@@ -399,7 +597,7 @@ function ReviewRow({
                     I confirm this item was acquired for $0.
                   </label>
                 )}
-                {!selected && !row.matches[i].newItem && (
+                {!contextItemId && !selected && !row.matches[i].newItem && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -414,7 +612,7 @@ function ReviewRow({
                                 newItem: {
                                   id: crypto.randomUUID(),
                                   sku: line.sku || `AI-${row.id.slice(0, 8)}-${i + 1}`,
-                                  cost: null,
+                                  cost: m.purchaseCost ?? null,
                                   purchasedAt: '',
                                   confirmedDistinct: false,
                                 },
@@ -448,18 +646,20 @@ function ReviewRow({
                           }
                         />
                       </label>
-                      <AmountField
-                        label={`Purchase cost, line ${i + 1}`}
-                        value={row.matches[i].newItem!.cost}
-                        onChange={(cost) =>
-                          onChange({
-                            ...row,
-                            matches: row.matches.map((m, j) =>
-                              j === i ? { ...m, newItem: { ...m.newItem!, cost } } : m,
-                            ),
-                          })
-                        }
-                      />
+                      {r.kind !== 'listing' && (
+                        <AmountField
+                          label={`Purchase cost, line ${i + 1}`}
+                          value={row.matches[i].newItem!.cost}
+                          onChange={(cost) =>
+                            onChange({
+                              ...row,
+                              matches: row.matches.map((m, j) =>
+                                j === i ? { ...m, newItem: { ...m.newItem!, cost } } : m,
+                              ),
+                            })
+                          }
+                        />
+                      )}
                       <label className="field">
                         <span>Acquisition date, line {i + 1}</span>
                         <input
@@ -503,7 +703,7 @@ function ReviewRow({
                     </label>
                   </div>
                 )}
-                {selected && (
+                {selected && !contextItemId && r.kind !== 'listing' && (
                   <details>
                     <summary>Correct stored purchase cost</summary>
                     <p className="hint">
@@ -524,50 +724,64 @@ function ReviewRow({
                     />
                   </details>
                 )}
-                <details>
-                  <summary>Item attributes and listing identifiers</summary>
-                  <div className="form-grid">
-                    {(
-                      [
-                        'title',
-                        'brand',
-                        'size',
-                        'color',
-                        'category',
-                        'condition',
-                        'description',
-                        'sku',
-                        'listingId',
-                        'url',
-                      ] as const
-                    ).map((key) => (
-                      <label className="field" key={key}>
-                        <span>
-                          {key === 'listingId' ? 'Listing ID' : key === 'url' ? 'Listing URL' : key}
-                          , line {i + 1}
-                        </span>
-                        <input
-                          value={line[key] || ''}
-                          maxLength={key === 'url' ? 2000 : 500}
-                          onChange={(e) =>
-                            update({
-                              lines: r.lines.map((l, j) =>
-                                j === i ? { ...l, [key]: e.target.value || null } : l,
-                              ),
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </details>
-                <AmountField
-                  label={`${r.kind === 'listing' ? 'Listing' : 'Sale'} price, line ${i + 1}`}
-                  value={line.price}
-                  onChange={(price) =>
-                    update({ lines: r.lines.map((l, j) => (j === i ? { ...l, price } : l)) })
-                  }
-                />
+                {r.kind !== 'listing' && (
+                  <>
+                    <details>
+                      <summary>Item attributes and listing identifiers</summary>
+                      <div className="form-grid">
+                        {(
+                          [
+                            'title',
+                            'brand',
+                            'size',
+                            'color',
+                            'category',
+                            'condition',
+                            'description',
+                            'sku',
+                            'listingId',
+                            'url',
+                          ] as const
+                        ).map((key) => (
+                          <label className="field" key={key}>
+                            <span>
+                              {key === 'listingId'
+                                ? 'Listing ID'
+                                : key === 'url'
+                                  ? 'Listing URL'
+                                  : key}
+                              , line {i + 1}
+                            </span>
+                            <input
+                              value={line[key] || ''}
+                              maxLength={key === 'url' ? 2000 : 500}
+                              onChange={(e) =>
+                                update({
+                                  lines: r.lines.map((l, j) =>
+                                    j === i ? { ...l, [key]: e.target.value || null } : l,
+                                  ),
+                                })
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                    <ClothingEditor
+                      line={line}
+                      onChange={(value) =>
+                        update({ lines: r.lines.map((l, j) => (j === i ? value : l)) })
+                      }
+                    />
+                    <AmountField
+                      label={`Sale price, line ${i + 1}`}
+                      value={line.price}
+                      onChange={(price) =>
+                        update({ lines: r.lines.map((l, j) => (j === i ? { ...l, price } : l)) })
+                      }
+                    />
+                  </>
+                )}
               </div>
             );
           })}
@@ -605,8 +819,10 @@ function ReviewRow({
       <details>
         <summary>Extraction and corrections</summary>
         <small>
-          Source screenshot hash: {row.sourceHash.slice(0, 12)}… · Inventory cost is retrieved
-          separately.
+          {row.sourceHash === 'conversation'
+            ? 'Source: your explicit request for an existing order.'
+            : `Source screenshot hash: ${row.sourceHash.slice(0, 12)}…`}{' '}
+          Inventory cost is retrieved separately.
         </small>
         {source?.reference && (
           <a
@@ -620,7 +836,9 @@ function ReviewRow({
         )}
         <small>Original screenshot extraction</small>
         <pre className="assistant-source">
-          {JSON.stringify(source?.extraction.records[row.recordIndex] || null)}
+          {row.sourceHash === 'conversation'
+            ? row.intent
+            : JSON.stringify(source?.extraction.records[row.recordIndex] || null)}
         </pre>
         <small>Current corrected facts</small>
         <pre className="assistant-source">{factRecord}</pre>

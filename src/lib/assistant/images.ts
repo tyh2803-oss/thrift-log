@@ -1,4 +1,4 @@
-import { IMAGE_LIMIT } from './schema';
+import { IMAGE_LIMIT, SOURCE_IMAGE_EDGE_LIMIT, SOURCE_IMAGE_PIXEL_LIMIT } from './schema';
 export async function prepareImage(file: File): Promise<File> {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
     throw new Error('Use JPEG, PNG or WebP images. Export HEIC photos as JPEG first.');
@@ -11,13 +11,19 @@ export async function prepareImage(file: File): Promise<File> {
     await image.decode();
     if (image.width * image.height > 40_000_000)
       throw new Error('This image is too large. Crop it to the order or listing.');
-    const scale = Math.min(1, 2000 / Math.max(image.width, image.height));
+    const scale = Math.min(
+      1,
+      SOURCE_IMAGE_EDGE_LIMIT / Math.max(image.width, image.height),
+      Math.sqrt(SOURCE_IMAGE_PIXEL_LIMIT / (image.width * image.height)),
+    );
+    // Preserve readable source pixels and lossless screenshot text whenever already bounded.
+    if (scale === 1 && file.size <= IMAGE_LIMIT) return file;
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.width * scale));
     canvas.height = Math.max(1, Math.round(image.height * scale));
     canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', 0.9),
+      canvas.toBlob(resolve, 'image/jpeg', 0.95),
     );
     if (!blob || blob.size > IMAGE_LIMIT)
       throw new Error('Crop this screenshot to reduce it below 5 MB.');

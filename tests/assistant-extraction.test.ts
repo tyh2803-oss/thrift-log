@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import { extractionSchema } from '../src/lib/assistant/schema';
-import { extractedSale } from './helpers/assistant';
+import { extractedSale, visionExtraction } from './helpers/assistant';
 vi.mock('server-only', () => ({}));
 const auth = vi.hoisted(() => ({ requireUser: vi.fn(), checkOrigin: vi.fn() }));
 vi.mock('../src/lib/supabase/server', () => auth);
@@ -16,7 +16,7 @@ const png = new Uint8Array(
     .png()
     .toBuffer(),
 );
-const extraction = () => ({ records: [extractedSale()], message: 'One sale found.' });
+const extraction = () => visionExtraction();
 const result = (data: unknown) =>
   new Response(
     JSON.stringify({
@@ -155,11 +155,11 @@ it('rejects a forged PNG signature before sending data to OpenAI', async () => {
 it('bounds per-owner API attempts and keeps other owners isolated', async () => {
   const fetcher = vi.fn().mockImplementation(async () => result(extraction()));
   for (let i = 0; i < 20; i++)
-    await extractScreenshot('owner', new Uint8Array([i]), 'image/png', fetcher);
+    await extractScreenshot('owner', new Uint8Array([...png, i]), 'image/png', fetcher);
   await expect(
-    extractScreenshot('owner', new Uint8Array([21]), 'image/png', fetcher),
+    extractScreenshot('owner', new Uint8Array([...png, 21]), 'image/png', fetcher),
   ).rejects.toThrow('Too many');
   await expect(
-    extractScreenshot('another', new Uint8Array([21]), 'image/png', fetcher),
+    extractScreenshot('another', new Uint8Array([...png, 21]), 'image/png', fetcher),
   ).resolves.toBeTruthy();
 });

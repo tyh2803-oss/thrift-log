@@ -351,7 +351,7 @@ try {
     'Missing fees and seller shipping remain unknown',
     missing?.fees === null && missing.shipping === null,
   );
-  const offerImage = data.screenshots.find((s) => s.name === 'pending-offer.jpg');
+  const offerImage = data.screenshots.find((s) => s.name === 'pending-offer.png');
   check(
     'Accepted offer is not a completed sale',
     !!offerImage && offerImage.extraction.records.every((r) => r.status !== 'completed'),

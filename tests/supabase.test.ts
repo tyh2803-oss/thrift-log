@@ -315,3 +315,73 @@ describe('native sign-in fallback', () => {
     expect(mocks.signIn).not.toHaveBeenCalled();
   });
 });
+
+describe('private Wi-Fi development cookies', () => {
+  const request = (host: string, protocol = 'http:') =>
+    new Request(`${protocol}//localhost:3000/api/auth`, { headers: { Host: `${host}:3000` } });
+  it('permits HTTP cookies for RFC1918 IPv4 hosts only in development', async () => {
+    for (const mode of ['development', 'production', 'test']) {
+      vi.stubEnv('NODE_ENV', mode);
+      for (const host of ['192.168.18.125', '10.0.0.8', '172.16.0.1', '172.31.255.254']) {
+        const secure = mode !== 'development';
+        expect(secureSessionCookie(request(host))).toBe(secure);
+        expect(secureSessionCookie(request(host, 'https:'))).toBe(true);
+        await authClient({ writableCookies: true, request: request(host) });
+        const options = mocks.createServer.mock.calls.at(-1)![2].cookieOptions;
+        expect(options).toMatchObject({ secure, httpOnly: true, sameSite: 'lax', path: '/' });
+        expect(options.domain).toBeUndefined();
+        await proxy(
+          new NextRequest('http://localhost:3000/api/workspace', {
+            headers: { Host: `${host}:3000` },
+          }),
+        );
+        expect(mocks.createServer.mock.calls.at(-1)![2].cookieOptions).toMatchObject({
+          secure,
+          httpOnly: true,
+          sameSite: 'lax',
+          path: '/',
+        });
+      }
+    }
+  });
+  it('keeps Secure on public hosts and ignores spoofed forwarding headers', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    for (const host of [
+      'thrift.example',
+      '8.8.8.8',
+      '172.15.0.1',
+      '172.32.0.1',
+      '192.167.18.125',
+      '169.254.1.2',
+      '192.168.18.125.evil.example',
+    ]) {
+      expect(secureSessionCookie(request(host))).toBe(true);
+      expect(
+        secureSessionCookie(
+          new Request('http://localhost:3000/api/auth', {
+            headers: {
+              Host: `${host}:3000`,
+              'X-Forwarded-Host': '192.168.18.125:3000',
+              'X-Forwarded-Proto': 'http',
+            },
+          }),
+        ),
+      ).toBe(true);
+    }
+  });
+  it('retains exact same-origin CSRF enforcement on LAN requests', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    for (const origin of [
+      'http://192.168.18.125:3000',
+      'http://192.168.18.126:3000',
+      'http://192.168.18.125:3001',
+      'https://evil.example',
+    ]) {
+      const r = new Request('http://localhost:3000/api/auth', {
+        headers: { Host: '192.168.18.125:3000', Origin: origin },
+      });
+      if (origin === 'http://192.168.18.125:3000') expect(() => checkOrigin(r)).not.toThrow();
+      else expect(() => checkOrigin(r)).toThrow('Invalid request origin');
+    }
+  });
+});

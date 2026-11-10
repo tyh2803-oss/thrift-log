@@ -1,4 +1,9 @@
+import { listingAmount, listingCost } from './listing-review';
+import { blockingWarnings } from './warnings';
+import { isLifecycle, lifecyclePreview } from './lifecycle';
 import { matchInventory } from './matching';
+import { listingEvidenceIssue, requireMarketplaceReview } from './vision';
+import { clothingDescription } from './clothing';
 import { applyCommand } from '../commands';
 import { zoneMidnight } from '../dates';
 import { itemIsSold } from '../ledger';
@@ -25,6 +30,7 @@ export const amountLabels: Record<(typeof saleAmounts)[number], string> = {
   other: 'Packaging / other direct costs',
 };
 export type Preview = {
+  relatedOrder?: Workspace['orders'][number];
   row: DraftRow;
   ready: boolean;
   issues: string[];
@@ -47,6 +53,7 @@ export function importDate(value: string | null, zone: string): string | null {
     : null;
 }
 function importedSource(w: Workspace, row: DraftRow) {
+  if (row.sourceHash === 'conversation') return undefined;
   return w.imports.find((i) => {
     if (i.mapping.format !== 'assistant-v1') return false;
     try {
@@ -66,7 +73,40 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     date = importDate(r.date, w.settings.timezone);
   let duplicateId: string | null = null,
     duplicateKind: Preview['duplicateKind'] = null;
+  if (isLifecycle(r.kind)) {
+    const event = lifecyclePreview(w, row, date);
+    if (importedSource(w, row))
+      event.issues.push(
+        'This screenshot record has already been imported. Reconcile the saved event instead.',
+      );
+    if (requireMarketplaceReview(r))
+      event.issues.push('Confirm the uncertain screenshot marketplace.');
+    return {
+      row,
+      relatedOrder: event.order,
+      ready: !event.issues.length && !!event.commands.length,
+      issues: event.issues,
+      duplicateId: event.order?.id || null,
+      duplicateKind: event.order ? 'order' : null,
+      costs: [],
+      totals: null,
+      profits: [],
+      commands: event.issues.length ? [] : event.commands,
+    };
+  }
+  if (!r.lines.length)
+    issues.push(
+      'No supported physical products were identified. Use a complete product screenshot or manual entry.',
+    );
+  if (r.kind === 'listing' && r.lines.some((line) => listingEvidenceIssue(line)))
+    issues.push(
+      'This region does not establish a complete distinct listing. Use a complete product card.',
+    );
+  if (r.event && r.event.confidence !== 'clear' && !r.event.confirmedByUser)
+    issues.push('Confirm the screenshot lifecycle event.');
   if (!r.marketplace) issues.push('Choose the marketplace.');
+  if (requireMarketplaceReview(r))
+    issues.push('Confirm the uncertain or conflicting screenshot marketplace.');
   if (r.currency !== 'USD')
     issues.push('Confirm the amounts are USD. Currency conversion is not supported.');
   if ((r.kind === 'sale' && !date) || (r.date && !date))
@@ -74,7 +114,7 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
   if (date && Date.parse(date) > Date.now() + 300000)
     issues.push('The record date cannot be in the future.');
   if (r.kind === 'other') issues.push('This screenshot is not a sale or active listing.');
-  if (r.warnings.length && !row.acknowledgedWarnings)
+  if (r.kind === 'sale' && blockingWarnings(r).length && !row.acknowledgedWarnings)
     issues.push('Review and acknowledge the extraction warnings.');
   if (row.matches.length !== r.lines.length)
     issues.push('Every physical line needs an inventory match.');
@@ -86,13 +126,22 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     let item = w.items.find((v) => v.id === match.itemId);
     if (match.itemId && match.newItem)
       issues.push(`Line ${i + 1}: choose existing or new inventory, not both.`);
+    for (const raw of [match.costInput, match.priceInput]) {
+      if (raw !== undefined && listingAmount(raw).error)
+        issues.push(`Line ${i + 1}: ${listingAmount(raw).error}`);
+    }
+    if (match.costCorrection && match.costInput !== undefined && !match.costInput.trim())
+      issues.push(`Line ${i + 1}: enter the proposed acquisition cost or cancel its correction.`);
     const proposed = match.newItem;
     const storedCost = match.costOverride ?? item?.cost;
-    const cost = item
-      ? storedCost === 0 && !match.confirmZeroCost && match.costOverride == null
-        ? null
-        : storedCost!
-      : (proposed?.cost ?? null);
+    const cost =
+      r.kind === 'listing'
+        ? listingCost(w, row, i)
+        : item
+          ? storedCost === 0 && !match.confirmZeroCost && match.costOverride == null
+            ? null
+            : storedCost!
+          : (proposed?.cost ?? null);
     if (item && match.costOverride != null && match.costOverride !== item.cost) {
       item = { ...item, cost: match.costOverride };
       commands.push({ type: 'item', value: item });
@@ -124,13 +173,13 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         color: line.color || '',
         category: line.category || 'Other',
         condition: line.condition || '',
-        description: line.description || '',
+        description: clothingDescription(line.description, line.clothing),
         cost: cost ?? 0,
         asking: line.price ?? 0,
         purchasedAt: purchasedAt || new Date(0).toISOString(),
         status: 'Purchased',
         createdAt: new Date().toISOString(),
-        notes: 'Added through approved screenshot import.',
+        notes: match.notes || 'Added through approved screenshot import.',
       });
       if (parsed.success) {
         item = parsed.data;
@@ -141,7 +190,7 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         );
     }
     if (!item) issues.push(`Line ${i + 1}: select an inventory item or create one.`);
-    if (cost === null)
+    if (cost === null && (r.kind !== 'listing' || !match.itemId))
       issues.push(
         `Line ${i + 1}: purchase cost is unknown${item?.cost === 0 ? '; confirm free inventory if zero is correct' : ''}.`,
       );
@@ -276,10 +325,13 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
         issues.push(
           `Line ${i + 1}: the existing listing has a different external ID. Reconcile it before updating.`,
         );
-      const listedAt = date || existing?.listedAt;
-      if (!listedAt)
-        issues.push(`Line ${i + 1}: enter the listing date. An unknown date will not be invented.`);
+      const listedAt = date || existing?.listedAt || new Date().toISOString();
+
       if (
+        !(
+          match?.costOverride != null &&
+          match.costOverride !== w.items.find((item) => item.id === itemId)?.cost
+        ) &&
         existing?.status === 'Active' &&
         existing.price === line.price &&
         (!line.listingId || existing.externalId === line.listingId) &&
@@ -331,8 +383,67 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
   const batch = batchSchema.parse(input);
   let next = w;
   const seen = new Map<string, string>();
-  return batch.rows.map((row) => {
+  const listingTargets = new Set<string>();
+  const corrections = new Map<string, Set<number>>();
+  for (const row of batch.rows.filter((r) => r.included))
+    for (const m of row.matches) {
+      if (m.itemId && m.costOverride != null) {
+        const values = corrections.get(m.itemId) || new Set<number>();
+        values.add(m.costOverride);
+        corrections.set(m.itemId, values);
+      }
+    }
+  const rank = (row: DraftRow) =>
+    row.facts.kind === 'listing' ? 0 : row.facts.kind === 'sale' ? 1 : 2;
+  const planned = new Map<string, Preview>();
+  for (const row of [...batch.rows].sort((a, b) => rank(a) - rank(b))) {
     const preview = previewRow(next, row);
+    if (row.matches.some((m) => m.itemId && (corrections.get(m.itemId)?.size || 0) > 1)) {
+      preview.issues.push(
+        'Conflicting acquisition-cost corrections for the same physical item. Use one cost before approving.',
+      );
+      preview.ready = false;
+      preview.commands = [];
+    }
+    if (
+      batch.marketplaceContext &&
+      row.facts.marketplace !== batch.marketplaceContext &&
+      !row.facts.marketplaceIdentification?.confirmedByUser
+    ) {
+      preview.issues.push(
+        `Your request mentions ${batch.marketplaceContext}, but screenshot evidence differs or is unclear. Confirm the marketplace in Edit.`,
+      );
+      preview.ready = false;
+      preview.commands = [];
+    }
+    if (
+      batch.context &&
+      (row.facts.kind !== 'listing' ||
+        row.facts.lines.length !== 1 ||
+        !next.items.some((i) => i.id === batch.context!.itemId) ||
+        row.matches.some(
+          (m) =>
+            m.itemId !== batch.context!.itemId ||
+            m.newItem ||
+            (m.costOverride != null && !m.costCorrection),
+        ))
+    ) {
+      preview.issues.push(
+        'This scan must link one listing to the selected existing item, preserving its inventory details.',
+      );
+      preview.ready = false;
+      preview.commands = [];
+    }
+    if (row.included && row.facts.kind === 'listing' && preview.ready) {
+      const keys = row.matches.map((m) => `${row.facts.marketplace}:${m.itemId || m.newItem?.id}`);
+      if (keys.some((key) => listingTargets.has(key))) {
+        preview.issues.push(
+          'Another included screenshot already proposes this physical item on the same marketplace. Keep one current listing view.',
+        );
+        preview.ready = false;
+        preview.commands = [];
+      } else keys.forEach((key) => listingTargets.add(key));
+    }
     const key =
       row.facts.kind === 'sale' && row.facts.externalOrderId
         ? `${row.facts.marketplace}:${row.facts.externalOrderId}`
@@ -345,8 +456,9 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
     }
     if (row.included && key) seen.set(key, row.id);
     if (row.included && preview.ready) next = preview.commands.reduce(applyCommand, next);
-    return preview;
-  });
+    planned.set(row.id, preview);
+  }
+  return batch.rows.map((row) => planned.get(row.id)!);
 }
 
 /** Only explicit row IDs may produce commands; a single invalid selected row rejects the batch. */
@@ -359,9 +471,16 @@ export function approvalCommands(
   const batch = batchSchema.parse(input);
   if (!rowIds.length || new Set(rowIds).size !== rowIds.length)
     throw new Error('Select at least one ready record, without duplicates.');
-  const previews = previewBatch(w, batch);
+  const previews = previewBatch(w, {
+    ...batch,
+    rows: batch.rows.map((row) => ({ ...row, included: row.included && rowIds.includes(row.id) })),
+  });
   const commands: Command[] = [];
-  for (const id of rowIds) {
+  const rank = (id: string) => {
+    const kind = batch.rows.find((r) => r.id === id)?.facts.kind;
+    return kind === 'listing' ? 0 : kind === 'sale' ? 1 : 2;
+  };
+  for (const id of [...rowIds].sort((a, b) => rank(a) - rank(b))) {
     const p = previews.find((p) => p.row.id === id);
     if (!p || !p.row.included || !p.ready)
       throw new Error(
@@ -369,27 +488,50 @@ export function approvalCommands(
       );
     const row = p.row;
     const screenshot = batch.screenshots.find((s) => s.hash === row.sourceHash);
-    if (!screenshot || !screenshot.extraction.records[row.recordIndex])
+    if (
+      row.sourceHash === 'conversation'
+        ? !isLifecycle(row.facts.kind)
+        : !screenshot || !screenshot.extraction.records[row.recordIndex]
+    )
       throw new Error('The original screenshot extraction is missing.');
     commands.push(...p.commands, {
       type: 'import',
       value: {
         id: row.id,
-        filename: `screenshots-${batch.id}.json`,
-        kind: row.facts.kind === 'sale' ? 'Sales' : 'Listings',
+        filename: `${row.sourceHash === 'conversation' ? 'assistant-action' : 'screenshots'}-${batch.id}.json`,
+        kind: row.facts.kind === 'listing' ? 'Listings' : 'Sales',
         importedAt: at,
         rawCsv: JSON.stringify({
           version: 1,
           batchId: batch.id,
           rows: [{ sourceHash: row.sourceHash, recordIndex: row.recordIndex }],
           screenshot: {
-            hash: screenshot.hash,
-            name: screenshot.name,
-            reference: screenshot.reference,
+            hash: screenshot?.hash,
+            name: screenshot?.name,
+            reference: screenshot?.reference,
+            identification: screenshot?.extraction.identification,
+            processing: screenshot?.processing,
           },
-          extracted: screenshot.extraction.records[row.recordIndex],
+          extracted: screenshot?.extraction.records[row.recordIndex] || null,
+          origin: row.sourceHash === 'conversation' ? 'conversation' : 'screenshot',
+          intent: row.intent,
           corrected: row.facts,
+          listingDateInferred:
+            row.facts.kind === 'listing' &&
+            !row.facts.date &&
+            !p.commands.some(
+              (c) => c.type === 'listing' && w.listings.some((l) => l.id === c.value.id),
+            ),
+          eventTarget: {
+            orderId: row.orderId,
+            itemIds: row.targetItemIds,
+            confirmPackage: row.confirmPackage,
+            confirmPhysicalReturn: row.confirmPhysicalReturn,
+            applyRefund: row.applyRefund,
+          },
           matches: row.matches,
+          context: batch.context,
+          marketplaceContext: batch.marketplaceContext,
         }),
         mapping: { format: 'assistant-v1', batchId: batch.id },
         recordIds: p.commands.flatMap((c) => ('id' in c.value ? [c.value.id] : [])),

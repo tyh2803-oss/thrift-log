@@ -8,8 +8,17 @@ import { prepareImage } from '@/lib/assistant/images';
 import { screenshotSchema, DEFAULT_BATCH_LIMIT, BATCH_BYTES_LIMIT } from '@/lib/assistant/schema';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
-import { batchSchema, createBatch, type DraftBatch } from '@/lib/assistant/drafts';
+import {
+  batchSchema,
+  createBatch,
+  sanitizeBatch,
+  type DraftBatch,
+  type ListingContext,
+} from '@/lib/assistant/drafts';
 import { AssistantReview } from './assistant-review';
+import { marketplaceContextFromText } from '@/lib/assistant/vision';
+import { prepareSpokenFulfillment, appendConversationRow } from '@/lib/assistant/conversation';
+import { AssistantFulfillmentActions } from './assistant-fulfillment-actions';
 import { correctBatch } from '@/lib/assistant/corrections';
 
 type Attachment = { id: string; file: File; url: string };
@@ -19,12 +28,16 @@ export function Assistant({
   onOpen,
   onClose,
   scope,
+  context,
+  onClearContext,
   onView,
 }: {
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
   scope: string;
+  context?: ListingContext;
+  onClearContext?: () => void;
   onView: (kind: 'order' | 'listing', id: string) => void;
 }) {
   const {
@@ -40,6 +53,7 @@ export function Assistant({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [batch, setBatch] = useState<DraftBatch | null>(null);
+  const [recentOrders, setRecentOrders] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [config, setConfig] = useState<{ enabled: boolean; batchLimit: number } | null>(null);
@@ -47,6 +61,7 @@ export function Assistant({
   const storageKey = `thrift-log.draft.assistant.${scope}`;
   const sourceFiles = useRef(new Map<string, File>());
   const urls = useRef(new Set<string>());
+  const [sourceUrls, setSourceUrls] = useState(new Map<string, string>());
   const lock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -54,7 +69,7 @@ export function Assistant({
     const timer = setTimeout(() => {
       try {
         const raw = sessionStorage.getItem(storageKey);
-        if (raw) setBatch(batchSchema.parse(JSON.parse(raw)));
+        if (raw) setBatch(sanitizeBatch(batchSchema.parse(JSON.parse(raw))));
       } catch {
         setError('A saved assistant draft could not be restored. Existing records are unchanged.');
       }
@@ -113,6 +128,7 @@ export function Assistant({
         sourceFiles.current.set(hash, file);
         const url = URL.createObjectURL(file);
         urls.current.add(url);
+        setSourceUrls((previous) => new Map(previous).set(hash, url));
         additions.push({ id: crypto.randomUUID(), file, url });
       }
       if (
@@ -138,17 +154,36 @@ export function Assistant({
     }
   }
   function clear() {
+    if (
+      batch?.rows.length &&
+      !window.confirm('Discard pending drafts and clear chat? Saved records stay intact.')
+    )
+      return;
     urls.current.forEach(URL.revokeObjectURL);
     urls.current.clear();
     setAttachments([]);
     setMessages([]);
     setBatch(null);
     sourceFiles.current.clear();
+    setSourceUrls(new Map());
     setError('');
   }
   async function send() {
     if (lock.current || !ready || (!text.trim() && !attachments.length)) return;
     const prompt = text.trim() || 'Review these screenshots.';
+    if (!attachments.length) {
+      const fulfillment = prepareSpokenFulfillment(w, prompt);
+      if (fulfillment) {
+        if (fulfillment.row) setBatch(appendConversationRow(batch, w, fulfillment.row));
+        setMessages((old) => [
+          ...old.slice(-38),
+          { id: crypto.randomUUID(), role: 'user', text: prompt },
+          { id: crypto.randomUUID(), role: 'assistant', text: fulfillment.message },
+        ]);
+        setText('');
+        return;
+      }
+    }
     if (!attachments.length && batch) {
       try {
         const corrected = correctBatch(batch, prompt, w);
@@ -200,7 +235,7 @@ export function Assistant({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       const extracted = screenshotSchema.array().parse(data.screenshots);
-      setBatch(createBatch(extracted, w));
+      setBatch(createBatch(extracted, w, context, marketplaceContextFromText(prompt)));
       setMessages((old) => [
         ...old.slice(-38),
         { id: crypto.randomUUID(), role: 'user', text: prompt, images: attachments },
@@ -253,11 +288,26 @@ export function Assistant({
           // Keep successful upload references on failure/retry, avoiding another upload.
           setBatch(structuredClone(prepared));
         }
-      if (await approveAssistant(prepared, ids)) {
+      const confirmed = await approveAssistant(prepared, ids);
+      if (confirmed) {
+        setRecentOrders((old) =>
+          [
+            ...new Set([
+              ...old,
+              ...prepared.rows
+                .filter((r) => ids.includes(r.id) && r.facts.kind === 'sale')
+                .map((r) => r.id),
+            ]),
+          ].slice(-20),
+        );
         setBatch((current) =>
           current
             ? current.rows.some((r) => !ids.includes(r.id))
-              ? { ...current, rows: current.rows.filter((r) => !ids.includes(r.id)) }
+              ? {
+                  ...current,
+                  revision: confirmed.revision,
+                  rows: current.rows.filter((r) => !ids.includes(r.id)),
+                }
               : null
             : null,
         );
@@ -309,6 +359,19 @@ export function Assistant({
             }}
           >
             <div className="assistant-thread" role="log" aria-label="Assistant conversation">
+              {context && (
+                <div className="hint">
+                  Scan listing for{' '}
+                  {w.items.find((i) => i.id === context.itemId)?.title || 'selected inventory item'}
+                  . Its cost, SKU, photos and sourcing history are preserved.
+                  {batch && batch.context?.itemId !== context.itemId && (
+                    <p>Finish or cancel the existing batch before starting this scan.</p>
+                  )}
+                  <Button variant="ghost" size="sm" disabled={busy} onClick={onClearContext}>
+                    Use general import
+                  </Button>
+                </div>
+              )}
               {!messages.length && !batch && (
                 <div className="assistant-intro">
                   <MessageCircle size={28} />
@@ -347,6 +410,7 @@ export function Assistant({
               {batch && (
                 <AssistantReview
                   batch={batch}
+                  sourceUrls={sourceUrls}
                   onChange={setBatch}
                   onApprove={(ids) => void approve(ids)}
                   onCancel={() => setBatch(null)}
@@ -354,6 +418,7 @@ export function Assistant({
                   onView={onView}
                 />
               )}
+              {!!recentOrders.length && <AssistantFulfillmentActions orderIds={recentOrders} />}
               {busy && <p role="status">Working on your screenshots…</p>}
               <div ref={end} />
             </div>

@@ -9,6 +9,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { readConfiguration } from '../src/lib/supabase/config.ts';
 const config = readConfiguration(process.env);
+if (
+  process.env.HOSTED_LEDGER_POSTINGS === '1' &&
+  process.env.HOSTED_LEDGER_ADMIN_CLEANUP_READY !== '1'
+)
+  throw new Error(
+    'Immutable ledger fixture posting requires verified database-admin cleanup. Use normal hosted checks or local PGlite tests.',
+  );
 if (new URL(config.url).hostname !== 'gvwgasebholdawlakwdf.supabase.co')
   throw new Error('Use the verified Thrift Log project.');
 const admin = createClient(config.url, config.serviceKey, {
@@ -228,9 +235,15 @@ try {
     .setInputFiles({ name: 'fixture-listings.png', mimeType: 'image/png', buffer: listingImage });
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   const second = dialog.locator('.assistant-extraction').nth(1);
+  await second.getByLabel('Purchase Cost ($)', { exact: true }).fill('15');
+  await second.getByLabel('Listing Price ($)', { exact: true }).fill('62.50');
+  await second.getByRole('combobox', { name: 'Marketplace', exact: true }).selectOption('Whatnot');
+  await second.getByText('Edit additional details', { exact: true }).click();
+  await second.getByLabel('Import notes', { exact: true }).fill('Inline import fixture notes.');
+  await second.getByText('Edit additional details', { exact: true }).click();
   await second.getByRole('button', { name: 'Edit', exact: true }).click();
   await second.getByRole('button', { name: 'Create new physical item' }).click();
-  await second.getByLabel('Purchase cost, line 1 ($)', { exact: true }).fill('15');
+  await second.getByLabel('Purchase Cost ($)', { exact: true }).fill('15');
   await second.getByLabel('Acquisition date, line 1', { exact: true }).fill(purchased.slice(0, 10));
   await second.getByText('I checked inventory and confirm this is a new physical item.').click();
   check(
@@ -251,6 +264,10 @@ try {
     saved.items.length === 2 &&
       saved.listings.length === 3 &&
       saved.listings.find((l) => l.externalId === 'fixture-vinted')?.price === 4800 &&
+      saved.listings.find((l) => l.externalId === 'fixture-boots')?.marketplace === 'Whatnot' &&
+      saved.listings.find((l) => l.externalId === 'fixture-boots')?.price === 6250 &&
+      saved.items.find((i) => i.title === 'Fixture red boots')?.notes ===
+        'Inline import fixture notes.' &&
       saved.orders.length === 0,
   );
   check(
@@ -294,6 +311,18 @@ try {
     saved.items.find((i) => i.id === itemId)?.status === 'Sold' &&
       saved.listings.find((l) => l.externalId === 'fixture-depop')?.status === 'Needs delisting',
   );
+  stage = 'one-tap saved sale fulfillment';
+  await dialog.getByRole('button', { name: 'Mark Shipped', exact: true }).click();
+  await dialog.getByText(/Fulfillment saved/).waitFor({ timeout: 20000 });
+  saved = await workspace();
+  check(
+    'One-tap Mark Shipped updates the saved order without another sale or expense',
+    saved.orders.length === 1 &&
+      saved.orders[0].fulfillment === 'Shipped' &&
+      saved.orders[0].shipping === 300 &&
+      saved.orders[0].fees === 400 &&
+      saved.items.length === 2,
+  );
   const replay = await context.request.post(origin + '/api/assistant/approve', {
     headers: { Origin: origin },
     data: { batch: pending, rowIds: [pending.rows[0].id] },
@@ -304,6 +333,232 @@ try {
       (await replay.json()).replayed === true &&
       (await workspace()).orders.length === 1,
   );
+  stage = 'inline existing-item cost correction';
+  const bootsBefore = saved.items.find((i) => i.title === 'Fixture red boots');
+  await page.evaluate(
+    (data) => {
+      window.__thriftAssistantFixtures = data;
+    },
+    [
+      record({
+        kind: 'listing',
+        status: 'active',
+        marketplace: 'Whatnot',
+        externalOrderId: null,
+        lines: [line({ title: 'Fixture red boots', listingId: 'fixture-boots', price: 6250 })],
+      }),
+    ],
+  );
+  await dialog.getByLabel('Screenshot files').setInputFiles({
+    name: 'fixture-correction.png',
+    mimeType: 'image/png',
+    buffer: await png('#00ff00'),
+  });
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await dialog.getByLabel('Purchase Cost ($)', { exact: true }).waitFor();
+  check(
+    'Matched inventory cost starts read-only at its stored value',
+    (await dialog.getByLabel('Purchase Cost ($)', { exact: true }).inputValue()) === '15' &&
+      (await dialog.getByLabel('Purchase Cost ($)', { exact: true }).getAttribute('readonly')) !==
+        null,
+  );
+  await dialog.getByRole('button', { name: 'Correct cost', exact: true }).click();
+  await dialog.getByLabel('Purchase Cost ($)', { exact: true }).fill('16');
+  check(
+    'Proposed cost correction has not modified Supabase',
+    (await workspace()).items.find((i) => i.id === bootsBefore.id)?.cost === 1500,
+  );
+  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.locator('.assistant-extraction').waitFor({ state: 'hidden', timeout: 20000 });
+  saved = await workspace();
+  const bootsAfter = saved.items.find((i) => i.id === bootsBefore.id);
+  check(
+    'Approved correction changes only acquisition cost with no duplicate item/listing',
+    saved.items.length === 2 &&
+      saved.listings.length === 3 &&
+      JSON.stringify(bootsAfter) === JSON.stringify({ ...bootsBefore, cost: 1600 }),
+  );
+  check(
+    'Previously posted sale cost snapshot remains unchanged',
+    saved.orders[0].lines[0].costBasis === 1200,
+  );
+  saved.imports.forEach((i) => {
+    const reference = JSON.parse(i.rawCsv).screenshot.reference;
+    if (reference) paths.add(reference);
+  });
+  stage = 'screenshot-delivered lifecycle approval';
+  await page.evaluate(
+    (data) => {
+      window.__thriftAssistantFixtures = data;
+    },
+    [
+      record({
+        kind: 'fulfillment',
+        status: 'delivered',
+        date: new Date().toISOString(),
+        event: {
+          type: 'delivered',
+          confidence: 'clear',
+          evidence: ['Deterministic delivery confirmation'],
+          scope: 'order',
+          carrier: 'Fixture carrier',
+          tracking: 'TRACK-DELIVERED',
+          labelCost: null,
+          externalEventId: null,
+        },
+      }),
+    ],
+  );
+  await dialog.getByLabel('Screenshot files').setInputFiles({
+    name: 'fixture-delivered.png',
+    mimeType: 'image/png',
+    buffer: await png('#ffaa00'),
+  });
+  await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).waitFor();
+  check(
+    'Delivery event review has not changed fulfillment before approval',
+    (await workspace()).orders[0].fulfillment === 'Shipped',
+  );
+  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await dialog.locator('.assistant-extraction').waitFor({ state: 'hidden', timeout: 20000 });
+  saved = await workspace();
+  check(
+    'Delivery screenshot updates fulfillment without duplicate sale/item/expense',
+    saved.orders.length === 1 &&
+      saved.items.length === 2 &&
+      saved.orders[0].fulfillment === 'Delivered' &&
+      saved.orders[0].shipping === 300 &&
+      saved.financialEvents.length === 0,
+  );
+  saved.imports.forEach((i) => {
+    const source = JSON.parse(i.rawCsv).screenshot?.reference;
+    if (source) paths.add(source);
+  });
+  // Immutable posting tests require separate admin cleanup; normal hosted checks avoid retaining ledger fixtures.
+  if (process.env.HOSTED_LEDGER_POSTINGS === '1') {
+    stage = 'verified refund and physical return approval';
+    await page.evaluate(
+      (data) => {
+        window.__thriftAssistantFixtures = data;
+      },
+      [
+        record({
+          kind: 'return',
+          status: 'returned',
+          date: new Date().toISOString(),
+          refund: 500,
+          event: {
+            type: 'returned',
+            confidence: 'clear',
+            evidence: ['Deterministic seller receipt and completed refund'],
+            scope: 'order',
+            carrier: null,
+            tracking: null,
+            labelCost: null,
+            externalEventId: 'fixture-rma-1',
+          },
+        }),
+      ],
+    );
+    await dialog.getByLabel('Screenshot files').setInputFiles({
+      name: 'fixture-return.png',
+      mimeType: 'image/png',
+      buffer: await png('#abc001'),
+    });
+    await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+    await dialog.getByRole('checkbox', { name: /I received these physical items back/ }).check();
+    await dialog.getByRole('checkbox', { name: /Also record the verified refund/ }).check();
+    check(
+      'Financial return remains unsaved before approval',
+      (await workspace()).financialEvents.length === 0,
+    );
+    await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+    await dialog.locator('.assistant-extraction').waitFor({ state: 'hidden', timeout: 20000 });
+    saved = await workspace();
+    check(
+      'Refund and physical return commit together through the dated ledger',
+      saved.orders.length === 1 &&
+        saved.financialEvents.length === 2 &&
+        saved.financialEvents.some((e) => e.kind === 'Refund' && e.amount === 500) &&
+        saved.financialEvents.some((e) => e.kind === 'Return' && e.itemIds.includes(itemId)) &&
+        saved.items.find((i) => i.id === itemId)?.status === 'Returned' &&
+        saved.orders[0].lines[0].costBasis === 1200,
+    );
+    saved.imports.forEach((i) => {
+      const source = JSON.parse(i.rawCsv).screenshot?.reference;
+      if (source) paths.add(source);
+    });
+    stage = 'unfulfilled cancellation fixture sale';
+    await page.evaluate(
+      (data) => {
+        window.__thriftAssistantFixtures = data;
+      },
+      [
+        record({
+          marketplace: 'Whatnot',
+          externalOrderId: 'fixture-cancel-order',
+          fees: 0,
+          shipping: 0,
+          lines: [line({ title: 'Fixture red boots', listingId: 'fixture-boots', price: 6250 })],
+        }),
+      ],
+    );
+    await dialog.getByLabel('Screenshot files').setInputFiles({
+      name: 'fixture-cancel-sale.png',
+      mimeType: 'image/png',
+      buffer: await png('#abc002'),
+    });
+    await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+    await dialog.locator('.assistant-extraction').waitFor({ state: 'hidden', timeout: 20000 });
+    stage = 'cancellation lifecycle approval';
+    await page.evaluate(
+      (data) => {
+        window.__thriftAssistantFixtures = data;
+      },
+      [
+        record({
+          kind: 'cancellation',
+          status: 'cancelled',
+          marketplace: 'Whatnot',
+          externalOrderId: 'fixture-cancel-order',
+          date: new Date().toISOString(),
+          event: {
+            type: 'cancelled',
+            confidence: 'clear',
+            evidence: ['Deterministic cancellation before shipment'],
+            scope: 'order',
+            carrier: null,
+            tracking: null,
+            labelCost: null,
+            externalEventId: null,
+          },
+        }),
+      ],
+    );
+    await dialog.getByLabel('Screenshot files').setInputFiles({
+      name: 'fixture-cancel.png',
+      mimeType: 'image/png',
+      buffer: await png('#abc003'),
+    });
+    await dialog.getByRole('button', { name: 'Send', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+    await dialog.locator('.assistant-extraction').waitFor({ state: 'hidden', timeout: 20000 });
+    saved = await workspace();
+    check(
+      'Cancellation restores available inventory without another physical item or order',
+      saved.orders.length === 2 &&
+        saved.items.length === 2 &&
+        saved.orders.find((o) => o.externalId === 'fixture-cancel-order')?.status === 'Cancelled' &&
+        saved.items.find((i) => i.id === bootsBefore.id)?.status === 'Ready to List' &&
+        saved.financialEvents.length === 2,
+    );
+    saved.imports.forEach((i) => {
+      const source = JSON.parse(i.rawCsv).screenshot?.reference;
+      if (source) paths.add(source);
+    });
+  }
   stage = 'duplicate screenshot and private source verification';
   await page.evaluate((data) => {
     window.__thriftAssistantFixtures = data;
@@ -357,6 +612,17 @@ try {
         passed = false;
         console.error('FAIL Test screenshot cleanup');
       }
+    }
+    const protectedRows = await admin
+      .from('financial_events')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+    if (protectedRows.error || protectedRows.data.length) {
+      passed = false;
+      console.error(
+        'FAIL Immutable fixture postings need database-admin cleanup. No ledger protections were changed.',
+      );
     }
     for (const table of [
       'order_lines',

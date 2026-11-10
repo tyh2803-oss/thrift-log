@@ -1,4 +1,9 @@
 import { type Workspace, marketplaces } from '../model';
+import { changeEvent } from './events';
+import { changeListingCost } from './listing-review';
+import { previewBatch } from './planner';
+import { removeDraft } from './drafts';
+import { correctedMarketplace } from './vision';
 import { parseMoney } from '../money';
 import { type DraftBatch } from './drafts';
 /** Deliberately bounded edits: ambiguity produces a question, never another transaction. */
@@ -15,6 +20,35 @@ export function correctBatch(
       'Buyer-paid platform shipping may not be seller revenue. Use Edit to enter only shipping money you actually received.',
     );
   const normalized = text.toLowerCase();
+  if (
+    /^(?:please\s+)?(?:log|approve|add|save)(?:\s+all)?\s+(?:these|everything|all|them)(?:\s+ready)?[.!]?$/i.test(
+      text,
+    )
+  ) {
+    const ready = previewBatch(w, batch).filter((p) => p.row.included && p.ready).length;
+    return {
+      batch: input,
+      message: `${ready} records are ready. Tap Approve All Ready (${ready}) to confirm the validated batch; unresolved records stay pending.`,
+      changed: false,
+    };
+  }
+  if (/^(?:please\s+)?clear\s+(?:all|everything|the batch)[.!]?$/i.test(text))
+    return fail(
+      'Use Clear All, then confirm Discard pending drafts. Saved records will stay intact.',
+    );
+  if (/\b(?:all|these|them|everything)\b/i.test(text) && /\b(?:listed|for sale)\b/i.test(text)) {
+    let count = 0;
+    batch.rows = batch.rows.map((row) => {
+      if (!row.included || !['listing', 'other'].includes(row.facts.kind)) return row;
+      count++;
+      return changeEvent(row, 'active_listing');
+    });
+    return {
+      batch,
+      message: `Prepared ${count} listing updates. Review and tap Approve All Ready; completed sales and fulfillment events were preserved.`,
+      changed: count > 0,
+    };
+  }
   const ordinals = [
     'first',
     'second',
@@ -61,6 +95,56 @@ export function correctBatch(
     return fail(
       'Which record should I change? Use its number, for example “The second item sold for $35.”',
     );
+  if (/^(?:please\s+)?(?:remove|delete|trash|discard)\b/i.test(text))
+    return {
+      batch: removeDraft(batch, row.id),
+      message: `Removed pending record ${rowIndex + 1}. Saved inventory and accounting records are unchanged.`,
+      changed: true,
+    };
+  const cost = text.match(
+    /(?:cost(?: me| was| is)?|purchase cost(?: was| is)?)\s*[:=]?\s*\$?(\d+(?:\.\d{1,2})?)(?!\d|\.\d)/i,
+  );
+  if (cost && !/shipping|fees?|processing|other expenses/i.test(text)) {
+    if (row.facts.lines.length !== 1) return fail('Which line’s acquisition cost should change?');
+    row.matches[0].costCorrection = !!row.matches[0].itemId;
+    batch.rows[rowIndex] = changeListingCost(w, row, 0, cost[1]);
+    return {
+      batch,
+      message: `Proposed record ${rowIndex + 1} acquisition cost $${cost[1]}. Nothing is saved until approval.`,
+      changed: true,
+    };
+  }
+  if (/\b(?:shipped|fulfilled)\b/i.test(text))
+    return fail(
+      'Approve an unsaved sale first. For a saved sale, use Mark Shipped or Mark Fulfilled after saving, or give its inventory title.',
+    );
+  if (/\b(?:sold)\b/i.test(text) && row.facts.kind !== 'sale') {
+    const next = changeEvent(row, 'completed_sale');
+    next.facts.date = null;
+    next.facts.externalOrderId = null;
+    for (const key of [
+      'fees',
+      'processing',
+      'shipping',
+      'shippingCollected',
+      'discount',
+      'refund',
+      'other',
+    ] as const)
+      next.facts[key] = null;
+    const amount = text.match(/sold for\s*\$?(\d+(?:\.\d{1,2})?)(?!\d|\.\d)/i);
+    next.facts.lines = next.facts.lines.map((l) => ({
+      ...l,
+      price: amount && next.facts.lines.length === 1 ? parseMoney(amount[1]) : null,
+    }));
+    batch.rows[rowIndex] = next;
+    return {
+      batch,
+      message:
+        'Proposed a completed sale. Confirm the actual sale date, price and selling amounts before approval; asking prices were not assumed to be proceeds.',
+      changed: true,
+    };
+  }
   const lineRef = normalized.match(/\bline\s+(\d+)\b/);
   const lineIndex = lineRef ? Number(lineRef[1]) - 1 : 0;
   if (!row.facts.lines[lineIndex])
@@ -114,6 +198,7 @@ export function correctBatch(
         `Record ${rowIndex + 1} has multiple items. Specify a line number so I don’t replace an order total with one item’s price.`,
       );
     row.facts.lines[lineIndex].price = parseMoney(price[1]);
+    delete row.matches[lineIndex].priceInput;
     return {
       batch,
       message: `Updated record ${rowIndex + 1}${lineRef ? `, line ${lineIndex + 1}` : ''} to $${price[1]}.`,
@@ -124,6 +209,10 @@ export function correctBatch(
   const platform = marketplaces.find((m) => replacement.toLowerCase().includes(m.toLowerCase()));
   if (platform) {
     row.facts.marketplace = platform;
+    row.facts.marketplaceIdentification = correctedMarketplace(
+      row.facts.marketplaceIdentification,
+      platform,
+    );
     return {
       batch,
       message: `Updated record ${rowIndex + 1} to ${platform}. Please check the inventory match.`,
@@ -156,7 +245,16 @@ export function correctBatch(
       );
     if (row.facts.lines.length > 1 && !lineRef)
       return fail('Specify the line number to change its inventory match.');
-    row.matches[lineIndex] = { itemId: candidates[0].id, newItem: null, confirmZeroCost: false };
+    row.matches[lineIndex] = {
+      ...row.matches[lineIndex],
+      costOverride: undefined,
+      costInput: undefined,
+      costCorrection: false,
+      purchaseCost: undefined,
+      itemId: candidates[0].id,
+      newItem: null,
+      confirmZeroCost: false,
+    };
     return {
       batch,
       message: `Matched record ${rowIndex + 1} to ${candidates[0].title}. Purchase cost comes from inventory.`,

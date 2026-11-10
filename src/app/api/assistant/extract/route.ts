@@ -3,7 +3,13 @@ import sharp from 'sharp';
 import { requireUser, checkOrigin } from '@/lib/supabase/server';
 import { ConfigurationError } from '@/lib/supabase/config';
 import { assistantConfig, AssistantError, extractScreenshot } from '@/lib/assistant/openai';
-import { IMAGE_LIMIT, BATCH_BYTES_LIMIT, type Screenshot } from '@/lib/assistant/schema';
+import {
+  IMAGE_LIMIT,
+  BATCH_BYTES_LIMIT,
+  SOURCE_IMAGE_EDGE_LIMIT,
+  SOURCE_IMAGE_PIXEL_LIMIT,
+  type Screenshot,
+} from '@/lib/assistant/schema';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
@@ -58,13 +64,13 @@ export async function POST(request: Request) {
       const mime = png ? 'image/png' : jpg ? 'image/jpeg' : webp ? 'image/webp' : '';
       if (!mime) throw new AssistantError('Unsupported image. Use JPEG, PNG, or WebP screenshots.');
       try {
-        const image = sharp(bytes, { limitInputPixels: 6_250_000, failOn: 'error' });
+        const image = sharp(bytes, { limitInputPixels: SOURCE_IMAGE_PIXEL_LIMIT, failOn: 'error' });
         const metadata = await image.metadata();
         if (
           !metadata.width ||
           !metadata.height ||
-          metadata.width > 2500 ||
-          metadata.height > 2500 ||
+          metadata.width > SOURCE_IMAGE_EDGE_LIMIT ||
+          metadata.height > SOURCE_IMAGE_EDGE_LIMIT ||
           (metadata.pages ?? 1) > 1
         )
           throw new Error('Image limit');

@@ -81,3 +81,57 @@ export function assistantWorkspace(): Workspace {
   ];
   return w;
 }
+
+import { visionExtractionSchema } from '../../src/lib/assistant/schema';
+export function visionExtraction(records: ExtractedRecord[] = [extractedSale()]) {
+  const marketplace = records[0]?.marketplace;
+  return visionExtractionSchema.parse({
+    identification: {
+      detected: marketplace === 'In person' ? null : marketplace || null,
+      confidence: 'clear' as const,
+      evidence: ['Fixture marketplace header'],
+    },
+    records: records.map((record) => ({
+      ...Object.fromEntries(
+        Object.entries(record).filter(([key]) => key !== 'marketplaceIdentification'),
+      ),
+      event: record.event || {
+        type:
+          record.kind === 'listing'
+            ? 'active_listing'
+            : record.kind === 'sale'
+              ? 'completed_sale'
+              : 'ambiguous',
+        confidence: 'clear',
+        evidence: ['Fixture event header'],
+        scope: 'order',
+        carrier: null,
+        tracking: null,
+        labelCost: null,
+        externalEventId: null,
+      },
+      lines: record.lines.map((line) => ({
+        ...line,
+        clothing: {
+          originalTitle: line.title,
+          visibleText: null,
+          garmentType: null,
+          design: null,
+          material: null,
+          fit: null,
+          style: null,
+          region: null,
+          partial: false,
+          vintage: {
+            classification: 'Insufficient evidence' as const,
+            evidence: [],
+            ageEvidence: null,
+            followUp: null,
+          },
+          evidence: [],
+        },
+      })),
+    })),
+    message: 'Fixture extraction',
+  });
+}

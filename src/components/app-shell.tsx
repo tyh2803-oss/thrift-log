@@ -27,6 +27,7 @@ import {
   CircleHelp,
 } from 'lucide-react';
 import { WorkspaceProvider, useWorkspace } from '@/lib/use-workspace';
+import { SecureWorkspace } from './secure-workspace';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
 import { duration, laborMs } from '@/lib/finance';
@@ -64,9 +65,11 @@ export function ThriftApp({
   email?: string;
 }) {
   return (
-    <WorkspaceProvider demo={demo}>
-      <Shell section={section} email={email} pipeline={pipeline} />
-    </WorkspaceProvider>
+    <SecureWorkspace>
+      <WorkspaceProvider demo={demo}>
+        <Shell section={section} email={email} pipeline={pipeline} />
+      </WorkspaceProvider>
+    </SecureWorkspace>
   );
 }
 function Shell({
@@ -92,6 +95,7 @@ function Shell({
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [importing, setImporting] = useState(false);
   const [assistant, setAssistant] = useState(false);
+  const [scanItemId, setScanItemId] = useState<string | undefined>();
   const [quick, setQuick] = useState(false);
   const [timerMenu, setTimerMenu] = useState(false);
   const [notifications, setNotifications] = useState(false);
@@ -658,6 +662,11 @@ function Shell({
           key={`${editor.kind}-${editor.value?.id || 'new'}`}
           target={editor}
           onClose={() => setEditor(null)}
+          onScanListing={(id) => {
+            setEditor(null);
+            setScanItemId(id);
+            setAssistant(true);
+          }}
         />
       )}{' '}
       {importing && <Importer onClose={() => setImporting(false)} />}{' '}
@@ -665,6 +674,8 @@ function Shell({
         open={assistant}
         onOpen={() => setAssistant(true)}
         onClose={() => setAssistant(false)}
+        context={scanItemId ? { itemId: scanItemId } : undefined}
+        onClearContext={() => setScanItemId(undefined)}
         scope={demo ? 'demo' : email || 'private'}
         onView={(kind, id) => {
           const value =

@@ -1,6 +1,6 @@
 # Local Codex / authenticated Supabase MCP handoff
 
-The owner will apply and verify hosted Supabase changes from local Codex. Cloud development must continue without attempting to transfer MCP OAuth credentials. None of this repository's migrations is confirmed applied to the hosted project.
+Authenticated local Codex applied all four saved migrations on November 9, 2026, after confirming the target and empty schema/history. The owner then supplied runtime configuration; `supabase:verify` and real hosted Auth/session, inventory and photo tests now pass. See [PROJECT_STATUS.md](../PROJECT_STATUS.md) for version mappings, evidence, the origin-check fix, and remaining manual/UI/deployment checks. Do not replay these migrations. Cloud development must continue without attempting to transfer MCP OAuth credentials. The instructions below remain the reference for subsequent inspection and verification.
 
 ## Target and preservation
 

@@ -81,7 +81,15 @@ const dateValue = (value?: string) => {
   return new Date(+date - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 const amt = (value?: number) => ((value || 0) / 100).toFixed(2);
-export function Editor({ target, onClose }: { target: EditorTarget; onClose: () => void }) {
+export function Editor({
+  target,
+  onClose,
+  onScanListing,
+}: {
+  target: EditorTarget;
+  onClose: () => void;
+  onScanListing?: (id: string) => void;
+}) {
   const { w, dispatch, saving, demo, notify, error: workspaceError } = useWorkspace();
   const formRef = useRef<HTMLFormElement>(null);
   const draftKey = `thrift-log.draft.${demo ? 'demo' : 'private'}.${target.kind}.${target.value?.id || 'new'}`;
@@ -1063,6 +1071,16 @@ export function Editor({ target, onClose }: { target: EditorTarget; onClose: () 
             I confirm the purchase cost and all selling amounts, including any $0 fees or shipping,
             are known.
           </label>
+        )}
+        {target.kind === 'item' && target.value && onScanListing && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving || uploading}
+            onClick={() => onScanListing(target.value!.id)}
+          >
+            Scan Listing for This Item
+          </Button>
         )}
         <div className="form-footer">
           <Button type="button" variant="outline" onClick={onClose}>
