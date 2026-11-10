@@ -27,9 +27,12 @@ import {
   CircleHelp,
 } from 'lucide-react';
 import { WorkspaceProvider, useWorkspace } from '@/lib/use-workspace';
+import { SecureWorkspace } from './secure-workspace';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
 import { duration, laborMs } from '@/lib/finance';
+import { lineFulfillment } from '@/lib/fulfillment-state';
+import { readPipelineStage } from '@/lib/pipeline';
 import type { Session } from '@/lib/model';
 import { Home } from './home';
 import { Inventory } from './inventory';
@@ -39,6 +42,7 @@ import { Insights } from './insights';
 import { Settings } from './settings';
 import { Editor, type EditorTarget } from './editor';
 import { Importer } from './importer';
+import { Assistant } from './assistant';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 import { Badge, Empty } from './shared';
@@ -53,18 +57,34 @@ export function ThriftApp({
   section,
   demo,
   email,
+  pipeline,
 }: {
+  pipeline?: string;
   section: string;
   demo: boolean;
   email?: string;
 }) {
   return (
-    <WorkspaceProvider demo={demo}>
-      <Shell section={section} email={email} />
-    </WorkspaceProvider>
+    <SecureWorkspace>
+      <WorkspaceProvider demo={demo}>
+        <Shell section={section} email={email} pipeline={pipeline} />
+      </WorkspaceProvider>
+    </SecureWorkspace>
   );
 }
-function Shell({ section, email }: { section: string; email?: string }) {
+function Shell({
+  section,
+  email,
+  pipeline,
+}: {
+  section: string;
+  email?: string;
+  pipeline?: string;
+}) {
+  const pipelineStage = readPipelineStage(pipeline || null);
+  const inventoryStage =
+    pipelineStage === 'unlisted' || pipelineStage === 'for-sale' ? pipelineStage : null;
+  const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
   const { now, w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
   const router = useRouter();
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
@@ -74,6 +94,8 @@ function Shell({ section, email }: { section: string; email?: string }) {
   const [customEnd, setCustomEnd] = useState('');
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [importing, setImporting] = useState(false);
+  const [assistant, setAssistant] = useState(false);
+  const [scanItemId, setScanItemId] = useState<string | undefined>();
   const [quick, setQuick] = useState(false);
   const [timerMenu, setTimerMenu] = useState(false);
   const [notifications, setNotifications] = useState(false);
@@ -171,8 +193,11 @@ function Shell({ section, email }: { section: string; email?: string }) {
   const fulfill = w.orders.filter(
     (o) =>
       o.status === 'Completed' &&
-      o.fulfillment === 'Unfulfilled' &&
-      o.lines.some((l) => !returnedItemIds(w, o.id).has(l.itemId)),
+      o.lines.some(
+        (l) =>
+          !returnedItemIds(w, o.id).has(l.itemId) &&
+          lineFulfillment(o, l.itemId).status === 'Unfulfilled',
+      ),
   );
   const missing = w.items.filter((i) => i.cost === 0 && i.status !== 'Archived');
   const stale = w.listings.filter(
@@ -338,18 +363,19 @@ function Shell({ section, email }: { section: string; email?: string }) {
               <p>{subtitles[section]}</p>
             </div>
             <div className="heading-actions">
-              {['home', 'sales', 'activity', 'insights'].includes(section) && (
-                <select
-                  aria-label="Date range"
-                  className="date-filter"
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value as Period)}
-                >
-                  {periods.map((p) => (
-                    <option key={p}>{p}</option>
-                  ))}
-                </select>
-              )}
+              {['home', 'sales', 'activity', 'insights'].includes(section) &&
+                !(section === 'sales' && salesStage) && (
+                  <select
+                    aria-label="Date range"
+                    className="date-filter"
+                    value={period}
+                    onChange={(e) => setPeriod(e.target.value as Period)}
+                  >
+                    {periods.map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                )}
               <div className="popover-anchor">
                 <Button onClick={() => setQuick(!quick)}>
                   <Plus size={17} />
@@ -358,6 +384,15 @@ function Shell({ section, email }: { section: string; email?: string }) {
                 </Button>
                 {quick && (
                   <div className="popover quick-menu">
+                    <button
+                      onClick={() => {
+                        setAssistant(true);
+                        setQuick(false);
+                      }}
+                    >
+                      <CircleHelp size={17} />
+                      AI assistant
+                    </button>
                     <button onClick={() => edit({ kind: 'item' })}>
                       <Package size={17} />
                       Add item
@@ -404,7 +439,7 @@ function Shell({ section, email }: { section: string; email?: string }) {
               </div>
             </div>
           </div>
-          {period === 'Custom' && (
+          {period === 'Custom' && !(section === 'sales' && salesStage) && (
             <div className="custom-dates">
               <label>
                 From{' '}
@@ -512,10 +547,18 @@ function Shell({ section, email }: { section: string; email?: string }) {
             <>
               {section === 'home' && <Home range={range} onEdit={edit} />}{' '}
               {section === 'inventory' && (
-                <Inventory search={search} onEdit={edit} onImport={() => setImporting(true)} />
+                <Inventory
+                  key={inventoryStage || 'all'}
+                  pipelineStage={inventoryStage}
+                  search={search}
+                  onEdit={edit}
+                  onImport={() => setImporting(true)}
+                />
               )}{' '}
               {section === 'sales' && (
                 <Sales
+                  key={salesStage || 'all'}
+                  pipelineStage={salesStage}
                   search={search}
                   range={range}
                   onEdit={edit}
@@ -619,9 +662,34 @@ function Shell({ section, email }: { section: string; email?: string }) {
           key={`${editor.kind}-${editor.value?.id || 'new'}`}
           target={editor}
           onClose={() => setEditor(null)}
+          onScanListing={(id) => {
+            setEditor(null);
+            setScanItemId(id);
+            setAssistant(true);
+          }}
         />
       )}{' '}
       {importing && <Importer onClose={() => setImporting(false)} />}{' '}
+      <Assistant
+        open={assistant}
+        onOpen={() => setAssistant(true)}
+        onClose={() => setAssistant(false)}
+        context={scanItemId ? { itemId: scanItemId } : undefined}
+        onClearContext={() => setScanItemId(undefined)}
+        scope={demo ? 'demo' : email || 'private'}
+        onView={(kind, id) => {
+          const value =
+            kind === 'order'
+              ? w.orders.find((o) => o.id === id)
+              : w.listings.find((l) => l.id === id);
+          if (value) {
+            setAssistant(false);
+            if (kind === 'order')
+              edit({ kind: 'order', value: value as import('@/lib/model').Order });
+            else edit({ kind: 'listing', value: value as import('@/lib/model').Listing });
+          }
+        }}
+      />
       {notice && (
         <div className="toast" role="status">
           {notice}

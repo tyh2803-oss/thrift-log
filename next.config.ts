@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
-  allowedDevOrigins: ['127.0.0.1'],
+  // Exact LAN host used for iPhone testing; applies only to Next.js dev resources.
+  allowedDevOrigins: ['127.0.0.1', '192.168.18.125'],
   poweredByHeader: false,
   async headers() {
     return [

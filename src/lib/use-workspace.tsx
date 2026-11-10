@@ -2,6 +2,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { applyCommand } from './commands';
 import { demoWorkspace } from './demo';
+import type { DraftBatch } from './assistant/drafts';
+import { approvalCommands, alreadyApproved } from './assistant/planner';
 import { emptyWorkspace, workspaceSchema, type Command, type Workspace } from './model';
 const KEY = 'thrift-log.demo.v1';
 type Value = {
@@ -14,6 +16,7 @@ type Value = {
   notice: string;
   dispatch: (c: Command | Command[]) => Promise<boolean>;
   refresh: () => Promise<void>;
+  approveAssistant: (batch: DraftBatch, rowIds: string[]) => Promise<Workspace | false>;
   notify: (s: string) => void;
   resetDemo: () => void;
 };
@@ -123,6 +126,54 @@ export function WorkspaceProvider({
     },
     [demo, install],
   );
+  const approveAssistant = useCallback(
+    async (batch: DraftBatch, rowIds: string[]) => {
+      if (busy.current) return false;
+      busy.current = true;
+      setSaving(true);
+      setError('');
+      try {
+        if (demo) {
+          const commit = () => {
+            const raw = localStorage.getItem(KEY);
+            const current = raw ? workspaceSchema.parse(JSON.parse(raw)) : ref.current;
+            if (alreadyApproved(current, batch, rowIds)) {
+              install(current);
+              return;
+            }
+            if (current.revision !== batch.revision)
+              throw new Error('Demo workspace changed. Refresh and review before approving.');
+            const next = approvalCommands(current, batch, rowIds).reduce(applyCommand, current);
+            localStorage.setItem(KEY, JSON.stringify(next));
+            install(next);
+          };
+          if (navigator.locks) await navigator.locks.request(KEY, commit);
+          else commit();
+        } else {
+          const response = await fetch('/api/assistant/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ batch, rowIds }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error);
+          install(workspaceSchema.parse(data.workspace));
+        }
+        return ref.current;
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : 'Approval failed. Refresh to check saved records; your draft is preserved.',
+        );
+        return false;
+      } finally {
+        busy.current = false;
+        setSaving(false);
+      }
+    },
+    [demo, install],
+  );
   const resetDemo = () => {
     localStorage.removeItem(KEY);
     void refresh();
@@ -138,6 +189,7 @@ export function WorkspaceProvider({
         error,
         notice,
         dispatch,
+        approveAssistant,
         refresh,
         notify: setNotice,
         resetDemo,

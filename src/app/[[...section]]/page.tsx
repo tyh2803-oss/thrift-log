@@ -3,7 +3,14 @@ import { ThriftApp } from '@/components/app-shell';
 import { configured, configurationPresent, requireUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
-export default async function Page({ params }: { params: Promise<{ section?: string[] }> }) {
+export default async function Page({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ section?: string[] }>;
+  searchParams: Promise<{ pipeline?: string }>;
+}) {
+  const pipeline = (await searchParams).pipeline;
   const { section: segments } = await params;
   const section = segments?.[0] || 'home';
   if (
@@ -13,9 +20,9 @@ export default async function Page({ params }: { params: Promise<{ section?: str
     notFound();
   if (!configured()) {
     if (configurationPresent()) redirect('/login');
-    return <ThriftApp section={section} demo />;
+    return <ThriftApp section={section} demo pipeline={pipeline} />;
   }
   const user = await requireUser().catch(() => null);
   if (!user) redirect('/login');
-  return <ThriftApp section={section} demo={false} email={user.email} />;
+  return <ThriftApp section={section} demo={false} email={user.email} pipeline={pipeline} />;
 }

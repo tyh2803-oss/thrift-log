@@ -1,0 +1,48 @@
+{
+  "label": "User-provided four-item Vinted benchmark (actual image required)",
+  "count": 4,
+  "marketplace": "Vinted",
+  "items": [
+    {
+      "brand": "^DeLong$",
+      "size": "^(L|Large)$",
+      "condition": "^Good$",
+      "price": 4500,
+      "garmentType": "(pullover|jacket)",
+      "color": "white",
+      "design": "Cincinnati",
+      "title": "DeLong.*Cincinnati|Cincinnati.*DeLong",
+      "vintage": "^Potentially vintage$"
+    },
+    {
+      "brand": "^Carhartt$",
+      "size": "^W?32$",
+      "condition": "^Very good$",
+      "price": 3600,
+      "garmentType": "(jeans|denim.*pants)",
+      "color": "(light|wash)",
+      "fit": "(loose|relaxed|wide)",
+      "title": "Carhartt.*(jeans|denim)"
+    },
+    {
+      "brand": "^Wrangler$",
+      "size": "^W?32$",
+      "condition": "^Very good$",
+      "price": 1000,
+      "garmentType": "(jeans|denim.*pants)",
+      "color": "(light|wash)",
+      "title": "Wrangler.*(jeans|denim)"
+    },
+    {
+      "brand": "^Holloway$",
+      "size": "^(L|Large)$",
+      "condition": "^Very good$",
+      "price": 1500,
+      "garmentType": "(hood|jacket)",
+      "color": "navy",
+      "design": "Ohio State",
+      "title": "Holloway.*Ohio State|Ohio State.*Holloway"
+    }
+  ],
+  "kind": "listing"
+}

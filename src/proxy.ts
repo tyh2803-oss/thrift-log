@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { configurationStatus, readConfiguration } from '@/lib/supabase/config';
+import { configurationStatus, readConfiguration, secureSessionCookie } from '@/lib/supabase/config';
 /** Refresh cookies before Server Components render. Route handlers still authorize every operation. */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -10,7 +10,7 @@ export async function proxy(request: NextRequest) {
     cookieOptions: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: secureSessionCookie(request),
       path: '/',
     },
     cookies: {

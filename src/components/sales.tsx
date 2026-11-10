@@ -8,6 +8,9 @@ import { downloadCsv } from '@/lib/csv';
 import { marketplaces } from '@/lib/model';
 import { Empty, Status, Metric, ItemPhoto, CheckButton, Badge } from './shared';
 import { Button } from './ui/button';
+import { PipelineSales } from './pipeline-sales';
+import { OrderFulfillment } from './order-fulfillment';
+import type { PipelineStage } from '@/lib/pipeline';
 import { OrderLedger } from './order-ledger';
 import { Fulfillment } from './fulfillment';
 import { Dialog } from './ui/dialog';
@@ -17,7 +20,9 @@ export function Sales({
   range,
   onEdit,
   onImport,
+  pipelineStage = null,
 }: {
+  pipelineStage?: PipelineStage | null;
   search: string;
   range: [number, number];
   onEdit: (t: EditorTarget) => void;
@@ -27,6 +32,7 @@ export function Sales({
   const [tab, setTab] = useState('Orders');
   const [market, setMarket] = useState('All marketplaces');
   const [status, setStatus] = useState('All orders');
+  const [fulfillmentOrderId, setFulfillmentOrderId] = useState<string | null>(null);
   const [ledgerOrderId, setLedgerOrderId] = useState<string | null>(null);
   const [showId, setShowId] = useState<string | null>(null);
   const orders = w.orders
@@ -94,7 +100,28 @@ export function Sales({
           </div>
         )}
       </div>
-      {tab === 'Orders' ? (
+      {tab === 'Orders' && pipelineStage ? (
+        <>
+          <div className="actions pipeline-market-filter">
+            <label className="field">
+              <span>Marketplace</span>
+              <select value={market} onChange={(e) => setMarket(e.target.value)}>
+                <option>All marketplaces</option>
+                {marketplaces.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <PipelineSales
+            stage={pipelineStage}
+            search={search}
+            market={market}
+            onEdit={onEdit}
+            onFulfill={setFulfillmentOrderId}
+          />
+        </>
+      ) : tab === 'Orders' ? (
         <section className="card">
           <div className="table-controls">
             <div className="actions">
@@ -138,7 +165,7 @@ export function Sales({
                 <tbody>
                   {orders.map((o) => (
                     <tr key={o.id}>
-                      <td>
+                      <td className="sales-order-cell">
                         <button
                           className="cell-button"
                           onClick={() => onEdit({ kind: 'order', value: o })}
@@ -160,6 +187,14 @@ export function Sales({
                           aria-label={`Adjustments for ${o.externalId || o.id.slice(0, 8)}`}
                         >
                           Adjustments & returns
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Fulfillment for ${o.externalId || o.id.slice(0, 8)}`}
+                          onClick={() => setFulfillmentOrderId(o.id)}
+                        >
+                          Item fulfillment
                         </Button>
                       </td>
                       <td>
@@ -250,6 +285,12 @@ export function Sales({
             </section>
           )}
         </div>
+      )}
+      {fulfillmentOrderId && (
+        <OrderFulfillment
+          orderId={fulfillmentOrderId}
+          onClose={() => setFulfillmentOrderId(null)}
+        />
       )}
       {ledgerOrderId && (
         <OrderLedger orderId={ledgerOrderId} onClose={() => setLedgerOrderId(null)} />

@@ -7,3 +7,6 @@ next-env.d.ts
 playwright-report/
 test-results/
 coverage/
+
+# Next.js automatic HTTPS certificates/private keys (the configured CA is outside this repo).
+certificates/

@@ -1,36 +1,56 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { inventoryPipeline, stageNames, type PipelineStage } from '@/lib/pipeline';
 import { LayoutGrid, List, Plus, Download, ExternalLink, Copy } from 'lucide-react';
 import { currentOrderTotals } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, parseMoney } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
-import { itemStatuses, type Item } from '@/lib/model';
+import { itemStatuses, marketplaces, type Item } from '@/lib/model';
 import { Status, ItemPhoto, Empty } from './shared';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
+import { listingMetrics } from '@/lib/listing-metrics';
 import { PhotoGallery } from './photo-gallery';
 import type { EditorTarget } from './editor';
 export function Inventory({
   search,
   onEdit,
   onImport,
+  pipelineStage = null,
 }: {
+  pipelineStage?: PipelineStage | null;
   search: string;
   onEdit: (t: EditorTarget) => void;
   onImport: () => void;
 }) {
   const { now, w, dispatch, notify } = useWorkspace();
+  const base = usePathname().startsWith('/demo') ? '/demo' : '';
+  const pipeline = useMemo(() => (pipelineStage ? inventoryPipeline(w) : null), [w, pipelineStage]);
+  const pipelineIds = useMemo(
+    () =>
+      pipelineStage && pipeline
+        ? new Set(pipeline.groups[pipelineStage].entries.map((e) => e.item.id))
+        : null,
+    [pipeline, pipelineStage],
+  );
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [tab, setTab] = useState('Inventory');
   const [status, setStatus] = useState('All statuses');
+  const [marketplace, setMarketplace] = useState('All marketplaces');
+  const listingSummary = listingMetrics(w, marketplace);
   const [sort, setSort] = useState('Newest');
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
   const items = w.items
     .filter(
       (i) =>
+        (!pipelineIds || pipelineIds.has(i.id)) &&
         (status === 'All statuses' || i.status === status) &&
+        (marketplace === 'All marketplaces' ||
+          w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace)) &&
         `${i.sku} ${i.title} ${i.brand} ${i.category} ${i.source} ${i.storage}`
           .toLowerCase()
           .includes(search.toLowerCase()),
@@ -47,6 +67,8 @@ export function Inventory({
     const item = w.items.find((i) => i.id === l.itemId);
     return (
       item &&
+      (!pipelineIds || (pipelineIds.has(item.id) && l.status === 'Active')) &&
+      (marketplace === 'All marketplaces' || l.marketplace === marketplace) &&
       `${item.title} ${item.sku} ${l.marketplace}`.toLowerCase().includes(search.toLowerCase())
     );
   });
@@ -61,12 +83,25 @@ export function Inventory({
   }
   return (
     <>
+      {pipelineStage && (
+        <div className="pipeline-filter-banner">
+          <div>
+            <strong>{stageNames[pipelineStage]} · Current physical inventory</strong>
+            <p>As of now · One row per physical item</p>
+          </div>
+          <Link className="text-link" href={`${base}/inventory`}>
+            Clear pipeline filter
+          </Link>
+        </div>
+      )}
       <div className="page-toolbar">
         <div className="tabs">
           {['Inventory', 'Listings'].map((t) => (
             <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
               {t}
-              <span>{t === 'Inventory' ? w.items.length : w.listings.length}</span>
+              <span>
+                {t === 'Inventory' ? (pipelineIds?.size ?? w.items.length) : listings.length}
+              </span>
             </button>
           ))}
         </div>
@@ -107,6 +142,56 @@ export function Inventory({
           </Button>
         </div>
       </div>
+      <div className="listing-filter">
+        <label className="field">
+          <span>Marketplace</span>
+          <select
+            aria-label="Filter marketplace"
+            value={marketplace}
+            onChange={(e) => setMarketplace(e.target.value)}
+          >
+            <option>All marketplaces</option>
+            {marketplaces.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {tab === 'Listings' && (
+        <section className="card padded listing-overview" aria-label="Listing summary">
+          <div className="listing-summary-grid">
+            {[
+              ['Physical inventory items', String(listingSummary.physicalItems)],
+              ['Active listings', String(listingSummary.activeListings)],
+              ['Inventory at acquisition cost', money(listingSummary.inventoryCost)],
+              ['Combined active asking prices', money(listingSummary.aggregateAsking)],
+              ['Cross-listed physical items', String(listingSummary.crossListed)],
+              ['Unlisted inventory', String(listingSummary.unlisted)],
+              ['Items sold', String(listingSummary.sold)],
+              ['Listings needing delisting', String(listingSummary.needsDelisting)],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <small>{label}</small>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="hint">
+            Acquisition cost counts each unsold physical item once. Combined asking prices add every
+            active listing; they are potential prices, not inventory cost or realized profit.
+            Zero-cost records may need review.
+          </p>
+          <div className="actions listing-breakdown">
+            {listingSummary.byMarketplace
+              .filter((m) => m.active > 0)
+              .map((m) => (
+                <span key={m.marketplace}>
+                  {m.marketplace}: <strong>{m.active}</strong>
+                </span>
+              ))}
+          </div>
+        </section>
+      )}
       {tab === 'Inventory' ? (
         <>
           <div className="inventory-stats">
@@ -131,7 +216,7 @@ export function Inventory({
                     .reduce((n, i) => n + i.asking, 0),
                 )}
               </strong>{' '}
-              asking value
+              item asking value
             </span>
           </div>
           <section className="card">

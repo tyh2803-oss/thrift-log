@@ -1,6 +1,6 @@
 # Local Codex / authenticated Supabase MCP handoff
 
-The owner will apply and verify hosted Supabase changes from local Codex. Cloud development must continue without attempting to transfer MCP OAuth credentials. None of this repository's migrations is confirmed applied to the hosted project.
+Authenticated local Codex applied all four saved migrations on November 9, 2026, after confirming the target and empty schema/history. The owner then supplied runtime configuration; `supabase:verify` and real hosted Auth/session, inventory and photo tests now pass. See [PROJECT_STATUS.md](../PROJECT_STATUS.md) for version mappings, evidence, the origin-check fix, and remaining manual/UI/deployment checks. Do not replay these migrations. Cloud development must continue without attempting to transfer MCP OAuth credentials. The instructions below remain the reference for subsequent inspection and verification.
 
 ## Target and preservation
 
@@ -21,6 +21,7 @@ Do not apply the initial migration to a project that already contains this schem
 1. `202611090001_initial.sql`: original inventory, listing, order/line, expense, time, show, source, import, workspace and audit tables. Owner RLS; service-role-only transaction/load RPCs; private inventory photo bucket.
 2. `202611090002_auth_storage_hardening.sql`: private bucket limits, owner-scoped Storage reads, restricted internal functions, and a service-role-only readiness RPC.
 3. `202611090003_financial_ledger_shipments.sql`: immutable dated financial events and physical returns; actual payout receipts and allocations; grouped shipments; scoped RLS; compatible workspace RPCs. Original implementations move to the unexposed `thrift_log_private` schema. Existing sales and original migrations remain intact.
+4. `20261109203443_inventory_pipeline_fulfillment.sql`: additive item-level fulfillment and explicit financial-completeness metadata on orders; transactional validation and schema-4 readiness. Hosted version is `20261109204051` (name `inventory_pipeline_fulfillment`); do not replay it under its local filename timestamp. See `docs/PIPELINE_ROLLBACK_CHECK.sql` for a rollback-only synthetic persistence/security check.
 
 Use real migration operations so the backend records application. If the MCP tool assigns a migration version different from the filename, record that mapping in a verification log and reconcile it before later CLI pushes; do not replay an already applied migration. All statements in each file form a transaction.
 
@@ -51,3 +52,7 @@ Anonymous clients must not read business tables or photos. Authenticated clients
 7. Record exact migrations applied and hosted checks passed/failed in PROJECT_STATUS.md. Only then claim hosted readiness. Local PGlite, mocked Auth/Storage, and Chromium demo checks do not establish hosted Supabase success.
 
 The cloud environment's network/configuration draft can be reviewed separately if this environment later needs hosted access. The owner's current plan is to perform hosted setup from authenticated local Codex; do not keep blocking feature development on cloud MCP availability.
+
+## Pipeline schema checkpoint
+
+Hosted readiness is now verified through schema 4, including the additive item-fulfillment migration above. See PROJECT_STATUS.md for all four recorded migration versions, rollback-only persistence verification, real hosted assistant regression results and remaining device-test limits. Do not replay already applied migrations.

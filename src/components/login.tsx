@@ -1,13 +1,17 @@
 'use client';
 import { useState } from 'react';
 import { Leaf, ArrowRight, LockKeyhole } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from './ui/button';
-export function Login({ configured }: { configured: boolean }) {
-  const [error, setError] = useState('');
+export function Login({
+  configured,
+  initialError = '',
+}: {
+  configured: boolean;
+  initialError?: string;
+}) {
+  const [error, setError] = useState(initialError);
   const [pending, setPending] = useState(false);
-  const router = useRouter();
   return (
     <div className="login-page">
       <div className="login-card">
@@ -28,14 +32,24 @@ export function Login({ configured }: { configured: boolean }) {
         {configured ? (
           <form
             className="editor-form"
+            action="/api/auth"
+            method="post"
+            onInvalidCapture={(e) => {
+              const field = e.target as HTMLInputElement;
+              setError(field.validationMessage || 'Please enter your email and password.');
+            }}
             onSubmit={async (e) => {
               e.preventDefault();
               setPending(true);
               setError('');
               const f = new FormData(e.currentTarget);
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 20000);
               try {
                 const r = await fetch('/api/auth', {
                   method: 'POST',
+                  credentials: 'same-origin',
+                  signal: controller.signal,
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     action: 'signin',
@@ -45,35 +59,51 @@ export function Login({ configured }: { configured: boolean }) {
                 });
                 const data = await r.json();
                 if (!r.ok) throw new Error(data.error);
-                router.push('/');
-                router.refresh();
+                const session = await fetch('/api/workspace', {
+                  cache: 'no-store',
+                  credentials: 'same-origin',
+                  signal: controller.signal,
+                });
+                if (!session.ok)
+                  throw new Error(
+                    session.status === 401
+                      ? 'Your browser could not keep your sign-in session. Allow cookies for this site and try again.'
+                      : 'You signed in, but your workspace could not load. Please try again.',
+                  );
+                // Load a fresh authenticated document instead of reusing a cached login route.
+                // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Authentication must load a fresh document after cookies are confirmed.
+                window.location.assign('/');
               } catch (e) {
-                setError(e instanceof Error ? e.message : 'Sign-in failed.');
+                setError(
+                  controller.signal.aborted
+                    ? 'Sign-in timed out. Check your connection and try again.'
+                    : e instanceof TypeError
+                      ? 'Could not connect to sign in. Check your connection and try again.'
+                      : e instanceof Error
+                        ? e.message
+                        : 'Sign-in failed.',
+                );
               } finally {
+                clearTimeout(timeout);
                 setPending(false);
               }
             }}
           >
+            <input type="hidden" name="action" value="signin" />
             <label className="field">
               <span>Email</span>
               <input type="email" name="email" required autoComplete="username" />
             </label>
             <label className="field">
               <span>Password</span>
-              <input
-                type="password"
-                name="password"
-                required
-                minLength={8}
-                autoComplete="current-password"
-              />
+              <input type="password" name="password" required autoComplete="current-password" />
             </label>
             {error && (
               <p role="alert" className="error-text">
                 {error}
               </p>
             )}
-            <Button disabled={pending}>
+            <Button type="submit" disabled={pending} aria-busy={pending}>
               {pending ? 'Signing in…' : 'Sign in securely'}
               <ArrowRight size={16} />
             </Button>

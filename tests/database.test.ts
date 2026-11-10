@@ -32,6 +32,15 @@ beforeAll(async () => {
       'utf8',
     ),
   );
+  await db.exec(
+    await readFile(
+      new URL(
+        '../supabase/migrations/20261109203443_inventory_pipeline_fulfillment.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    ),
+  );
 });
 afterAll(async () => {
   await db?.close();
@@ -100,7 +109,8 @@ it('verifies all application RLS and restricted RPC grants under the actual serv
       'select public.verify_thrift_log() as checks',
     );
     expect(result.rows[0].checks).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
+      itemFulfillment: true,
       financialLedger: true,
       shipmentStorage: true,
       tablesPresent: true,
@@ -276,4 +286,152 @@ it('isolates the new ledger, receipt, and shipment tables with RLS', async () =>
   } finally {
     await db.exec('reset role');
   }
+});
+
+it('commits assistant-approved sales and provenance with the existing ledger and revision transaction', async () => {
+  const { assistantWorkspace, extractedSale, extractedLine } = await import('./helpers/assistant');
+  const { createBatch } = await import('../src/lib/assistant/drafts');
+  const { approvalCommands, previewBatch } = await import('../src/lib/assistant/planner');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { metrics } = await import('../src/lib/finance');
+  const owner = '44444444-4444-4444-8444-444444444444';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  const w = assistantWorkspace();
+  const batch = createBatch(
+    [
+      {
+        hash: 'a'.repeat(64),
+        name: 'sale.png',
+        extraction: {
+          records: [extractedSale({ lines: [extractedLine({ listingId: 'listing-1' })] })],
+          message: '',
+        },
+      },
+    ],
+    w,
+  );
+  const next = approvalCommands(w, batch, [batch.rows[0].id]).reduce(applyCommand, w);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(loaded.items).toHaveLength(1);
+  expect(loaded.orders).toHaveLength(1);
+  expect(loaded.imports[0].mapping.format).toBe('assistant-v1');
+  expect(loaded.items[0].status).toBe('Sold');
+  expect(loaded.listings.find((l) => l.marketplace === 'Depop')?.status).toBe('Needs delisting');
+  expect(metrics(loaded, 0, Infinity).profit).toBe(2600);
+  expect(previewBatch(loaded, batch)[0].ready).toBe(false);
+  await expect(
+    db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]),
+  ).rejects.toThrow('revision_conflict');
+});
+
+it('round-trips new assistant inventory and listings atomically without changing existing counts', async () => {
+  const { assistantWorkspace, extractedSale, extractedLine } = await import('./helpers/assistant');
+  const { createBatch } = await import('../src/lib/assistant/drafts');
+  const { approvalCommands } = await import('../src/lib/assistant/planner');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { listingMetrics } = await import('../src/lib/listing-metrics');
+  const owner = '55555555-5555-4555-8555-555555555555';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  const w = assistantWorkspace();
+  const batch = createBatch(
+    [
+      {
+        hash: 'b'.repeat(64),
+        name: 'listing.png',
+        extraction: {
+          message: '',
+          records: [
+            extractedSale({
+              kind: 'listing',
+              status: 'active',
+              lines: [extractedLine({ title: 'New boots', listingId: 'boots' })],
+            }),
+          ],
+        },
+      },
+    ],
+    w,
+  );
+  batch.rows[0].matches[0] = {
+    itemId: null,
+    confirmZeroCost: false,
+    newItem: {
+      id: crypto.randomUUID(),
+      sku: 'NEW-BOOTS',
+      cost: 1400,
+      purchasedAt: '2026-10-01',
+      confirmedDistinct: true,
+    },
+  };
+  const next = approvalCommands(w, batch, [batch.rows[0].id]).reduce(applyCommand, w);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(listingMetrics(loaded)).toMatchObject({
+    physicalItems: 2,
+    inventoryCost: 2600,
+    activeListings: 3,
+  });
+  expect(loaded.orders).toHaveLength(0);
+});
+
+it('persists partial item fulfillment and amount confirmation with the existing revision transaction', async () => {
+  const { assistantWorkspace } = await import('./helpers/assistant');
+  const { orderSchema } = await import('../src/lib/model');
+  const { applyCommand } = await import('../src/lib/commands');
+  const { setItemFulfillment } = await import('../src/lib/fulfillment-state');
+  const { inventoryPipeline } = await import('../src/lib/pipeline');
+  const owner = '66666666-6666-4666-8666-666666666666';
+  await db.query('insert into auth.users(id) values($1)', [owner]);
+  let w = assistantWorkspace();
+  w.items.push({ ...w.items[0], id: crypto.randomUUID(), sku: 'SECOND' });
+  const order = orderSchema.parse({
+    id: crypto.randomUUID(),
+    marketplace: 'Vinted',
+    date: '2026-11-01T12:00:00Z',
+    lines: w.items.map((i) => ({ itemId: i.id, price: 4500, costBasis: i.cost })),
+    discount: 0,
+    shippingCollected: 0,
+    fees: 400,
+    processing: 0,
+    shipping: 300,
+    packaging: 0,
+    other: 0,
+    refund: 0,
+    feeCredit: 0,
+    adjustment: 0,
+    tips: 0,
+    type: 'Sale',
+    status: 'Completed',
+    fulfillment: 'Unfulfilled',
+    payout: 'Pending',
+    amountsConfirmed: true,
+  });
+  w = applyCommand(w, { type: 'order', value: order });
+  w = applyCommand(w, {
+    type: 'order',
+    value: setItemFulfillment(w.orders[0], w.items[0].id, 'Shipped', '2026-11-02T12:00:00Z'),
+  });
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(w)]);
+  const loaded = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(loaded.orders[0].amountsConfirmed).toBe(true);
+  expect(loaded.orders[0].itemFulfillments).toHaveLength(2);
+  expect(inventoryPipeline(loaded).groups.sold.count).toBe(1);
+  expect(inventoryPipeline(loaded).groups.shipped.count).toBe(1);
+  const invalid = structuredClone(loaded);
+  invalid.orders[0].itemFulfillments![0].itemId = crypto.randomUUID();
+  await expect(
+    db.query('select public.commit_workspace($1,1,$2::jsonb)', [owner, JSON.stringify(invalid)]),
+  ).rejects.toThrow('invalid_item_fulfillment');
+  const latest = workspaceSchema.parse(
+    (await db.query<{ w: unknown }>('select public.load_workspace($1) as w', [owner])).rows[0].w,
+  );
+  expect(latest.revision).toBe(1);
+  expect(latest.orders[0].itemFulfillments).toEqual(loaded.orders[0].itemFulfillments);
 });

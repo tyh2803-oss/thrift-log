@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -19,6 +19,8 @@ import { metrics, money, duration } from '@/lib/finance';
 import { periodRange } from '@/lib/dates';
 import { Metric, Badge, ItemPhoto, Empty } from './shared';
 import { TrendChart } from './charts';
+import { inventoryPipeline } from '@/lib/pipeline';
+import { InventoryPipeline } from './inventory-pipeline';
 import { Button } from './ui/button';
 import type { EditorTarget } from './editor';
 export function Home({
@@ -29,6 +31,7 @@ export function Home({
   onEdit: (t: EditorTarget) => void;
 }) {
   const { now, w } = useWorkspace();
+  const pipeline = useMemo(() => inventoryPipeline(w), [w]);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [metric, setMetric] = useState<'profit' | 'revenue'>('profit');
   const m = metrics(w, ...range);
@@ -60,9 +63,7 @@ export function Home({
       };
     },
   );
-  const needing = w.items.filter(
-    (i) => !['Listed', 'Sold', 'Archived', 'Reserved'].includes(i.status),
-  );
+  const needing = pipeline.groups.unlisted.entries;
   const revenueByMarket = ['Depop', 'eBay', 'Whatnot', 'Vinted'].map((name) => ({
     name,
     revenue: orderPostings(w, ...range)
@@ -100,6 +101,7 @@ export function Home({
           icon={<ArrowUpRight size={17} />}
         />
       </div>
+      {w.settings.pipelineVisible && <InventoryPipeline snapshot={pipeline} />}
       <div className="dashboard-grid">
         {w.settings.widgets.map((widget) => {
           if (widget === 'chart')

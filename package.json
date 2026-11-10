@@ -11,7 +11,11 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "format": "prettier --write src tests *.ts *.mjs *.json",
-    "supabase:verify": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/verify-supabase.mjs"
+    "supabase:verify": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/verify-supabase.mjs",
+    "supabase:test-hosted": "node --env-file=.env.local --experimental-strip-types scripts/verify-hosted.mjs",
+    "supabase:test-browser": "node --env-file=.env.local --experimental-strip-types scripts/verify-browser-auth.mjs",
+    "https:setup": "node scripts/setup-local-https.mjs",
+    "dev:https": "node scripts/dev-https.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "latest",
@@ -26,6 +30,7 @@
     "react-dom": "19.3.1",
     "recharts": "latest",
     "server-only": "latest",
+    "sharp": "0.35.5",
     "tailwind-merge": "latest",
     "zod": "latest"
   },

@@ -1,6 +1,25 @@
 import { Login } from '@/components/login';
-import { configured } from '@/lib/supabase/server';
+import { configured, requireUser } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
-export default function Page() {
-  return <Login configured={configured()} />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; verify?: string }>;
+}) {
+  const params = await searchParams;
+  const ready = configured();
+  let initialError =
+    params.error === 'signin'
+      ? 'Unable to sign in. Check your credentials and account configuration.'
+      : params.error === 'setup'
+        ? 'Private storage is not configured. Complete the Supabase environment settings.'
+        : '';
+  if (ready && params.verify === '1') {
+    const user = await requireUser().catch(() => null);
+    if (user) redirect('/');
+    initialError =
+      'Your browser could not keep your sign-in session. Allow cookies for this site and try again.';
+  }
+  return <Login configured={ready} initialError={initialError} />;
 }
