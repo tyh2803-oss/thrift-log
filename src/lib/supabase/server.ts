@@ -2,21 +2,24 @@ import 'server-only';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { configurationStatus, readConfiguration } from './config';
+import { configurationStatus, readConfiguration, secureSessionCookie } from './config';
 export function configured() {
   return configurationStatus(process.env).ready;
 }
 export function configurationPresent() {
   return configurationStatus(process.env).present;
 }
-export async function authClient({ writableCookies = false } = {}) {
+export async function authClient({
+  writableCookies = false,
+  request,
+}: { writableCookies?: boolean; request?: Request } = {}) {
   const config = readConfiguration(process.env);
   const store = await cookies();
   return createServerClient(config.url, config.publicKey, {
     cookieOptions: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: request ? secureSessionCookie(request) : process.env.NODE_ENV === 'production',
       path: '/',
     },
     cookies: {
@@ -55,6 +58,10 @@ export async function requireUser() {
   return user;
 }
 export function checkOrigin(request: Request) {
-  if (request.headers.get('origin') !== new URL(request.url).origin)
-    throw new Error('Invalid request origin');
+  const url = new URL(request.url);
+  // Next.js may reconstruct request.url with its internal listen hostname.
+  // Host is the browser's destination; do not trust arbitrary forwarded hosts.
+  const host = request.headers.get('host');
+  const expectedOrigin = host ? new URL(`${url.protocol}//${host}`).origin : url.origin;
+  if (request.headers.get('origin') !== expectedOrigin) throw new Error('Invalid request origin');
 }

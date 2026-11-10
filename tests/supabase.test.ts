@@ -1,6 +1,10 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { configurationStatus, readConfiguration } from '../src/lib/supabase/config';
+import {
+  configurationStatus,
+  readConfiguration,
+  secureSessionCookie,
+} from '../src/lib/supabase/config';
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   signIn: vi.fn(),
@@ -19,7 +23,7 @@ vi.mock('next/headers', () => ({
 }));
 vi.mock('@supabase/ssr', () => ({ createServerClient: mocks.createServer }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: mocks.createAdmin }));
-import { authClient, requireUser } from '../src/lib/supabase/server';
+import { authClient, checkOrigin, requireUser } from '../src/lib/supabase/server';
 import { POST as authenticate } from '../src/app/api/auth/route';
 import { GET as workspace } from '../src/app/api/workspace/route';
 import { GET as photo, POST as uploadPhoto } from '../src/app/api/photos/route';
@@ -74,6 +78,23 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('Supabase configuration', () => {
+  it('validates browser origin against Host when Next reconstructs an internal URL', () => {
+    const request = (origin: string, forwarded = '') =>
+      new Request('http://localhost:3100/api/photos', {
+        method: 'POST',
+        headers: { Host: '127.0.0.1:3100', Origin: origin, 'X-Forwarded-Host': forwarded },
+      });
+    expect(() => checkOrigin(request('http://127.0.0.1:3100'))).not.toThrow();
+    expect(() => checkOrigin(request('http://localhost:3100'))).toThrow('Invalid request origin');
+    expect(() => checkOrigin(request('https://evil.example', 'evil.example'))).toThrow(
+      'Invalid request origin',
+    );
+    expect(() =>
+      checkOrigin(
+        new Request('https://thrift.example/api/photos', { headers: { Host: 'thrift.example' } }),
+      ),
+    ).toThrow('Invalid request origin');
+  });
   it('requires an owner as well as runtime credentials', () => {
     expect(configurationStatus({ ...env, OWNER_EMAIL: '' }).ready).toBe(false);
     expect(configurationStatus(env).ready).toBe(true);
@@ -92,6 +113,41 @@ describe('Supabase configuration', () => {
   });
 });
 describe('private authentication and session lifecycle', () => {
+  it('lets Supabase validate existing account passwords without a new length policy', async () => {
+    const request = new Request('https://thrift.example/api/auth', {
+      method: 'POST',
+      headers: { Origin: 'https://thrift.example', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signin', email: owner.email, password: 'sixchr' }),
+    });
+    expect((await authenticate(request)).status).toBe(200);
+    expect(mocks.signIn).toHaveBeenCalledWith({ email: owner.email, password: 'sixchr' });
+  });
+  it('uses local HTTP cookies on loopback and secure cookies for HTTPS and remote hosts', async () => {
+    for (const host of ['localhost:3100', '127.0.0.1:3100', '[::1]:3100']) {
+      const request = new Request('http://localhost:3100/api/auth', { headers: { Host: host } });
+      expect(secureSessionCookie(request)).toBe(false);
+      await authClient({ writableCookies: true, request });
+      expect(mocks.createServer.mock.calls.at(-1)![2].cookieOptions).toMatchObject({
+        secure: false,
+        httpOnly: true,
+        sameSite: 'lax',
+      });
+      await proxy(
+        new NextRequest('http://localhost:3100/api/workspace', { headers: { Host: host } }),
+      );
+      expect(mocks.createServer.mock.calls.at(-1)![2].cookieOptions.secure).toBe(false);
+    }
+    for (const [url, host] of [
+      ['https://localhost:3100/api/auth', 'localhost:3100'],
+      ['https://thrift.example/api/auth', 'thrift.example'],
+      ['http://localhost:3100/api/auth', 'thrift.example'],
+    ])
+      expect(
+        secureSessionCookie(
+          new Request(url, { headers: { Host: host, 'X-Forwarded-Host': 'localhost' } }),
+        ),
+      ).toBe(true);
+  });
   it('authorizes the configured owner and rejects other authenticated accounts', async () => {
     expect((await requireUser()).id).toBe(owner.id);
     mocks.getUser.mockResolvedValue({
@@ -222,4 +278,40 @@ it('refuses an old database schema instead of pretending to save new ledger reco
   expect(response.status).toBe(503);
   expect((await response.json()).error).toContain('20261109203443');
   expect(mocks.rpc.mock.calls.map((args) => args[0])).toEqual(['verify_thrift_log']);
+});
+
+describe('native sign-in fallback', () => {
+  const formRequest = (origin = 'http://127.0.0.1:3100', password = 'synthetic-password') =>
+    new Request('http://localhost:3100/api/auth', {
+      method: 'POST',
+      headers: {
+        Host: '127.0.0.1:3100',
+        Origin: origin,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ action: 'signin', email: ` ${owner.email} `, password }),
+    });
+  it('accepts a normal POST and redirects to session verification without credentials in the URL', async () => {
+    const response = await authenticate(formRequest());
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3100/login?verify=1');
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(mocks.signIn).toHaveBeenCalledWith({
+      email: owner.email,
+      password: 'synthetic-password',
+    });
+  });
+  it('shows a fixed error destination and never echoes rejected passwords', async () => {
+    mocks.signIn.mockResolvedValue({ error: { message: 'Provider rejected synthetic-password' } });
+    const response = await authenticate(formRequest());
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('http://127.0.0.1:3100/login?error=signin');
+    expect(await response.text()).not.toContain('synthetic-password');
+  });
+  it('does not weaken origin checks for native forms', async () => {
+    const response = await authenticate(formRequest('https://evil.example'));
+    expect(response.status).toBe(400);
+    expect(response.headers.get('location')).toBeNull();
+    expect(mocks.signIn).not.toHaveBeenCalled();
+  });
 });

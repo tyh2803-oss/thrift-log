@@ -51,6 +51,16 @@ export function readConfiguration(env: SupabaseEnvironment) {
   };
 }
 
+/** Plain HTTP cookies are only permitted for a browser visiting this machine. */
+export function secureSessionCookie(request: Request) {
+  const url = new URL(request.url);
+  // Next may use an internal hostname in request.url; use the browser's Host.
+  const destination = new URL(`${url.protocol}//${request.headers.get('host') || url.host}`);
+  return !(
+    url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(destination.hostname)
+  );
+}
+
 export class DatabaseReadinessError extends Error {
   constructor() {
     super(

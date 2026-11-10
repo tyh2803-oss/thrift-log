@@ -249,3 +249,25 @@ The requested pipeline and metric toggle implementation is complete; do not rest
 5. Preserve the existing Auth working changes and inspect Git status/recent commits before further development. Continue only with the user's requested GPT-6.1 Sol selection; this session did not independently verify serving-model identity, intentionally change models or delegate implementation.
 
 The final local production preview was restarted after verification at `http://127.0.0.1:3100`; `/login` and `/demo` both return HTTP 200. The existing development server on port 3000 remains running. The full working-tree recovery snapshot is `.git/checkpoints/pipeline-final-89fc105/`; preserve it alongside the local commits.
+
+## Sign-in reliability follow-up — November 9, 2026
+
+The user reported that clicking Sign in with their existing credentials appeared to do nothing. Fresh isolated Chromium pages on ports 3000 and 3100 submitted normally with an intercepted response and no JavaScript/chunk failures, so the exact cause in the user's existing browser tab was **not established**. A request for their browser/address was pending during implementation. No owner password was requested, read, tested or reset. Existing Auth work was preserved before editing in `.git/checkpoints/sign-in-before-fix/`.
+
+Changes:
+
+- Added an explicit submit button and same-origin native POST fallback. If client JavaScript has not loaded, credentials are submitted to the existing Auth endpoint in the request body; they never fall back to a URL query. The same schema, owner allowlist, Origin validation and Supabase password validation apply to both normal forms and JSON requests. Password strings are not trimmed or subject to a new minimum-length policy; email whitespace is normalized.
+- After enhanced sign-in, the app verifies its authenticated workspace and loads a fresh home document, avoiding a cached client-router handoff. A deliberately documented Next lint exception allows the full navigation at this authentication boundary.
+- Sign-in and session verification share a 20-second abort timeout with visible retry feedback. Native field-validation errors appear inline. Cookie/session failures show an explicit message instead of silently returning to login. Native success redirects through server-side session verification; native errors use fixed error codes, never user/provider text or credentials in URLs.
+- Preserved prior local HTTP cookie/origin fixes and now checkpointed the related Auth source/tests together: loopback HTTP cookies work in Safari/WebKit; HTTPS and remote hosts retain Secure cookies; HttpOnly/SameSite and owner authorization remain enforced. No schema, business records or financial calculations changed.
+
+Verification actually run:
+
+- Type checking, production build and lint pass; **128 unit/database tests pass** (including native POST/303 behavior, error sanitization and cross-origin rejection).
+- New opt-in `scripts/verify-signin.mjs` passes against real Supabase on isolated port 3155 with one disposable account, in **both WebKit and Chromium** at mobile-sized viewports. It verifies real password sign-in and session retention/reload with JavaScript enabled **and disabled**, correct local HttpOnly/SameSite cookies, credential-free destinations, sign-out, blocked-cookie feedback and a simulated 20-second timeout restoring the submit control. The fixture account and its sessions were removed. No business writes, OpenAI requests or owner-account changes were made.
+- The WebKit harness uses ordinary mouse movement/clicks at the visible button bounds; this successfully submits the actual form without force-clicking, DOM event injection or bypassing authentication. The earlier locator-level pointer-hit-testing failure was not reproduced with normal pointer input. This establishes a fresh automated WebKit sign-in pass, not physical Safari/iPhone acceptance.
+- Reproducible opt-in command: `HOSTED_CHROMIUM_EXECUTABLE=/path/to/chrome node --env-file=.env.local --experimental-strip-types scripts/verify-signin.mjs`. It prints statuses only, never keys, passwords or session values.
+- All **34 desktop/mobile Chromium regression tests pass again**, preserving assistant, ledger, inventory and pipeline workflows. `git diff --check` also passes.
+- Rebuilt and restarted the regular production preview at `http://127.0.0.1:3100`; `/login` returns HTTP 200 with the new POST fallback. The user's existing development process on port 3000 was preserved. No deployment or Git push was performed.
+
+Continuation: refresh the user's existing login tab (or open a new tab at the local preview URL) and retry their own credentials. Their exact browser/address and successful sign-in still require user confirmation; do not claim that their actual credentials/session were verified. If it still fails, use the now-visible message and actual address to distinguish validation, connectivity, cookie or hosted-version issues. Local changes are not automatically deployed to another web address. Preserve all earlier assistant/pipeline work and remaining unrelated working-tree edits.

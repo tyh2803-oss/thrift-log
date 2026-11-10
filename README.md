@@ -97,3 +97,7 @@ See [assistant usage, privacy, architecture and verification](docs/ASSISTANT.md)
 ## Inventory Pipeline
 
 Home includes a current **Unlisted → For Sale → Sold → Shipped** snapshot with one **Cost | Sale Value | Profit** toggle. Cross-listed pieces count once; estimates and incomplete/provisional amounts are labeled. Click stages to filter the existing Inventory/Sales views. Configure estimated selling expenses or hide the widget in Settings; manage partial shipments and handovers in Sales. See [stage rules, financial definitions and fulfillment limits](docs/PIPELINE.md).
+
+## Sign-in troubleshooting
+
+Refresh an older login tab after a local rebuild. Sign-in now supports a normal POST before JavaScript loads, checks the saved session before opening Home, and shows cookie/connectivity/timeout errors inline. It does not require changing your existing password. Use the address of the running local app; local fixes do not automatically update a deployed site. Optional real Auth regression: `HOSTED_CHROMIUM_EXECUTABLE=/path/to/chrome node --env-file=.env.local --experimental-strip-types scripts/verify-signin.mjs` (disposable account, no business writes).

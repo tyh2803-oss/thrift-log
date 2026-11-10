@@ -3,16 +3,26 @@ import { z } from 'zod';
 import { authClient, checkOrigin } from '@/lib/supabase/server';
 import { ConfigurationError, readConfiguration } from '@/lib/supabase/config';
 export async function POST(request: Request) {
+  const formRequest =
+    request.headers.get('content-type')?.split(';')[0].trim() ===
+    'application/x-www-form-urlencoded';
+  let origin: string | null = null;
+  const redirect = (path: string) => {
+    const response = NextResponse.redirect(new URL(path, origin!), 303);
+    response.headers.set('Cache-Control', 'private, no-store');
+    return response;
+  };
   try {
     checkOrigin(request);
+    origin = request.headers.get('origin')!;
     const body = z
       .object({
         action: z.enum(['signin', 'signout']),
-        email: z.email().optional(),
-        password: z.string().min(8).max(500).optional(),
+        email: z.string().trim().pipe(z.email()).optional(),
+        password: z.string().min(1).max(500).optional(),
       })
-      .parse(await request.json());
-    const client = await authClient({ writableCookies: true });
+      .parse(formRequest ? Object.fromEntries(await request.formData()) : await request.json());
+    const client = await authClient({ writableCookies: true, request });
     if (body.action === 'signout') {
       const { error } = await client.auth.signOut();
       if (error) throw error;
@@ -26,8 +36,13 @@ export async function POST(request: Request) {
       });
       if (error) throw error;
     }
+    if (formRequest) return redirect(body.action === 'signin' ? '/login?verify=1' : '/login');
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
+    if (formRequest && origin)
+      return redirect(
+        error instanceof ConfigurationError ? '/login?error=setup' : '/login?error=signin',
+      );
     return NextResponse.json(
       {
         error:
