@@ -126,9 +126,12 @@ export function previewRow(w: Workspace, row: DraftRow): Preview {
     let item = w.items.find((v) => v.id === match.itemId);
     if (match.itemId && match.newItem)
       issues.push(`Line ${i + 1}: choose existing or new inventory, not both.`);
-    for (const raw of [match.costInput, match.priceInput]) {
+    for (const [field, raw] of [
+      ['purchase cost', match.costInput],
+      ['listing price', match.priceInput],
+    ] as const) {
       if (raw !== undefined && listingAmount(raw).error)
-        issues.push(`Line ${i + 1}: ${listingAmount(raw).error}`);
+        issues.push(`Line ${i + 1}: ${field} — ${listingAmount(raw).error}`);
     }
     if (match.costCorrection && match.costInput !== undefined && !match.costInput.trim())
       issues.push(`Line ${i + 1}: enter the proposed acquisition cost or cancel its correction.`);
@@ -411,7 +414,7 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
       !row.facts.marketplaceIdentification?.confirmedByUser
     ) {
       preview.issues.push(
-        `Your request mentions ${batch.marketplaceContext}, but screenshot evidence differs or is unclear. Confirm the marketplace in Edit.`,
+        `Your request mentions ${batch.marketplaceContext}, but screenshot evidence differs or is unclear. Confirm the marketplace on the listing card or in Edit.`,
       );
       preview.ready = false;
       preview.commands = [];

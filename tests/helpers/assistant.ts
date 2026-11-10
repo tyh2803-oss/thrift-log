@@ -135,3 +135,32 @@ export function visionExtraction(records: ExtractedRecord[] = [extractedSale()])
     message: 'Fixture extraction',
   });
 }
+
+/** Five independent active screenshots; deliberately no costs, dates or optional descriptions. */
+export function fiveUnknownListings(w: Workspace = emptyWorkspace()) {
+  return createBatch(
+    Array.from({ length: 5 }, (_, index) => ({
+      hash: String(index + 1).repeat(64),
+      name: `active-listing-${index + 1}.png`,
+      extraction: {
+        message: '',
+        records: [
+          extractedSale({
+            kind: 'listing',
+            status: 'active',
+            date: null,
+            externalOrderId: null,
+            lines: [
+              extractedLine({
+                title: `Campus jacket ${index + 1}`,
+                listingId: `new-listing-${index + 1}`,
+              }),
+            ],
+          }),
+        ],
+      },
+    })),
+    w,
+  );
+}
+import { createBatch } from '../../src/lib/assistant/drafts';
