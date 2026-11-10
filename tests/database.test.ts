@@ -435,3 +435,55 @@ it('persists partial item fulfillment and amount confirmation with the existing 
   expect(latest.revision).toBe(1);
   expect(latest.orders[0].itemFulfillments).toEqual(loaded.orders[0].itemFulfillments);
 });
+
+import { fiveUnknownListings } from './helpers/assistant';
+import { approvalCommands } from '../src/lib/assistant/planner';
+import { changeListingCost } from '../src/lib/assistant/listing-review';
+import { emptyWorkspace } from '../src/lib/model';
+import { applyCommand } from '../src/lib/commands';
+import { inventoryPipeline } from '../src/lib/pipeline';
+it('atomically persists five new assistant inventory records and listings through the actual Supabase SQL RPC', async () => {
+  const owner = crypto.randomUUID(),
+    w = emptyWorkspace(),
+    batch = fiveUnknownListings(w);
+  await db.query('insert into auth.users values ($1)', [owner]);
+  batch.rows = batch.rows.map((row, index) => changeListingCost(w, row, 0, String(index * 5)));
+  for (const row of batch.rows) {
+    row.matches[0].newItem!.confirmedDistinct = true;
+    row.matches[0].newItem!.purchasedAt = '2026-10-01';
+  }
+  const next = approvalCommands(
+    w,
+    batch,
+    batch.rows.map((r) => r.id),
+  ).reduce(applyCommand, w);
+  const invalid = structuredClone(next);
+  invalid.listings[4].itemId = crypto.randomUUID();
+  await expect(
+    db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(invalid)]),
+  ).rejects.toThrow();
+  expect(
+    (await db.query('select id from public.items where user_id=$1', [owner])).rows,
+  ).toHaveLength(0);
+  expect(
+    (await db.query('select id from public.listings where user_id=$1', [owner])).rows,
+  ).toHaveLength(0);
+  await db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]);
+  const loaded = await db.query<{ workspace: unknown }>(
+    'select public.load_workspace($1) as workspace',
+    [owner],
+  );
+  const saved = workspaceSchema.parse(loaded.rows[0].workspace);
+  expect(saved.items).toHaveLength(5);
+  expect(saved.listings).toHaveLength(5);
+  expect(saved.imports).toHaveLength(5);
+  expect(new Set(saved.listings.map((l) => l.itemId)).size).toBe(5);
+  expect(saved.items.map((i) => i.cost).sort((a, b) => a - b)).toEqual([0, 500, 1000, 1500, 2000]);
+  expect(inventoryPipeline(saved).groups['for-sale'].count).toBe(5);
+  await expect(
+    db.query('select public.commit_workspace($1,0,$2::jsonb)', [owner, JSON.stringify(next)]),
+  ).rejects.toThrow('revision_conflict');
+  expect(
+    (await db.query('select id from public.items where user_id=$1', [owner])).rows,
+  ).toHaveLength(5);
+});

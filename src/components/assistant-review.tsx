@@ -4,7 +4,7 @@ import { LifecycleFields, eventNames } from './assistant-lifecycle-fields';
 import { blockingWarnings } from '@/lib/assistant/warnings';
 import { isLifecycle } from '@/lib/assistant/lifecycle';
 import { removeDraft } from '@/lib/assistant/drafts';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ListingFields } from './assistant-listing-fields';
 import { ClothingPreview, ClothingEditor } from './assistant-clothing';
 import { correctedMarketplace } from '@/lib/assistant/vision';
@@ -40,12 +40,44 @@ export function AssistantReview({
   const included = previews.filter((p) => p.row.included);
   const [confirmClear, setConfirmClear] = useState(false);
   const stale = batch.revision !== w.revision;
+  const reviewRef = useRef<HTMLElement>(null);
+  function reviewMissing() {
+    const card = reviewRef.current?.querySelector<HTMLElement>('[data-review-incomplete="true"]');
+    if (!card) return;
+    const target =
+      card.querySelector<HTMLElement>('[data-review-missing="true"]:not(:disabled)') ||
+      card.querySelector<HTMLElement>('[data-review-issues]') ||
+      card;
+    // A malformed optional detail can still block saving; reveal it before focusing.
+    for (
+      let parent = target.parentElement;
+      parent && parent !== card;
+      parent = parent.parentElement
+    )
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    target.scrollIntoView({ block: 'center', behavior: 'instant' });
+    target.focus({ preventScroll: true });
+  }
   function change(row: DraftRow) {
     onChange({ ...batch, rows: batch.rows.map((r) => (r.id === row.id ? row : r)) });
   }
   return (
-    <section aria-label="Import batch review" className="assistant-review">
+    <section ref={reviewRef} aria-label="Import batch review" className="assistant-review">
       <h3>{batch.rows.length} records found</h3>
+      <div className="assistant-review-progress">
+        <strong aria-live="polite">
+          {ready.length} ready · {included.length - ready.length} unresolved
+        </strong>
+        {!!(included.length - ready.length) && (
+          <Button disabled={busy} variant="outline" onClick={reviewMissing}>
+            Review missing information
+          </Button>
+        )}
+        <small>
+          Complete the fields and new-item confirmations below, then approve the ready records
+          together.
+        </small>
+      </div>
       {batch.screenshots.flatMap((s) =>
         (s.extraction.notes || []).map((note, i) => (
           <p className="hint" key={`${s.hash}-${i}`}>
@@ -193,7 +225,11 @@ function ReviewRow({
     onChange({ ...row, facts: { ...r, ...facts } });
   const factRecord = JSON.stringify(r);
   return (
-    <article className="assistant-extraction">
+    <article
+      className="assistant-extraction"
+      tabIndex={-1}
+      data-review-incomplete={row.included && !p.ready}
+    >
       <div className="assistant-row-heading">
         <label>
           <input
@@ -271,15 +307,19 @@ function ReviewRow({
               w={w}
               busy={busy}
               previewCost={p.costs[i] ?? null}
+              contextItemId={contextItemId}
+              issues={p.issues}
               onChange={onChange}
             />
           )}
         </div>
       ))}
       <div className="actions">
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
-          Match Existing Item
-        </Button>
+        {r.kind !== 'listing' && (
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => setEditing(true)}>
+            Match Existing Item
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -386,13 +426,18 @@ function ReviewRow({
           View existing {p.duplicateKind}
         </Button>
       )}
+      {!!p.issues.length && (
+        <div className="assistant-readiness" data-review-issues tabIndex={-1}>
+          <strong>To become Ready:</strong>
+          <ul>
+            {p.issues.map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <details open={editing || undefined}>
-        <summary>Details{p.issues.length ? ` · ${p.issues.length} to review` : ''}</summary>
-        {p.issues.map((issue, i) => (
-          <p className="hint" key={i}>
-            {issue}
-          </p>
-        ))}
+        <summary>Extraction warnings</summary>
         {r.warnings.map((warning, i) => (
           <p className="error-text" key={i}>
             {warning}
@@ -475,15 +520,17 @@ function ReviewRow({
               />
             </label>
           </div>
-          <label className="field">
-            <span>Search inventory</span>
-            <input
-              value={search}
-              placeholder="Title, brand, SKU or size"
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </label>
-          {r.lines.map((line, i) => {
+          {r.kind !== 'listing' && (
+            <label className="field">
+              <span>Search inventory</span>
+              <input
+                value={search}
+                placeholder="Title, brand, SKU or size"
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+          )}
+          {(r.kind === 'listing' ? [] : r.lines).map((line, i) => {
             const candidates = matchInventory(w, r, line);
             const inventory = contextItemId
               ? w.items.filter((v) => v.id === contextItemId)
@@ -692,7 +739,10 @@ function ReviewRow({
                               j === i
                                 ? {
                                     ...m,
-                                    newItem: { ...m.newItem!, confirmedDistinct: e.target.checked },
+                                    newItem: {
+                                      ...m.newItem!,
+                                      confirmedDistinct: e.target.checked,
+                                    },
                                   }
                                 : m,
                             ),

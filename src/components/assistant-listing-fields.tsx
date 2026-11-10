@@ -1,5 +1,7 @@
 'use client';
 import { useId } from 'react';
+import { ListingInventory } from './assistant-listing-inventory';
+import { requireMarketplaceReview } from '@/lib/assistant/vision';
 import type { DraftRow } from '@/lib/assistant/drafts';
 import {
   changeListingCost,
@@ -19,11 +21,13 @@ function CurrencyInput({
   raw,
   onChange,
   readOnly = false,
+  missing = false,
 }: {
   label: string;
   raw: string;
   onChange: (raw: string) => void;
   readOnly?: boolean;
+  missing?: boolean;
 }) {
   const id = useId(),
     error = listingAmount(raw).error;
@@ -35,7 +39,8 @@ function CurrencyInput({
         type="text"
         inputMode="decimal"
         autoComplete="off"
-        aria-invalid={!!error}
+        data-review-missing={missing || !!error}
+        aria-invalid={missing || !!error}
         aria-describedby={error ? id : undefined}
         readOnly={readOnly}
         value={raw}
@@ -58,7 +63,11 @@ export function ListingFields({
   busy,
   previewCost,
   onChange,
+  contextItemId,
+  issues,
 }: {
+  contextItemId?: string;
+  issues: string[];
   row: DraftRow;
   index: number;
   w: Workspace;
@@ -83,28 +92,52 @@ export function ListingFields({
     });
   }
   const clothing = line.clothing || emptyClothing();
+  const lineIssues = issues.filter((issue) => issue.startsWith(`Line ${index + 1}:`));
+  const acquisitionMissing = lineIssues.some((issue) => /acquisition/.test(issue));
+  const marketplaceMissing =
+    requireMarketplaceReview(row.facts) ||
+    issues.some((issue) =>
+      /Choose the marketplace|Confirm.*marketplace|Your request mentions/.test(issue),
+    );
+  const eventMissing =
+    row.facts.status !== 'active' ||
+    !!(
+      row.facts.event &&
+      row.facts.event.confidence !== 'clear' &&
+      !row.facts.event.confirmedByUser
+    );
   return (
     <fieldset
       disabled={busy}
       className="assistant-listing-inline"
       aria-label={`Listing fields, item ${index + 1}`}
     >
+      <ListingInventory
+        row={row}
+        index={index}
+        w={w}
+        contextItemId={contextItemId}
+        onChange={onChange}
+      />
       <div className="assistant-listing-money">
         <CurrencyInput
           label="Purchase Cost"
           raw={cost}
+          missing={(!item && potential.cost === null) || (!!match.costCorrection && !cost.trim())}
           readOnly={!!item && item.cost > 0 && !correcting}
           onChange={(raw) => onChange(changeListingCost(w, row, index, raw))}
         />
         <CurrencyInput
           label="Listing Price"
           raw={price}
+          missing={line.price === null}
           onChange={(raw) => onChange(changeListingPrice(row, index, raw))}
         />
         <label className="field assistant-listing-marketplace">
           <span>Marketplace</span>
           <select
             aria-label="Marketplace"
+            data-review-missing={!row.facts.marketplace || marketplaceMissing}
             value={row.facts.marketplace || ''}
             onChange={(e) => {
               const marketplace = (e.target.value || null) as DraftRow['facts']['marketplace'];
@@ -128,6 +161,90 @@ export function ListingFields({
           </select>
         </label>
       </div>
+      {match.newItem && (
+        <div className="form-grid">
+          <label className="field">
+            <span>Acquisition date, line {index + 1}</span>
+            <input
+              type="date"
+              value={match.newItem.purchasedAt}
+              data-review-missing={acquisitionMissing}
+              aria-invalid={acquisitionMissing}
+              onChange={(e) =>
+                onChange({
+                  ...row,
+                  matches: row.matches.map((m, i) =>
+                    i === index
+                      ? {
+                          ...m,
+                          newItem: { ...m.newItem!, purchasedAt: e.target.value },
+                        }
+                      : m,
+                  ),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>New inventory title</span>
+            <input
+              data-review-missing={!line.title?.trim()}
+              value={line.title || ''}
+              maxLength={500}
+              onChange={(e) => updateLine({ title: e.target.value || null })}
+            />
+          </label>
+        </div>
+      )}
+      <small>Blank cost means unknown. Enter 0 only for inventory acquired free.</small>
+      {(row.facts.currency !== 'USD' || eventMissing) && (
+        <div className="form-grid">
+          <label className="field">
+            <span>Currency</span>
+            <select
+              value={row.facts.currency || ''}
+              data-review-missing={row.facts.currency !== 'USD'}
+              onChange={(e) =>
+                onChange({ ...row, facts: { ...row.facts, currency: e.target.value || null } })
+              }
+            >
+              <option value="">Unconfirmed</option>
+              {row.facts.currency && row.facts.currency !== 'USD' && (
+                <option>{row.facts.currency}</option>
+              )}
+              <option>USD</option>
+            </select>
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={
+                row.facts.status === 'active' &&
+                (!row.facts.event ||
+                  row.facts.event.confidence === 'clear' ||
+                  !!row.facts.event.confirmedByUser)
+              }
+              data-review-missing={eventMissing}
+              onChange={(e) =>
+                onChange({
+                  ...row,
+                  facts: {
+                    ...row.facts,
+                    status: e.target.checked ? 'active' : 'unknown',
+                    event: row.facts.event
+                      ? { ...row.facts.event, confirmedByUser: e.target.checked }
+                      : undefined,
+                  },
+                })
+              }
+            />
+            I confirm this screenshot shows an active listing.
+          </label>
+        </div>
+      )}
+      {marketplaceMissing && (
+        <p className="hint">Confirm the marketplace using the selector above.</p>
+      )}
       {item && (
         <div className="assistant-cost-note">
           <small>
@@ -207,6 +324,24 @@ export function ListingFields({
       <details className="assistant-listing-details">
         <summary>Edit additional details</summary>
         <div className="form-grid">
+          {match.newItem && (
+            <label className="field">
+              <span>New SKU, line {index + 1}</span>
+              <input
+                data-review-missing={!match.newItem.sku.trim()}
+                value={match.newItem.sku}
+                maxLength={500}
+                onChange={(e) =>
+                  onChange({
+                    ...row,
+                    matches: row.matches.map((m, i) =>
+                      i === index ? { ...m, newItem: { ...m.newItem!, sku: e.target.value } } : m,
+                    ),
+                  })
+                }
+              />
+            </label>
+          )}
           {(
             [
               'title',
@@ -237,6 +372,7 @@ export function ListingFields({
                 }
               </span>
               <input
+                data-review-missing={key === 'url' && !!line.url && !/^https:\/\//.test(line.url)}
                 value={line[key] || ''}
                 maxLength={key === 'url' ? 2000 : 500}
                 onChange={(e) => updateLine({ [key]: e.target.value || null })}
@@ -279,7 +415,10 @@ export function ListingFields({
           <label className="field">
             <span>Listing date (workspace timezone)</span>
             <input
-              placeholder="YYYY-MM-DD or timestamp"
+              data-review-missing={issues.some((issue) =>
+                /Enter a valid date|record date/.test(issue),
+              )}
+              placeholder="Optional · YYYY-MM-DD or timestamp"
               value={row.facts.date || ''}
               onChange={(e) =>
                 onChange({ ...row, facts: { ...row.facts, date: e.target.value || null } })

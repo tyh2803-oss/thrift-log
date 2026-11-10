@@ -192,3 +192,32 @@ it('verifies private screenshot ownership and hash before a financial write', as
   expect((await POST(request({ batch: b, rowIds: [b.rows[0].id] }))).status).toBe(200);
   expect(mocks.rpc).toHaveBeenCalledTimes(1);
 });
+
+import { fiveUnknownListings } from './helpers/assistant';
+import { emptyWorkspace } from '../src/lib/model';
+import { changeListingCost } from '../src/lib/assistant/listing-review';
+it('approves five unknown active listings in one Supabase RPC and replays without duplicating inventory', async () => {
+  const w = emptyWorkspace(),
+    b = fiveUnknownListings(w);
+  const rowIds = b.rows.map((row) => row.id);
+  mocks.load.mockResolvedValue(w);
+  expect((await POST(request({ batch: b, rowIds }))).status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+  b.rows = b.rows.map((row, index) => changeListingCost(w, row, 0, String(index * 5)));
+  for (const row of b.rows) {
+    row.matches[0].newItem!.purchasedAt = '2026-10-01';
+    row.matches[0].newItem!.confirmedDistinct = true;
+  }
+  const response = await POST(request({ batch: b, rowIds }));
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  expect(mocks.rpc.mock.calls[0][0]).toBe('commit_workspace');
+  expect(body.workspace.items).toHaveLength(5);
+  expect(body.workspace.listings).toHaveLength(5);
+  expect(body.workspace.imports).toHaveLength(5);
+  mocks.load.mockResolvedValue(body.workspace);
+  const replay = await POST(request({ batch: b, rowIds }));
+  expect((await replay.json()).replayed).toBe(true);
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
+});

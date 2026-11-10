@@ -48,6 +48,17 @@ export const batchSchema = z.object({
 });
 export type DraftRow = z.infer<typeof draftRowSchema>;
 export type DraftBatch = z.infer<typeof batchSchema>;
+/** A proposal has no business effect until its identity, cost and date are approved. */
+export function newInventoryDraft(sku: string | null, cost: number | null = null) {
+  const id = crypto.randomUUID();
+  return {
+    id,
+    sku: sku || `AI-${id}`,
+    cost,
+    purchasedAt: '',
+    confirmedDistinct: false,
+  };
+}
 export function createBatch(
   screenshots: Screenshot[],
   w: Workspace,
@@ -87,7 +98,10 @@ export function createBatch(
             const exact = candidates.filter((c) => c.exact);
             return {
               itemId: exact.length === 1 ? exact[0].item.id : null,
-              newItem: null,
+              newItem:
+                !exact.length && record.kind === 'listing' && record.status === 'active'
+                  ? newInventoryDraft(line.sku)
+                  : null,
               confirmZeroCost: false,
             };
           }),
@@ -134,5 +148,13 @@ export function sanitizeBatch(input: DraftBatch): DraftBatch {
         ]
       : [];
   });
+  // Restore older pending listing reviews without discarding any user edits.
+  if (!batch.context)
+    for (const row of batch.rows)
+      if (row.facts.kind === 'listing' && row.facts.status === 'active')
+        row.matches.forEach((match, i) => {
+          if (!match.itemId && !match.newItem && row.facts.lines[i])
+            match.newItem = newInventoryDraft(row.facts.lines[i].sku, match.purchaseCost ?? null);
+        });
   return batch;
 }
