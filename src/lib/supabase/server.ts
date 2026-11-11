@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { configurationStatus, readConfiguration, secureSessionCookie } from './config';
+import { betaRole } from './beta';
 export function configured() {
   return configurationStatus(process.env).ready;
 }
@@ -47,13 +48,24 @@ export function adminClient() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
-export async function requireUser() {
+export async function requireUser(request?: Request) {
   const client = await authClient();
   const {
     data: { user },
     error,
   } = await client.auth.getUser();
-  if (error || !user || user.email?.toLowerCase() !== readConfiguration(process.env).ownerEmail)
+  if (error || !user) throw new Error('Unauthorized');
+  const role = await betaRole(user);
+  const expected = request?.headers.get('x-thrift-user');
+  if (expected && expected !== user.id) throw new Error('Unauthorized');
+  return { ...user, betaRole: role };
+}
+export async function requireOwner() {
+  const user = await requireUser();
+  if (
+    user.email?.toLowerCase() !== readConfiguration(process.env).ownerEmail ||
+    user.betaRole !== 'owner'
+  )
     throw new Error('Unauthorized');
   return user;
 }

@@ -12,7 +12,7 @@ const options = { headers: { 'Cache-Control': 'no-store' } };
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const user = await requireUser();
+    const user = await requireUser(request);
     const raw = await request.text();
     if (raw.length > 3_000_000)
       throw new Error('This draft is too large. Approve a smaller batch.');

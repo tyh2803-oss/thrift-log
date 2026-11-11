@@ -3282,3 +3282,8 @@ th {
 .assistant-panel:has(.compact-review) .assistant-thread { scroll-padding-block: 20px; padding-bottom: 16px; }
 /* Keep focus scrolling inside the checklist; the dialog heading and approval footer stay put. */
 .dialog-content.assistant-panel { overflow: hidden; overflow: clip; }
+
+.beta-access .detail-row { flex-wrap: wrap; gap: 10px; }
+.beta-access strong { overflow-wrap: anywhere; }
+.beta-access .actions { flex-wrap: wrap; }
+.beta-access input, .beta-access .btn { min-height: 44px; }

@@ -3,7 +3,7 @@ import { adminClient, checkOrigin, requireUser } from '@/lib/supabase/server';
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const user = await requireUser();
+    const user = await requireUser(request);
     const form = await request.formData();
     const file = form.get('file');
     if (!(file instanceof File) || file.size > 5 * 1024 * 1024)
@@ -34,15 +34,28 @@ export async function POST(request: Request) {
 }
 export async function GET(request: Request) {
   try {
-    const user = await requireUser();
+    const user = await requireUser(request);
     const path = new URL(request.url).searchParams.get('path');
-    if (!path || !path.startsWith(`${user.id}/`) || path.includes('..'))
+    if (
+      !path ||
+      !path.startsWith(`${user.id}/`) ||
+      !/^[a-f0-9-]+\/[a-z0-9_-]+\.(jpg|png|webp)$/i.test(path)
+    )
       throw new Error('Unauthorized');
-    const { data, error } = await adminClient()
-      .storage.from('inventory-photos')
-      .createSignedUrl(path, 60);
-    if (error || !data) throw new Error('Unavailable');
-    return NextResponse.redirect(data.signedUrl, { headers: { 'Cache-Control': 'no-store' } });
+    // Proxy private bytes rather than issuing bearer URLs that could outlive access revocation.
+    const { data, error } = await adminClient().storage.from('inventory-photos').download(path);
+    if (error || !data || data.size > 5 * 1024 * 1024) throw new Error('Unavailable');
+    return new Response(await data.arrayBuffer(), {
+      headers: {
+        'Content-Type': /\.png$/i.test(path)
+          ? 'image/png'
+          : /\.webp$/i.test(path)
+            ? 'image/webp'
+            : 'image/jpeg',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
   } catch {
     return new NextResponse(null, { status: 404 });
   }

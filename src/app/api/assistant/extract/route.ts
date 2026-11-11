@@ -24,7 +24,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const user = await requireUser();
+    const user = await requireUser(request);
     if (!assistantConfig().enabled)
       throw new AssistantError(
         'Add OPENAI_API_KEY to the server environment to analyze screenshots. Your manual workflows still work.',

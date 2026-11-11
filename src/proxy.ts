@@ -40,6 +40,8 @@ export const config = {
     '/insights',
     '/settings',
     '/login',
+    '/set-password',
+    '/auth/confirm',
     '/api/:path*',
   ],
 };

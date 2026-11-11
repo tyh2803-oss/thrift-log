@@ -90,9 +90,18 @@ export function Editor({
   onClose: () => void;
   onScanListing?: (id: string) => void;
 }) {
-  const { w, dispatch, saving, demo, notify, error: workspaceError } = useWorkspace();
+  const {
+    w,
+    dispatch,
+    saving,
+    demo,
+    scope,
+    requestHeaders,
+    notify,
+    error: workspaceError,
+  } = useWorkspace();
   const formRef = useRef<HTMLFormElement>(null);
-  const draftKey = `thrift-log.draft.${demo ? 'demo' : 'private'}.${target.kind}.${target.value?.id || 'new'}`;
+  const draftKey = `thrift-log.draft.${scope}.${target.kind}.${target.value?.id || 'new'}`;
   const [recovered, setRecovered] = useState(false);
   const attachForm = useCallback(
     (form: HTMLFormElement | null) => {
@@ -211,7 +220,7 @@ export function Editor({
         } else {
           const body = new FormData();
           body.set('file', file);
-          const r = await fetch('/api/photos', { method: 'POST', body });
+          const r = await fetch('/api/photos', { method: 'POST', headers: requestHeaders, body });
           const data = await r.json();
           if (!r.ok) throw new Error(data.error);
           next.push(data.path);

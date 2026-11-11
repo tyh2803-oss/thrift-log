@@ -1,7 +1,8 @@
 'use client';
+import { clearPrivateBrowserState } from '@/lib/browser-scope';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
@@ -58,7 +59,11 @@ export function ThriftApp({
   demo,
   email,
   pipeline,
+  userId,
+  isOwner = false,
 }: {
+  userId?: string;
+  isOwner?: boolean;
   pipeline?: string;
   section: string;
   demo: boolean;
@@ -66,7 +71,7 @@ export function ThriftApp({
 }) {
   return (
     <SecureWorkspace>
-      <WorkspaceProvider demo={demo}>
+      <WorkspaceProvider key={userId || 'demo'} demo={demo} userId={userId} isOwner={isOwner}>
         <Shell section={section} email={email} pipeline={pipeline} />
       </WorkspaceProvider>
     </SecureWorkspace>
@@ -86,7 +91,6 @@ function Shell({
     pipelineStage === 'unlisted' || pipelineStage === 'for-sale' ? pipelineStage : null;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
   const { now, w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
-  const router = useRouter();
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [search, setSearch] = useState('');
   const [period, setPeriod] = useState<Period>('Last 30 days');
@@ -273,15 +277,18 @@ function Shell({
                 aria-label="Sign out"
                 className="plain-icon"
                 onClick={async () => {
-                  await fetch('/api/auth', {
+                  const response = await fetch('/api/auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'signout' }),
                   });
-                  for (const key of Object.keys(sessionStorage)) {
-                    if (key.startsWith('thrift-log.draft.')) sessionStorage.removeItem(key);
+                  if (!response.ok) {
+                    notify('Sign-out was not confirmed. Try again.');
+                    return;
                   }
-                  router.refresh();
+                  clearPrivateBrowserState();
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Clear private state after sign-out.
+                  window.location.assign('/login');
                 }}
               >
                 <LogOut size={16} />
@@ -676,7 +683,6 @@ function Shell({
         onClose={() => setAssistant(false)}
         context={scanItemId ? { itemId: scanItemId } : undefined}
         onClearContext={() => setScanItemId(undefined)}
-        scope={demo ? 'demo' : email || 'private'}
         onView={(kind, id) => {
           const value =
             kind === 'order'

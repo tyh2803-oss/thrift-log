@@ -28,7 +28,6 @@ export function Assistant({
   open,
   onOpen,
   onClose,
-  scope,
   context,
   onClearContext,
   onView,
@@ -36,7 +35,6 @@ export function Assistant({
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
-  scope: string;
   context?: ListingContext;
   onClearContext?: () => void;
   onView: (kind: 'order' | 'listing', id: string) => void;
@@ -50,6 +48,7 @@ export function Assistant({
     approveAssistant,
     notify,
   } = useWorkspace();
+  const { scope, requestHeaders } = useWorkspace();
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -95,7 +94,7 @@ export function Assistant({
   useEffect(() => {
     if (!open || demo) return;
     let ignore = false;
-    fetch('/api/assistant/extract', { cache: 'no-store' })
+    fetch('/api/assistant/extract', { cache: 'no-store', headers: requestHeaders })
       .then(async (r) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error);
@@ -107,7 +106,7 @@ export function Assistant({
     return () => {
       ignore = true;
     };
-  }, [open, demo]);
+  }, [open, demo, requestHeaders]);
   const reviewBatchId = batch?.id;
   useEffect(() => {
     if (reviewBatchId) {
@@ -241,7 +240,11 @@ export function Assistant({
     try {
       const body = new FormData();
       attachments.forEach((a) => body.append('images', a.file));
-      const response = await fetch('/api/assistant/extract', { method: 'POST', body });
+      const response = await fetch('/api/assistant/extract', {
+        method: 'POST',
+        headers: requestHeaders,
+        body,
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       const extracted = screenshotSchema.array().parse(data.screenshots);
@@ -287,7 +290,11 @@ export function Assistant({
           if (!file) continue;
           const body = new FormData();
           body.set('file', file);
-          const upload = await fetch('/api/photos', { method: 'POST', body });
+          const upload = await fetch('/api/photos', {
+            method: 'POST',
+            headers: requestHeaders,
+            body,
+          });
           const uploaded = await upload.json();
           if (!upload.ok)
             throw new Error(

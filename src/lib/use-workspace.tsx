@@ -1,5 +1,14 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { browserScope, clearPrivateBrowserState } from './browser-scope';
 import { applyCommand } from './commands';
 import { demoWorkspace } from './demo';
 import type { DraftBatch } from './assistant/drafts';
@@ -7,6 +16,9 @@ import { approvalCommands, alreadyApproved } from './assistant/planner';
 import { emptyWorkspace, workspaceSchema, type Command, type Workspace } from './model';
 const KEY = 'thrift-log.demo.v1';
 type Value = {
+  scope: string;
+  isOwner: boolean;
+  requestHeaders: Record<string, string>;
   now: number;
   w: Workspace;
   ready: boolean;
@@ -24,10 +36,19 @@ const Context = createContext<Value | null>(null);
 export function WorkspaceProvider({
   demo,
   children,
+  userId,
+  isOwner = false,
 }: {
+  userId?: string;
+  isOwner?: boolean;
   demo: boolean;
   children: React.ReactNode;
 }) {
+  const scope = browserScope(demo, userId);
+  const requestHeaders = useMemo(
+    (): Record<string, string> => (userId ? { 'x-thrift-user': userId } : {}),
+    [userId],
+  );
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -53,8 +74,15 @@ export function WorkspaceProvider({
         install(next);
         if (!raw) localStorage.setItem(KEY, JSON.stringify(next));
       } else {
-        const r = await fetch('/api/workspace', { cache: 'no-store' });
+        const r = await fetch('/api/workspace', {
+          cache: 'no-store',
+          headers: { 'x-thrift-user': userId || '' },
+        });
         const data = await r.json();
+        if (r.status === 401) {
+          install(emptyWorkspace());
+          clearPrivateBrowserState();
+        }
         if (!r.ok) throw new Error(data.error);
         install(workspaceSchema.parse(data));
       }
@@ -63,16 +91,21 @@ export function WorkspaceProvider({
       setError(e instanceof Error ? e.message : 'Unable to load your workspace.');
       setReady(true);
     }
-  }, [demo, install]);
+  }, [demo, install, userId]);
   useEffect(() => {
     const timer = setTimeout(() => void refresh(), 0);
     const listener = (e: StorageEvent) => {
       if (demo && e.key === KEY) void refresh();
     };
     window.addEventListener('storage', listener);
+    const focus = () => {
+      if (!demo) void refresh();
+    };
+    window.addEventListener('focus', focus);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('storage', listener);
+      window.removeEventListener('focus', focus);
     };
   }, [demo, refresh]);
   useEffect(() => {
@@ -104,7 +137,7 @@ export function WorkspaceProvider({
         } else {
           const response = await fetch('/api/workspace', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-thrift-user': userId || '' },
             body: JSON.stringify({ revision: ref.current.revision, commands }),
           });
           const data = await response.json();
@@ -124,7 +157,7 @@ export function WorkspaceProvider({
         setSaving(false);
       }
     },
-    [demo, install],
+    [demo, install, userId],
   );
   const approveAssistant = useCallback(
     async (batch: DraftBatch, rowIds: string[]) => {
@@ -152,7 +185,7 @@ export function WorkspaceProvider({
         } else {
           const response = await fetch('/api/assistant/approve', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'x-thrift-user': userId || '' },
             body: JSON.stringify({ batch, rowIds }),
           });
           const data = await response.json();
@@ -172,7 +205,7 @@ export function WorkspaceProvider({
         setSaving(false);
       }
     },
-    [demo, install],
+    [demo, install, userId],
   );
   const resetDemo = () => {
     localStorage.removeItem(KEY);
@@ -181,6 +214,9 @@ export function WorkspaceProvider({
   return (
     <Context.Provider
       value={{
+        scope,
+        isOwner,
+        requestHeaders,
         now,
         w,
         ready,

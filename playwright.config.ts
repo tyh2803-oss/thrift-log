@@ -29,6 +29,7 @@ export default defineConfig({
       NEXT_PUBLIC_SUPABASE_ANON_KEY: '',
       SUPABASE_SERVICE_ROLE_KEY: '',
       OWNER_EMAIL: '',
+      BETA_SITE_URL: '',
       OPENAI_API_KEY: '',
     },
     timeout: 120000,
