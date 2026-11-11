@@ -15,11 +15,12 @@ export async function loadWorkspace(userId: string) {
     'financialLedger',
     'shipmentStorage',
     'itemFulfillment',
+    'inviteOnlyBeta',
   ];
   if (
     readinessError ||
     !readiness ||
-    readiness.schemaVersion < 4 ||
+    readiness.schemaVersion < 6 ||
     checks.some((key) => readiness[key] !== true)
   )
     throw new DatabaseReadinessError();

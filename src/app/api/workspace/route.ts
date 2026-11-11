@@ -7,9 +7,9 @@ import { applyCommand } from '@/lib/commands';
 import { loadWorkspace } from '@/lib/supabase/workspace';
 export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    return NextResponse.json(await loadWorkspace((await requireUser()).id), options);
+    return NextResponse.json(await loadWorkspace((await requireUser(request)).id), options);
   } catch (e) {
     return failure(e);
   }
@@ -17,7 +17,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
-    const user = await requireUser();
+    const user = await requireUser(request);
     const text = await request.text();
     if (text.length > 8_000_000) throw new Error('Import is too large.');
     const body = z

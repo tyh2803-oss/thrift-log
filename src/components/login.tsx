@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Leaf, ArrowRight, LockKeyhole } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from './ui/button';
+import { clearPrivateBrowserState } from '@/lib/browser-scope';
 export function Login({
   configured,
   initialError = '',
@@ -42,6 +43,7 @@ export function Login({
               e.preventDefault();
               setPending(true);
               setError('');
+              clearPrivateBrowserState();
               const f = new FormData(e.currentTarget);
               const controller = new AbortController();
               const timeout = setTimeout(() => controller.abort(), 20000);
@@ -108,8 +110,8 @@ export function Login({
               <ArrowRight size={16} />
             </Button>
             <p className="hint">
-              <LockKeyhole size={13} /> Private access. Accounts are created by the owner in
-              Supabase.
+              <LockKeyhole size={13} /> Invite-only access. Each approved account has its own
+              private workspace. Public registration is disabled.
             </p>
           </form>
         ) : (

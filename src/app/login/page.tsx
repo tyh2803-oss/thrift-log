@@ -14,7 +14,9 @@ export default async function Page({
       ? 'Unable to sign in. Check your credentials and account configuration.'
       : params.error === 'setup'
         ? 'Private storage is not configured. Complete the Supabase environment settings.'
-        : '';
+        : params.error === 'invite'
+          ? 'This invitation is expired, invalid, or no longer authorized. Ask the owner for access and a fresh invitation.'
+          : '';
   if (ready && params.verify === '1') {
     const user = await requireUser().catch(() => null);
     if (user) redirect('/');

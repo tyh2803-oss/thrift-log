@@ -15,9 +15,12 @@ import { adapters } from '@/lib/integrations/adapters';
 import { parseMoney } from '@/lib/finance';
 import { Button } from './ui/button';
 import { Badge } from './shared';
+import { BetaAccess } from './beta-access';
+import { clearPrivateBrowserState } from '@/lib/browser-scope';
 export function Settings({ onImport }: { onImport: () => void }) {
   const { w, dispatch, demo, resetDemo, notify } = useWorkspace();
   const [error, setError] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
   return (
     <div className="settings-grid">
       <section className="card padded">
@@ -188,6 +191,7 @@ export function Settings({ onImport }: { onImport: () => void }) {
         })}
       </section>
       <div className="stack">
+        <BetaAccess />
         <section className="card padded">
           <div className="card-heading">
             <h2>Marketplace connections</h2>
@@ -229,6 +233,32 @@ export function Settings({ onImport }: { onImport: () => void }) {
             <Upload size={16} />
             Import CSV
           </Button>
+          {!demo && (
+            <Button
+              variant="outline"
+              disabled={signingOut}
+              onClick={async () => {
+                if (signingOut) return;
+                setSigningOut(true);
+                try {
+                  const r = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'signout' }),
+                  });
+                  if (!r.ok) throw new Error('Sign-out was not confirmed. Try again.');
+                  clearPrivateBrowserState();
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Discard private in-memory state on all screen sizes.
+                  window.location.assign('/login');
+                } catch (e) {
+                  notify(e instanceof Error ? e.message : 'Sign-out failed.');
+                  setSigningOut(false);
+                }
+              }}
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </Button>
+          )}
           {demo && (
             <Button
               variant="ghost"

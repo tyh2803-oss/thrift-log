@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { ThriftApp } from '@/components/app-shell';
 import { configured, configurationPresent, requireUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { readConfiguration } from '@/lib/supabase/config';
 export const dynamic = 'force-dynamic';
 export default async function Page({
   params,
@@ -24,5 +25,17 @@ export default async function Page({
   }
   const user = await requireUser().catch(() => null);
   if (!user) redirect('/login');
-  return <ThriftApp section={section} demo={false} email={user.email} pipeline={pipeline} />;
+  return (
+    <ThriftApp
+      section={section}
+      demo={false}
+      email={user.email}
+      userId={user.id}
+      isOwner={
+        user.betaRole === 'owner' &&
+        user.email?.toLowerCase() === readConfiguration(process.env).ownerEmail
+      }
+      pipeline={pipeline}
+    />
+  );
 }

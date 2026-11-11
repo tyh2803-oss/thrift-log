@@ -20,8 +20,18 @@ if (!status.ready) {
   try {
     const { data, error } = await client.rpc('verify_thrift_log');
     report('Schema verification RPC is available', !error && !!data);
-    if (!error && data)
+    if (!error && data) {
       report('Financial ledger and item fulfillment schema version', data.schemaVersion >= 4);
+      report(
+        'Pipeline operational corrections migration',
+        data.schemaVersion >= 5 && data.pipelineMoves === true,
+      );
+      report(
+        'Invite-only beta migration and policies',
+        data.schemaVersion >= 6 && data.inviteOnlyBeta === true,
+      );
+      report('Existing owner beta authorization', data.betaOwnerConfigured === true);
+    }
     if (!error && data)
       for (const key of [
         'tablesPresent',

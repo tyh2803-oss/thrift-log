@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authClient, checkOrigin } from '@/lib/supabase/server';
-import { ConfigurationError, readConfiguration } from '@/lib/supabase/config';
+import { authClient, checkOrigin, requireUser } from '@/lib/supabase/server';
+import { betaRole } from '@/lib/supabase/beta';
+import { ConfigurationError } from '@/lib/supabase/config';
 export async function POST(request: Request) {
   const formRequest =
     request.headers.get('content-type')?.split(';')[0].trim() ===
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     origin = request.headers.get('origin')!;
     const body = z
       .object({
-        action: z.enum(['signin', 'signout']),
+        action: z.enum(['signin', 'signout', 'password']),
         email: z.string().trim().pipe(z.email()).optional(),
         password: z.string().min(1).max(500).optional(),
       })
@@ -26,17 +27,30 @@ export async function POST(request: Request) {
     if (body.action === 'signout') {
       const { error } = await client.auth.signOut();
       if (error) throw error;
+    } else if (body.action === 'password') {
+      await requireUser(request);
+      const password = z.string().min(12).max(128).parse(body.password);
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
     } else {
       if (!body.email || !body.password) throw new Error('Missing credentials');
-      if (body.email.toLowerCase() !== readConfiguration(process.env).ownerEmail)
-        throw new Error('Access denied');
-      const { error } = await client.auth.signInWithPassword({
+      const { data, error } = await client.auth.signInWithPassword({
         email: body.email,
         password: body.password,
       });
       if (error) throw error;
+      try {
+        if (!data.user) throw new Error('Unauthorized');
+        await betaRole(data.user);
+      } catch (error) {
+        await client.auth.signOut({ scope: 'local' });
+        throw error;
+      }
     }
-    if (formRequest) return redirect(body.action === 'signin' ? '/login?verify=1' : '/login');
+    if (formRequest)
+      return redirect(
+        body.action === 'signin' ? '/login?verify=1' : body.action === 'password' ? '/' : '/login',
+      );
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (formRequest && origin)

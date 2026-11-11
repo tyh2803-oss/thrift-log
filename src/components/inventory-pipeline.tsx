@@ -14,11 +14,11 @@ import {
 import { useWorkspace } from '@/lib/use-workspace';
 import { money } from '@/lib/money';
 export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineSnapshot }) {
-  const { w, demo } = useWorkspace(),
+  const { w, scope } = useWorkspace(),
     base = usePathname().startsWith('/demo') ? '/demo' : '';
   const snapshot = useMemo(() => provided ?? inventoryPipeline(w), [w, provided]);
   const [metric, setMetric] = useState<PipelineMetric>('sale');
-  const key = `thrift-log.draft.pipeline-metric.${demo ? 'demo' : 'private'}`;
+  const key = `thrift-log.draft.pipeline-metric.${scope}`;
   useEffect(() => {
     const timer = setTimeout(() => {
       try {
