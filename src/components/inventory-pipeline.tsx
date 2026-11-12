@@ -64,7 +64,7 @@ export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineS
               key={stage}
               data-stage={stage}
               className={`pipeline-stage pipeline-${stage}`}
-              href={`${base}/${stage === 'unlisted' || stage === 'for-sale' ? 'inventory' : 'sales'}?pipeline=${stage}`}
+              href={`${base}/inventory?pipeline=${stage}`}
               aria-label={`View ${stageNames[stage]} items`}
             >
               <div className="pipeline-stage-title">
@@ -87,10 +87,10 @@ export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineS
                 title={
                   metric === 'profit' && (stage === 'sold' || stage === 'shipped')
                     ? 'Allocated from the current sale’s dated ledger, including recorded selling costs and adjustments. Unconfirmed amounts stay provisional.'
-                    : stage === 'for-sale'
+                    : metric !== 'profit' && stage === 'for-sale'
                       ? 'One price per physical item: lowest positive active listing, then the item’s explicitly entered asking price. Asking prices are not earned revenue.'
                       : metric === 'profit'
-                        ? 'Expected/asking price minus acquisition cost and the per-item selling expense estimate configured in Settings. Incomplete estimates are excluded.'
+                        ? 'Expected/asking price minus acquisition cost and the per-item selling expense estimate configured in Settings. When that estimate is unset, potential gross profit is shown before selling expenses.'
                         : undefined
                 }
               >

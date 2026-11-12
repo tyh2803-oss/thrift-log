@@ -4,9 +4,17 @@ import type { DraftRow } from './drafts';
 /** Only a durable import receipt proves that a stored zero was intentionally approved. */
 export function confirmedFreeInventory(w: Workspace, itemId: string) {
   return w.imports.some((receipt) => {
-    if (receipt.mapping.format !== 'assistant-v1') return false;
+    if (!['assistant-v1', 'pipeline-v1'].includes(receipt.mapping.format)) return false;
     try {
       const audit = JSON.parse(receipt.rawCsv);
+      if (receipt.mapping.format === 'pipeline-v1')
+        return (
+          audit.result?.successIds?.includes(itemId) &&
+          audit.request?.items?.some(
+            (row: { itemId: string; sale?: { purchaseCost: number | null } }) =>
+              row.itemId === itemId && row.sale?.purchaseCost === 0,
+          )
+        );
       return (audit.matches || []).some(
         (m: DraftRow['matches'][number]) =>
           (m.itemId === itemId && (m.confirmZeroCost || m.costOverride === 0)) ||

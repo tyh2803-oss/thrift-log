@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { browserScope, clearPrivateBrowserState } from './browser-scope';
 import { applyCommand } from './commands';
+import { applyPipelineMove, type PipelineMove, type MoveResult } from './pipeline-moves';
 import { demoWorkspace } from './demo';
 import type { DraftBatch } from './assistant/drafts';
 import { approvalCommands, alreadyApproved } from './assistant/planner';
@@ -28,6 +29,7 @@ type Value = {
   notice: string;
   dispatch: (c: Command | Command[]) => Promise<boolean>;
   refresh: () => Promise<void>;
+  movePipeline: (input: PipelineMove) => Promise<MoveResult | false>;
   approveAssistant: (batch: DraftBatch, rowIds: string[]) => Promise<Workspace | false>;
   notify: (s: string) => void;
   resetDemo: () => void;
@@ -207,6 +209,48 @@ export function WorkspaceProvider({
     },
     [demo, install, userId],
   );
+  const movePipeline = useCallback(
+    async (input: PipelineMove): Promise<MoveResult | false> => {
+      if (busy.current) return false;
+      busy.current = true;
+      setSaving(true);
+      setError('');
+      try {
+        let result: MoveResult;
+        if (demo) {
+          const commit = async () => {
+            const raw = localStorage.getItem(KEY);
+            const current = raw ? workspaceSchema.parse(JSON.parse(raw)) : ref.current;
+            result = await applyPipelineMove(current, input);
+            localStorage.setItem(KEY, JSON.stringify(result.workspace));
+            install(result.workspace);
+          };
+          if (navigator.locks) await navigator.locks.request(KEY, commit);
+          else await commit();
+          return result!;
+        }
+        const response = await fetch('/api/pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-thrift-user': userId || '' },
+          body: JSON.stringify(input),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        result = { ...data, workspace: workspaceSchema.parse(data.workspace) };
+        install(result.workspace);
+        return result;
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : 'Move was not confirmed. Refresh before retrying.',
+        );
+        return false;
+      } finally {
+        busy.current = false;
+        setSaving(false);
+      }
+    },
+    [demo, install, userId],
+  );
   const resetDemo = () => {
     localStorage.removeItem(KEY);
     void refresh();
@@ -227,6 +271,7 @@ export function WorkspaceProvider({
         dispatch,
         approveAssistant,
         refresh,
+        movePipeline,
         notify: setNotice,
         resetDemo,
       }}

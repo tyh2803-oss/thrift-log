@@ -6,6 +6,8 @@ import { assistantWorkspace } from './helpers/assistant';
 import { applyCommand } from '../src/lib/commands';
 import { orderSchema } from '../src/lib/model';
 import { metrics } from '../src/lib/finance';
+import { applyPipelineMove, type PipelineMove } from '../src/lib/pipeline-moves';
+import { inventoryPipeline } from '../src/lib/pipeline';
 let db: PGlite;
 const owner = '11111111-1111-4111-8111-111111111111';
 const tester = '22222222-2222-4222-8222-222222222222';
@@ -446,4 +448,88 @@ it('keeps posted money and confirmations immutable while allowing only operation
   expect(after.orders[0].fees).toBe(w.orders[0].fees);
   expect(after.financialEvents).toEqual(w.financialEvents);
   expect(metrics(after).profit).toBe(metrics(w).profit);
+});
+
+it('persists bulk pipeline sales, fulfillment and reversals through the real tenant-scoped SQL transaction without deleting history', async () => {
+  const read = async () =>
+    (
+      await db.query<{ w: ReturnType<typeof assistantWorkspace> }>(
+        'select public.load_workspace($1) as w',
+        [tester],
+      )
+    ).rows[0].w;
+  const original = await read();
+  const originalRevenue = metrics(original).revenue;
+  const originalProfit = metrics(original).profit;
+  let w = original;
+  const ids = [crypto.randomUUID(), crypto.randomUUID()];
+  for (const [index, id] of ids.entries())
+    w = applyCommand(w, {
+      type: 'item',
+      value: {
+        ...assistantWorkspace().items[0],
+        id,
+        sku: `PIPE-SQL-${index}`,
+        status: 'Ready to List',
+        photos: [],
+      },
+    });
+  await db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+    tester,
+    original.revision,
+    JSON.stringify(w),
+  ]);
+  w = await read();
+  const move = async (destination: PipelineMove['destination']) => {
+    const request: PipelineMove = {
+      id: crypto.randomUUID(),
+      revision: w.revision,
+      destination,
+      date: '2026-11-12T12:00:00Z',
+      confirmConsequences: true,
+      items: ids.map((itemId) => ({
+        itemId,
+        sale: {
+          marketplace: 'Vinted',
+          date: '2026-11-11T12:00:00Z',
+          price: 3000,
+          purchaseCost: 1200,
+          fees: 200,
+          processing: 0,
+          shipping: 0,
+          shippingCollected: 0,
+          discount: 0,
+          other: 0,
+        },
+      })),
+    };
+    const result = await applyPipelineMove(w, request);
+    expect(result.failures).toEqual([]);
+    expect(result.successIds).toHaveLength(2);
+    await db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+      tester,
+      w.revision,
+      JSON.stringify(result.workspace),
+    ]);
+    w = await read();
+    expect((await applyPipelineMove(w, request)).replayed).toBe(true);
+  };
+  await move('sold');
+  expect(metrics(w).revenue).toBe(originalRevenue + 6000);
+  expect(metrics(w).profit).toBe(originalProfit + 3200);
+  expect(w.orders.filter((o) => o.lines.some((l) => ids.includes(l.itemId)))).toHaveLength(2);
+  await move('shipped');
+  expect(
+    inventoryPipeline(w).groups.shipped.entries.filter((e) => ids.includes(e.item.id)),
+  ).toHaveLength(2);
+  await move('sold');
+  await move('unlisted');
+  expect(
+    inventoryPipeline(w).groups.unlisted.entries.filter((e) => ids.includes(e.item.id)),
+  ).toHaveLength(2);
+  expect(metrics(w).revenue).toBe(originalRevenue);
+  expect(metrics(w).profit).toBe(originalProfit);
+  expect(w.orders.filter((o) => o.lines.some((l) => ids.includes(l.itemId)))).toHaveLength(2);
+  expect(w.items).toHaveLength(original.items.length + 2);
+  expect(w.imports.filter((r) => r.mapping.format === 'pipeline-v1')).toHaveLength(4);
 });

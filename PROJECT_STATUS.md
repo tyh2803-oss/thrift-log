@@ -1,5 +1,18 @@
 # Thrift Log project status
 
+## Inventory stages and potential-profit display — November 12, 2026
+
+Prepared on `feat/inventory-stage-management` from main `d8efecfe3e607e61b6cf4f2b97e7ea64458add72`.
+
+- Removed the large pipeline filter banner. Inventory now uses five UI stages: Unlisted, For Sale, Sold, Shipped and Archived, mapped to existing canonical inventory, listing, order and fulfillment records. Every dashboard stage drills into Inventory; existing detailed fulfillment and handover controls remain available.
+- List/grid checkboxes, Select all matching, clear selection and a shared destination/review support bulk forward/backward moves. Selection survives filter changes. Valid independent groups commit atomically through the existing tenant-scoped RPC; failed groups retain selection and actionable errors. Retry receipts prevent duplicate sales and financial entries.
+- Sales collect actual proceeds and confirmed selling amounts. Consequential reversals show financial impact and need confirmation; original orders and dated history remain, and paid-out sales require reconciliation. Archived is restricted to unsold inventory. No external marketplace actions occur.
+- With known cost and asking price, an unset optional selling-expense estimate shows **potential gross profit before selling expenses** instead of excluding all items. Configured expenses still apply. Unknown acquisition costs remain unknown; explicit zero-cost sale confirmations remain durable after correction. No existing financial values or calculation meanings are rewritten.
+- Verified: typecheck, lint, production build and **264 unit/database/API tests passed** (one opt-in live image benchmark skipped). Browser verification: **78 main browser checks + 4 registration checks + 4 tester-setup checks passed** across desktop and iPhone Chromium emulation, including a 320px-wide inventory review. The timer regression additionally passed six repeated runs after waiting for save acknowledgement before navigation.
+- Local PostgreSQL tests execute the real saved SQL transaction and tenant protections for bulk sales, fulfillment, reversals and reloading. API tests cover ownership, foreign item IDs/photos, missing database capabilities, conflicts, failed saves and exact retries. No production Supabase request or data change was made for this work; hosted persistence and physical iPhone/Safari acceptance have not been verified.
+- **No migration, Auth setting or Storage setup change is added.** The already-tracked `202611100001_pipeline_operational_corrections.sql` capability (schema 5 or a compatible later version) is checked before pipeline writes. No migration has been applied by this task.
+- Release remains pending approval under the user's standing instruction for significant financial changes. No main-branch push, merge or deployment is part of this work.
+
 ## Mobile dashboard polish and timer placement
 
 Built from main `c12f3e7` on `feat/mobile-dashboard-polish`. The floating timer widget is removed entirely. Start timers through Activity or Quick add; manage the active timer inline in Activity. Existing session handlers, persistence, associations and labor calculations are reused, so running timers survive navigation and refresh.

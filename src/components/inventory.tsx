@@ -1,19 +1,26 @@
 'use client';
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { inventoryPipeline, stageNames, type PipelineStage } from '@/lib/pipeline';
+import { usePathname, useSearchParams, useRouter } from 'next/navigation';
+import {
+  inventoryPipeline,
+  inventoryStages,
+  inventoryStageNames,
+  type InventoryStage,
+  type PipelineStage,
+} from '@/lib/pipeline';
 import { LayoutGrid, List, Plus, Download, ExternalLink, Copy } from 'lucide-react';
 import { currentOrderTotals } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, parseMoney } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
-import { itemStatuses, marketplaces, type Item } from '@/lib/model';
+import { marketplaces, type Item } from '@/lib/model';
 import { Status, ItemPhoto, Empty } from './shared';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 import { listingMetrics } from '@/lib/listing-metrics';
 import { PhotoGallery } from './photo-gallery';
+import { PipelineMoveDialog } from './pipeline-move-dialog';
+import { OrderFulfillment } from './order-fulfillment';
 import type { EditorTarget } from './editor';
 export function Inventory({
   search,
@@ -28,27 +35,51 @@ export function Inventory({
 }) {
   const { now, w, dispatch, notify } = useWorkspace();
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
-  const pipeline = useMemo(() => (pipelineStage ? inventoryPipeline(w) : null), [w, pipelineStage]);
-  const pipelineIds = useMemo(
-    () =>
-      pipelineStage && pipeline
-        ? new Set(pipeline.groups[pipelineStage].entries.map((e) => e.item.id))
-        : null,
-    [pipeline, pipelineStage],
-  );
+  const router = useRouter();
+  const params = useSearchParams();
+  const requested = params.get('pipeline') || pipelineStage || 'all';
+  const status = inventoryStages.includes(requested as InventoryStage)
+    ? (requested as InventoryStage)
+    : 'all';
+  const pipeline = useMemo(() => inventoryPipeline(w), [w]);
+  const entriesById = new Map(pipeline.entries.map((entry) => [entry.item.id, entry]));
+  const stageOf = (i: Item) =>
+    i.status === 'Archived' ? 'archived' : entriesById.get(i.id)?.stage;
+  const [fulfillmentId, setFulfillmentId] = useState<string | null>(null);
+  function setStatus(value: string) {
+    const query = new URLSearchParams(params.toString());
+    if (value === 'all') query.delete('pipeline');
+    else query.set('pipeline', value);
+    router.replace(`${base}/inventory${query.size ? `?${query}` : ''}`, { scroll: false });
+  }
+  const [moving, setMoving] = useState<string[] | null>(null);
+  const [destination, setDestination] = useState<InventoryStage>('unlisted');
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [tab, setTab] = useState('Inventory');
-  const [status, setStatus] = useState('All statuses');
   const [marketplace, setMarketplace] = useState('All marketplaces');
   const listingSummary = listingMetrics(w, marketplace);
   const [sort, setSort] = useState('Newest');
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
+  function changeStatus(i: Item) {
+    const current = stageOf(i);
+    setDestination(
+      current === 'for-sale'
+        ? 'sold'
+        : current === 'sold'
+          ? 'shipped'
+          : current === 'shipped'
+            ? 'sold'
+            : current === 'archived'
+              ? 'unlisted'
+              : 'for-sale',
+    );
+    setMoving([i.id]);
+  }
   const items = w.items
     .filter(
       (i) =>
-        (!pipelineIds || pipelineIds.has(i.id)) &&
-        (status === 'All statuses' || i.status === status) &&
+        (status === 'all' || stageOf(i) === status) &&
         (marketplace === 'All marketplaces' ||
           w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace)) &&
         `${i.sku} ${i.title} ${i.brand} ${i.category} ${i.source} ${i.storage}`
@@ -67,7 +98,7 @@ export function Inventory({
     const item = w.items.find((i) => i.id === l.itemId);
     return (
       item &&
-      (!pipelineIds || (pipelineIds.has(item.id) && l.status === 'Active')) &&
+      (status === 'all' || stageOf(item) === status) &&
       (marketplace === 'All marketplaces' || l.marketplace === marketplace) &&
       `${item.title} ${item.sku} ${l.marketplace}`.toLowerCase().includes(search.toLowerCase())
     );
@@ -83,25 +114,12 @@ export function Inventory({
   }
   return (
     <>
-      {pipelineStage && (
-        <div className="pipeline-filter-banner">
-          <div>
-            <strong>{stageNames[pipelineStage]} · Current physical inventory</strong>
-            <p>As of now · One row per physical item</p>
-          </div>
-          <Link className="text-link" href={`${base}/inventory`}>
-            Clear pipeline filter
-          </Link>
-        </div>
-      )}
       <div className="page-toolbar">
         <div className="tabs">
           {['Inventory', 'Listings'].map((t) => (
             <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
               {t}
-              <span>
-                {t === 'Inventory' ? (pipelineIds?.size ?? w.items.length) : listings.length}
-              </span>
+              <span>{t === 'Inventory' ? items.length : listings.length}</span>
             </button>
           ))}
         </div>
@@ -219,7 +237,7 @@ export function Inventory({
               item asking value
             </span>
           </div>
-          <section className="card">
+          <section className="card inventory-list-card">
             <div className="table-controls">
               <div className="actions">
                 <select
@@ -227,9 +245,11 @@ export function Inventory({
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                 >
-                  <option>All statuses</option>
-                  {itemStatuses.map((s) => (
-                    <option key={s}>{s}</option>
+                  <option value="all">All stages</option>
+                  {inventoryStages.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {inventoryStageNames[stage]}
+                    </option>
                   ))}
                 </select>
                 <select
@@ -259,49 +279,102 @@ export function Inventory({
                 </button>
               </div>
             </div>
-            {!!selected.length && (
-              <div className="bulk-bar">
-                <span>{selected.length} selected</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    void dispatch(
-                      w.items
-                        .filter((i) => selected.includes(i.id) && i.status !== 'Sold')
-                        .map((i) => ({ type: 'item', value: { ...i, status: 'Ready to List' } })),
-                    );
-                    setSelected([]);
-                  }}
-                >
-                  Mark ready to list
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
-                  Clear
-                </Button>
-              </div>
-            )}
+            <div className="pipeline-bulk-bar" aria-label="Inventory selection">
+              <strong aria-live="polite">{selected.length} selected</strong>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!items.length}
+                onClick={() => setSelected([...new Set([...selected, ...items.map((i) => i.id)])])}
+              >
+                Select all matching ({items.length})
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!selected.length}
+                onClick={() => setSelected([])}
+              >
+                Clear selection
+              </Button>
+              {!!selected.length && (
+                <>
+                  <label className="field">
+                    <span>Move to</span>
+                    <select
+                      aria-label="Bulk destination"
+                      value={destination}
+                      onChange={(e) => setDestination(e.target.value as InventoryStage)}
+                    >
+                      {inventoryStages.map((stage) => (
+                        <option key={stage} value={stage}>
+                          {inventoryStageNames[stage]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button size="sm" onClick={() => setMoving(selected)}>
+                    Move selected ({selected.length})
+                  </Button>
+                </>
+              )}
+              <small>
+                Select all includes every item matching the current filters. Selections remain when
+                filters change.
+                {selected.some((id) => !items.some((i) => i.id === id)) &&
+                  ` ${selected.filter((id) => !items.some((i) => i.id === id)).length} selected outside these filters.`}
+                {selected.length > 200 && ' Move up to 200 items at a time.'}
+              </small>
+            </div>
             {!items.length ? (
               <Empty
-                title="A fresh start for your inventory"
-                description="Add your first find, or import the pieces you already own."
+                title={
+                  w.items.length
+                    ? 'No items match these filters'
+                    : 'A fresh start for your inventory'
+                }
+                description={
+                  w.items.length
+                    ? 'Choose another stage or marketplace, or adjust your search.'
+                    : 'Add your first find, or import the pieces you already own.'
+                }
                 action={<Button onClick={() => onEdit({ kind: 'item' })}>Add an item</Button>}
               />
             ) : view === 'grid' ? (
               <div className="photo-grid">
                 {items.map((i) => (
-                  <button className="product-card" key={i.id} onClick={() => setDetail(i.id)}>
-                    <ItemPhoto item={i} large />
-                    <div>
-                      <Status value={i.status} />
-                      <h3>{i.title}</h3>
-                      <p>
-                        {i.sku} · {i.size}
-                      </p>
-                      <strong>{money(i.asking)}</strong>
-                      <span className="muted"> · {money(i.cost)} cost</span>
-                    </div>
-                  </button>
+                  <div className="product-card selectable-product" key={i.id}>
+                    <label className="inventory-select">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${i.sku}`}
+                        checked={selected.includes(i.id)}
+                        onChange={(e) =>
+                          setSelected(
+                            e.target.checked
+                              ? [...selected, i.id]
+                              : selected.filter((id) => id !== i.id),
+                          )
+                        }
+                      />
+                      Select item
+                    </label>
+                    <button className="product-open" onClick={() => setDetail(i.id)}>
+                      <ItemPhoto item={i} large />
+                      <div>
+                        <Status value={stageOf(i) ? inventoryStageNames[stageOf(i)!] : i.status} />
+                        <h3>{i.title}</h3>
+                        <p>
+                          {i.sku} · {i.size}
+                        </p>
+                        <strong>{money(i.asking)}</strong>
+                        <span className="muted"> · {money(i.cost)} cost</span>
+                      </div>
+                    </button>
+                    <Button size="sm" variant="outline" onClick={() => changeStatus(i)}>
+                      Change status
+                    </Button>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -313,9 +386,13 @@ export function Inventory({
                         <input
                           type="checkbox"
                           aria-label="Select all inventory"
-                          checked={items.length > 0 && selected.length === items.length}
+                          checked={items.length > 0 && items.every((i) => selected.includes(i.id))}
                           onChange={(e) =>
-                            setSelected(e.target.checked ? items.map((i) => i.id) : [])
+                            setSelected(
+                              e.target.checked
+                                ? [...new Set([...selected, ...items.map((i) => i.id)])]
+                                : selected.filter((id) => !items.some((i) => i.id === id)),
+                            )
                           }
                         />
                       </th>
@@ -336,18 +413,20 @@ export function Inventory({
                       return (
                         <tr key={i.id}>
                           <td>
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${i.sku}`}
-                              checked={selected.includes(i.id)}
-                              onChange={(e) =>
-                                setSelected(
-                                  e.target.checked
-                                    ? [...selected, i.id]
-                                    : selected.filter((id) => id !== i.id),
-                                )
-                              }
-                            />
+                            <label className="inventory-check">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${i.sku}`}
+                                checked={selected.includes(i.id)}
+                                onChange={(e) =>
+                                  setSelected(
+                                    e.target.checked
+                                      ? [...selected, i.id]
+                                      : selected.filter((id) => id !== i.id),
+                                  )
+                                }
+                              />
+                            </label>
                           </td>
                           <td>
                             <button className="item-cell" onClick={() => setDetail(i.id)}>
@@ -361,9 +440,28 @@ export function Inventory({
                             </button>
                           </td>
                           <td>
-                            <Status value={i.status} />
+                            <Status
+                              value={stageOf(i) ? inventoryStageNames[stageOf(i)!] : i.status}
+                            />
+                            <Button size="sm" variant="ghost" onClick={() => changeStatus(i)}>
+                              Change status
+                            </Button>
+                            {entriesById.get(i.id)?.order && (
+                              <>
+                                <small className="muted">
+                                  {entriesById.get(i.id)?.fulfillment}
+                                </small>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setFulfillmentId(entriesById.get(i.id)!.order!.id)}
+                                >
+                                  Manage fulfillment
+                                </Button>
+                              </>
+                            )}
                           </td>
-                          <td>
+                          <td data-label="Cost">
                             <input
                               className="cost-input"
                               aria-label={`Cost for ${i.sku}`}
@@ -375,8 +473,10 @@ export function Inventory({
                               onBlur={(e) => void updateCost(i, e.target.value)}
                             />
                           </td>
-                          <td className="number">{money(i.asking)}</td>
-                          <td>
+                          <td className="number" data-label="Asking">
+                            {money(i.asking)}
+                          </td>
+                          <td data-label="Age">
                             <span className={age > 90 ? 'negative' : 'muted'}>{age}d</span>
                           </td>
                           <td>
@@ -463,6 +563,24 @@ export function Inventory({
           )}
         </section>
       )}
+      {fulfillmentId && (
+        <OrderFulfillment orderId={fulfillmentId} onClose={() => setFulfillmentId(null)} />
+      )}
+      {moving && (
+        <PipelineMoveDialog
+          ids={moving}
+          initialDestination={destination}
+          onClose={() => setMoving(null)}
+          onSaved={(successIds, failures) =>
+            setSelected((ids) => [
+              ...new Set([
+                ...ids.filter((id) => !successIds.includes(id)),
+                ...failures.map((failure) => failure.itemId),
+              ]),
+            ])
+          }
+        />
+      )}
       {item && (
         <Dialog
           open
@@ -474,7 +592,7 @@ export function Inventory({
           <div className="item-detail">
             <PhotoGallery key={item.id} item={item} />
             <div>
-              <Status value={item.status} />
+              <Status value={stageOf(item) ? inventoryStageNames[stageOf(item)!] : item.status} />
               <dl>
                 <div>
                   <dt>Purchase cost</dt>
@@ -503,6 +621,26 @@ export function Inventory({
                 >
                   Edit item
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDetail(null);
+                    changeStatus(item);
+                  }}
+                >
+                  Change status
+                </Button>
+                {entriesById.get(item.id)?.order && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setDetail(null);
+                      setFulfillmentId(entriesById.get(item.id)!.order!.id);
+                    }}
+                  >
+                    Manage fulfillment
+                  </Button>
+                )}
                 {item.status !== 'Sold' && (
                   <Button
                     variant="outline"

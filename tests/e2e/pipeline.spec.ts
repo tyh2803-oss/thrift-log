@@ -195,8 +195,8 @@ test('all stage links preserve current physical filters through reload and ignor
   for (const [name, route, rows] of [
     ['Unlisted', 'inventory?pipeline=unlisted', 2],
     ['For Sale', 'inventory?pipeline=for-sale', 1],
-    ['Sold', 'sales?pipeline=sold', 1],
-    ['Shipped', 'sales?pipeline=shipped', 2],
+    ['Sold', 'inventory?pipeline=sold', 1],
+    ['Shipped', 'inventory?pipeline=shipped', 2],
   ] as const) {
     await card(page, name).click();
     await expect(page).toHaveURL(new RegExp('/demo/' + route.replace('?', '\\?') + '$'));
@@ -207,7 +207,7 @@ test('all stage links preserve current physical filters through reload and ignor
       await expect(page.getByLabel('Date range', { exact: true })).toHaveCount(0);
       await expect(page.getByText(/As of now · All sale dates/)).toBeVisible();
     }
-    await page.getByRole('link', { name: 'Clear pipeline filter', exact: true }).click();
+    await page.getByLabel('Filter inventory status', { exact: true }).selectOption('all');
     await expect(page).not.toHaveURL(/pipeline=/);
     await page.goto('/demo');
     await expect(pipeline(page)).toBeVisible();
@@ -279,7 +279,7 @@ test('new purchases and saved listings automatically enter the correct stages', 
   await page.goto('/demo');
   await expect(card(page, 'Unlisted').locator('.pipeline-count')).toHaveText('1 item');
   await card(page, 'Unlisted').click();
-  await page.getByRole('link', { name: 'Clear pipeline filter', exact: true }).click();
+  await page.getByLabel('Filter inventory status', { exact: true }).selectOption('all');
   await page
     .getByRole('button', { name: /^Listings/ })
     .first()
@@ -301,7 +301,9 @@ test('widget visibility and selling estimates are optional settings', async ({ p
   w.settings.estimatedSellingExpenses = null;
   await seed(page, w);
   await pipeline(page).getByRole('button', { name: 'Profit', exact: true }).click();
-  await expect(card(page, 'For Sale').locator('.pipeline-money')).toHaveText('—');
+  await expect(card(page, 'For Sale').locator('.pipeline-money')).toHaveText('$33.00');
+  await expect(card(page, 'For Sale')).toContainText('before selling expenses');
+  await expect(card(page, 'For Sale')).not.toContainText('incomplete');
   await page.goto('/demo/settings');
   await page.getByLabel('Estimated selling expenses per item ($)', { exact: true }).fill('5');
   await page.getByRole('button', { name: 'Save preferences', exact: true }).click();

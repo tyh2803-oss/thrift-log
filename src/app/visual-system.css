@@ -794,3 +794,188 @@ input[type='checkbox']:disabled {
 .mobile-nav a.active svg {
   color: var(--green);
 }
+
+/* Selection and pipeline corrections share the existing semantic palette. */
+.pipeline-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-block: 1px solid var(--border);
+  background: var(--light-green);
+}
+.pipeline-bulk-bar > small {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+.pipeline-bulk-bar .btn,
+.pipeline-bulk-bar select {
+  min-height: 44px;
+}
+.pipeline-shared-defaults {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pipeline-move-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.pipeline-move-row legend {
+  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.pipeline-move-review input,
+.pipeline-move-review select {
+  min-height: 44px;
+  font-size: 16px;
+  min-width: 0;
+}
+.pipeline-move-review input[type='checkbox'] {
+  min-height: 24px;
+  width: 24px;
+  flex-shrink: 0;
+}
+.inventory-select {
+  padding: 10px;
+  min-height: 44px;
+}
+.product-open {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.product-open > div:last-child {
+  padding: 12px;
+}
+.product-card > .btn {
+  margin: 6px 10px 12px;
+  min-height: 44px;
+}
+.inventory-list-card td > .btn {
+  display: block;
+  margin-top: 6px;
+  min-height: 40px;
+}
+@media (max-width: 700px) {
+  .heading-actions {
+    flex-wrap: wrap;
+  }
+  .inventory-list-card .table-wrap {
+    overflow: visible;
+  }
+  .inventory-list-card table,
+  .inventory-list-card tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .inventory-list-card thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .inventory-list-card tbody tr {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    padding: 12px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .inventory-list-card td {
+    grid-column: 2;
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    min-width: 0;
+  }
+  .inventory-list-card td:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 7;
+  }
+  .inventory-list-card td:first-child input {
+    width: 24px;
+    height: 24px;
+    margin: 10px 4px;
+  }
+  .inventory-list-card td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .inventory-list-card .item-cell {
+    width: 100%;
+  }
+  .inventory-list-card .item-cell strong {
+    font-size: 14px;
+    max-width: none;
+  }
+  .inventory-list-card .item-cell small {
+    font-size: 11px;
+  }
+  .inventory-list-card td > .btn {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .inventory-list-card .cost-input {
+    font-size: 16px;
+    width: 100px;
+    min-height: 44px;
+  }
+  .pipeline-bulk-bar .field {
+    flex: 1 1 130px;
+  }
+  .pipeline-move-review .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.inventory-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.inventory-select input {
+  width: 24px;
+  height: 24px;
+}
+.product-open {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.selectable-product {
+  text-align: left;
+}
+.inventory-list-card td > .btn {
+  display: block;
+  margin-top: 6px;
+}
+
+.inventory-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .inventory-list-card tbody tr {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .inventory-list-card td:first-child input {
+    margin: 0;
+  }
+}

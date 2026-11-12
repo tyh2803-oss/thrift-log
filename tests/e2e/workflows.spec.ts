@@ -51,6 +51,8 @@ test('timer survives reload, pauses, resumes, and ends', async ({ page }) => {
   await page.getByRole('button', { name: 'Quick add', exact: true }).click();
   await page.getByRole('button', { name: 'Start timer', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Buying', exact: true }).click();
+  await expect(page.getByText('Buying timer started.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.goto('/demo/activity');
   await expect(page.getByRole('button', { name: 'Pause timer' })).toBeVisible();
   await page.reload();
@@ -61,6 +63,7 @@ test('timer survives reload, pauses, resumes, and ends', async ({ page }) => {
   await expect(page.locator('.timer-dock')).toHaveCount(0);
   await page.goto('/demo/activity');
   await page.getByRole('button', { name: 'Resume timer' }).click();
+  await expect(page.getByRole('button', { name: 'Pause timer' })).toBeVisible();
   await page.getByRole('button', { name: 'End timer' }).click();
   await expect(page.getByRole('region', { name: 'Active timer', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start timer', exact: true })).toHaveCount(3);

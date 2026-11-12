@@ -84,8 +84,7 @@ function Shell({
   pipeline?: string;
 }) {
   const pipelineStage = readPipelineStage(pipeline || null);
-  const inventoryStage =
-    pipelineStage === 'unlisted' || pipelineStage === 'for-sale' ? pipelineStage : null;
+  const inventoryStage = pipelineStage;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
   const { now, w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
@@ -549,7 +548,6 @@ function Shell({
               {section === 'home' && <Home range={range} onEdit={edit} />}{' '}
               {section === 'inventory' && (
                 <Inventory
-                  key={inventoryStage || 'all'}
                   pipelineStage={inventoryStage}
                   search={search}
                   onEdit={edit}

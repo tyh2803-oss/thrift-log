@@ -208,7 +208,7 @@ describe('physical lifecycle precedence', () => {
   });
 });
 describe('Cost | Sale Value | Profit', () => {
-  it('counts cost and asking once, excludes missing estimates, and uses explicit selling expense estimates', () => {
+  it('counts cost and asking once, shows gross profit before unknown expenses, and applies explicit expense estimates', () => {
     let w = stock(stock(), { asking: 0 });
     w = list(w, w.items[0].id, 5000);
     w = list(w, w.items[0].id, 4000, 'Depop');
@@ -218,9 +218,9 @@ describe('Cost | Sale Value | Profit', () => {
       label: 'Asking value',
     });
     expect(pipelineValue(group(w, 'for-sale'), 'profit')).toMatchObject({
-      value: null,
-      missing: 1,
-      label: 'Potential Profit',
+      value: 2800,
+      missing: 0,
+      label: 'Potential gross profit · before selling expenses',
     });
     w.settings.estimatedSellingExpenses = 500;
     expect(pipelineValue(group(w, 'for-sale'), 'profit').value).toBe(2300);
@@ -368,4 +368,24 @@ it('can reset the only fulfilled item without retaining a shipped rollup', () =>
   });
   expect(group(w, 'sold').count).toBe(1);
   expect(w.orders[0].fulfillment).toBe('Unfulfilled');
+});
+
+it('shows gross potential profit for five known costs without fabricating an expense estimate or changing records', () => {
+  let w = stock();
+  for (let n = 1; n < 5; n++) w = stock(w);
+  for (const item of w.items) w = list(w, item.id, 4000);
+  const before = structuredClone(w);
+  expect(pipelineValue(group(w, 'for-sale'), 'profit')).toMatchObject({
+    value: 14000,
+    missing: 0,
+    label: 'Potential gross profit · before selling expenses',
+  });
+  expect(w).toEqual(before);
+  expect(w.settings.estimatedSellingExpenses).toBe(null);
+  w.settings.estimatedSellingExpenses = 0;
+  expect(pipelineValue(group(w, 'for-sale'), 'profit')).toMatchObject({
+    value: 14000,
+    missing: 0,
+    label: 'Potential Profit',
+  });
 });

@@ -4,6 +4,15 @@ import { lineFulfillment, type FulfillmentState } from './fulfillment-state';
 import type { Item, Listing, Order, Workspace } from './model';
 export const pipelineStages = ['unlisted', 'for-sale', 'sold', 'shipped'] as const;
 export type PipelineStage = (typeof pipelineStages)[number];
+export const inventoryStages = [...pipelineStages, 'archived'] as const;
+export type InventoryStage = (typeof inventoryStages)[number];
+export const inventoryStageNames = {
+  unlisted: 'Unlisted',
+  'for-sale': 'For Sale',
+  sold: 'Sold',
+  shipped: 'Shipped',
+  archived: 'Archived',
+} as const;
 export type PipelineMetric = 'cost' | 'sale' | 'profit';
 export const stageNames: Record<PipelineStage, string> = {
   unlisted: 'Unlisted',
@@ -22,6 +31,7 @@ export type PipelineEntry = {
   saleValue: number | null;
   profit: number | null;
   provisional: boolean;
+  beforeExpenses?: boolean;
   fulfillment: FulfillmentState | null;
   fulfilledAt: string | null;
   reserved: boolean;
@@ -114,9 +124,15 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
     freeCosts = new Set<string>();
   // Historical assistant receipts prove explicit zeros without changing legacy records.
   for (const receipt of w.imports) {
-    if (receipt.mapping.format !== 'assistant-v1') continue;
+    if (!['assistant-v1', 'pipeline-v1'].includes(receipt.mapping.format)) continue;
     try {
       const audit = JSON.parse(receipt.rawCsv);
+      if (receipt.mapping.format === 'pipeline-v1') {
+        for (const row of audit.request?.items || [])
+          if (row.sale?.purchaseCost === 0 && audit.result?.successIds?.includes(row.itemId))
+            freeCosts.add(row.itemId);
+        continue;
+      }
       const facts = audit.corrected;
       for (const m of audit.matches || []) {
         if (
@@ -202,10 +218,11 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
         cost,
         saleValue: price,
         profit:
-          price !== null && cost !== null && w.settings.estimatedSellingExpenses !== null
-            ? price - cost - w.settings.estimatedSellingExpenses
+          price !== null && cost !== null
+            ? price - cost - (w.settings.estimatedSellingExpenses ?? 0)
             : null,
         provisional: false,
+        beforeExpenses: w.settings.estimatedSellingExpenses === null,
         fulfillment: null,
         fulfilledAt: null,
         reserved: reserved.has(item.id),
@@ -230,10 +247,11 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
       cost,
       saleValue: price,
       profit:
-        price !== null && cost !== null && w.settings.estimatedSellingExpenses !== null
-          ? price - cost - w.settings.estimatedSellingExpenses
+        price !== null && cost !== null
+          ? price - cost - (w.settings.estimatedSellingExpenses ?? 0)
           : null,
       provisional: false,
+      beforeExpenses: w.settings.estimatedSellingExpenses === null,
       fulfillment: null,
       fulfilledAt: null,
       reserved: reserved.has(item.id),
@@ -286,7 +304,9 @@ export function pipelineValue(group: PipelineGroup, metric: PipelineMetric): Pip
             ? 'Asking value'
             : 'Net merchandise sales'
         : unsold
-          ? 'Potential Profit'
+          ? group.entries.some((e) => e.beforeExpenses)
+            ? 'Potential gross profit · before selling expenses'
+            : 'Potential Profit'
           : provisional || missing
             ? 'Provisional Profit'
             : 'Realized Profit';
