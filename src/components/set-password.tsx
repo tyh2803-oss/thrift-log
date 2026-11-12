@@ -29,9 +29,11 @@ export function SetPassword({ userId }: { userId: string }) {
                 headers: { 'Content-Type': 'application/json', 'x-thrift-user': userId },
                 body: JSON.stringify({ action: 'password', password: form.get('password') }),
               });
+              const body = await response.json();
               if (!response.ok)
                 throw new Error(
-                  `Password was not saved. Use at least ${MIN_PASSWORD_LENGTH} characters or request a fresh invitation.`,
+                  body.error ||
+                    `Password was not saved. Use at least ${MIN_PASSWORD_LENGTH} characters and try again.`,
                 );
               clearPrivateBrowserState();
               // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Fresh authenticated document.

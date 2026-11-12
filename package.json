@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:registration-browser": "playwright test --config=playwright.registration.config.ts",
+    "test:tester-setup-browser": "playwright test --config=playwright.tester-setup.config.ts",
     "format": "prettier --write src tests *.ts *.mjs *.json",
     "supabase:verify": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/verify-supabase.mjs",
     "beta:bootstrap-owner": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/bootstrap-beta-owner.mjs",

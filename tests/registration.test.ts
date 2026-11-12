@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   signOut: vi.fn(),
   resend: vi.fn(),
   update: vi.fn(),
+  listUsers: vi.fn(),
+  generateLink: vi.fn(),
+  verifyOtp: vi.fn(),
+  changePassword: vi.fn(),
+  download: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [], set: vi.fn() }) }));
@@ -23,19 +28,33 @@ vi.mock('@supabase/ssr', () => ({
       getUser: mocks.getUser,
       signOut: mocks.signOut,
       resend: mocks.resend,
+      verifyOtp: mocks.verifyOtp,
+      updateUser: mocks.changePassword,
     },
   }),
 }));
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     rpc: mocks.rpc,
-    auth: { admin: { createUser: mocks.create, updateUserById: mocks.update } },
+    auth: {
+      admin: {
+        createUser: mocks.create,
+        updateUserById: mocks.update,
+        listUsers: mocks.listUsers,
+        generateLink: mocks.generateLink,
+      },
+    },
+    storage: { from: () => ({ download: mocks.download }) },
   }),
 }));
 import { POST as register } from '../src/app/api/register/route';
 import { POST as authenticate } from '../src/app/api/auth/route';
 import { requireUser } from '../src/lib/supabase/server';
 import { loadWorkspace } from '../src/lib/supabase/workspace';
+import { POST as manageBeta } from '../src/app/api/beta/route';
+import { POST as redeemSetup } from '../src/app/api/tester-setup/route';
+import { GET as getWorkspace } from '../src/app/api/workspace/route';
+import { GET as getPhoto } from '../src/app/api/photos/route';
 
 let db: PGlite;
 const ownerId = '11111111-1111-4111-8111-111111111111';
@@ -43,9 +62,11 @@ const ownerEmail = 'owner@example.test';
 const password = 'A distinct beta password 123';
 type Account = { id: string; email: string; email_confirmed_at: string | null; password: string };
 const accounts = new Map<string, Account>();
+const setupTokens = new Map<string, Account>();
 let session: Account | null = null;
 let beforeOwner: unknown;
 let beforeOwnerRecords: unknown;
+let beforeOwnerAuth: unknown;
 const businessTables = [
   'workspaces',
   'imports',
@@ -94,6 +115,7 @@ const signatures: Record<string, string[]> = {
   beta_check_access: ['p_user_id'],
   verify_thrift_log: [],
   load_workspace: ['p_user_id'],
+  beta_manage_access: ['p_actor_id', 'p_email', 'p_active'],
 };
 beforeAll(async () => {
   db = new PGlite();
@@ -161,6 +183,7 @@ beforeAll(async () => {
   );
   await db.exec(bootstrap.replace('REPLACE_WITH_OWNER_EMAIL', ownerEmail));
   expect(await ownerRecords()).toEqual(beforeOwnerRecords);
+  beforeOwnerAuth = (await db.query('select * from auth.users where id=$1', [ownerId])).rows;
 });
 beforeEach(async () => {
   vi.resetAllMocks();
@@ -177,6 +200,7 @@ beforeEach(async () => {
   await db.exec('begin;set role service_role');
   session = null;
   accounts.clear();
+  setupTokens.clear();
   accounts.set(ownerEmail, {
     id: ownerId,
     email: ownerEmail,
@@ -233,6 +257,52 @@ beforeEach(async () => {
     return { error: null };
   });
   mocks.resend.mockResolvedValue({ error: null });
+  mocks.listUsers.mockImplementation(async () => ({
+    data: { users: [...accounts.values()] },
+    error: null,
+  }));
+  mocks.generateLink.mockImplementation(async ({ email }: { email: string }) => {
+    const user = accounts.get(email);
+    if (!user) return { data: { user: null, properties: null }, error: { message: 'not found' } };
+    for (const [token, existing] of setupTokens)
+      if (existing.id === user.id) setupTokens.delete(token);
+    const token = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
+    setupTokens.set(token, user);
+    return {
+      data: {
+        user,
+        properties: {
+          hashed_token: token,
+          verification_type: 'recovery',
+          email_otp: '999999',
+          action_link: 'https://provider.example/secret',
+        },
+      },
+      error: null,
+    };
+  });
+  mocks.verifyOtp.mockImplementation(async ({ token_hash }: { token_hash: string }) => {
+    const user = setupTokens.get(token_hash);
+    if (!user)
+      return { data: { user: null }, error: { message: 'invalid or used token', status: 403 } };
+    setupTokens.delete(token_hash);
+    if (!user.email_confirmed_at) {
+      user.email_confirmed_at = '2026-11-11T00:00:00Z';
+      user.password = ''; // Supabase clears any untrusted pre-confirmation password on recovery.
+      await authQuery('update auth.users set email_confirmed_at=now() where id=$1', [user.id]);
+    }
+    session = user;
+    return { data: { user }, error: null };
+  });
+  mocks.changePassword.mockImplementation(async ({ password }: { password: string }) => {
+    if (!session) return { error: { message: 'Unauthorized' } };
+    session.password = password;
+    return { data: { user: session }, error: null };
+  });
+  mocks.download.mockResolvedValue({
+    data: new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: 'image/png' }),
+    error: null,
+  });
 });
 afterEach(async () => {
   try {
@@ -244,6 +314,10 @@ afterEach(async () => {
     ).toEqual(beforeOwner);
     expect(mocks.update).not.toHaveBeenCalled();
     expect(await ownerRecords()).toEqual(beforeOwnerRecords);
+    expect((await authQuery('select * from auth.users where id=$1', [ownerId])).rows).toEqual(
+      beforeOwnerAuth,
+    );
+    expect(accounts.get(ownerEmail)?.password).toBe(password);
   } finally {
     await db.exec('rollback;reset role');
     vi.unstubAllEnvs();
@@ -750,4 +824,272 @@ it('does not grant either client role registration RPCs or access to private reg
         ).rows[0].ok,
       ).toBe(false);
   }
+});
+
+const betaRequest = (email: string, extra: Record<string, unknown> = {}) =>
+  new Request('https://thrift.example/api/beta', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://thrift.example',
+      'Content-Type': 'application/json',
+      'x-thrift-user': ownerId,
+    },
+    body: JSON.stringify({ action: 'setup', email, ...extra }),
+  });
+const redeemRequest = (
+  token: string,
+  extra: Record<string, unknown> = {},
+  origin = 'https://thrift.example',
+) =>
+  new Request('https://thrift.example/api/tester-setup', {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token_hash: token, ...extra }),
+  });
+async function invitedAccount() {
+  const invited: Account = {
+    id: randomUUID(),
+    email: 'friend@example.test',
+    password: 'unchanged-invitation-password',
+    email_confirmed_at: null,
+  };
+  accounts.set(invited.email, invited);
+  await authQuery('insert into auth.users values($1,$2,null)', [invited.id, invited.email]);
+  await authorize(invited.email);
+  return invited;
+}
+function ownerSession() {
+  session = accounts.get(ownerEmail)!;
+}
+it('completes owner setup, one-use redemption, eight-character password choice and sign-in on the same invited UUID with retained records', async () => {
+  const invited = await invitedAccount();
+  const retained = await loadWorkspace(ownerId);
+  retained.items[0].title = 'Friend retained jacket';
+  retained.items[0].photos = [`${invited.id}/retained.png`];
+  await db.query('select thrift_log_private.commit_workspace_v5($1,0,$2::jsonb)', [
+    invited.id,
+    JSON.stringify(retained),
+  ]);
+  const before = (
+    await db.query<{ w: unknown }>('select thrift_log_private.load_workspace_v5($1) as w', [
+      invited.id,
+    ])
+  ).rows[0].w;
+  ownerSession();
+  const issuance = await manageBeta(
+    betaRequest(invited.email, { userId: ownerId, redirectTo: 'https://evil.example' }),
+  );
+  expect(issuance.status).toBe(200);
+  expect(issuance.headers.get('cache-control')).toBe('private, no-store');
+  const body = await issuance.json();
+  const link = new URL(body.setup.link);
+  expect(link.origin).toBe('https://thrift.example');
+  expect(link.pathname).toBe('/setup-tester');
+  expect(link.search).toBe('');
+  const token = new URLSearchParams(link.hash.slice(1)).get('token_hash')!;
+  expect(JSON.stringify(body)).not.toContain('999999');
+  expect(JSON.stringify(body)).not.toContain('provider.example');
+  expect(JSON.stringify(body)).not.toContain(invited.password);
+  expect(invited.email_confirmed_at).toBeNull();
+  expect(invited.password).toBe('unchanged-invitation-password');
+  expect(mocks.changePassword).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.resend).not.toHaveBeenCalled();
+  session = null;
+  expect((await redeemSetup(redeemRequest(token))).status).toBe(200);
+  expect((await requireUser()).id).toBe(invited.id);
+  expect(mocks.verifyOtp).toHaveBeenCalledWith({ token_hash: token, type: 'recovery' });
+  expect(invited.password).toBe('');
+  mocks.changePassword.mockResolvedValueOnce({
+    error: { code: 'weak_password', message: 'private provider diagnostic' },
+  });
+  const weak = await authenticate(
+    new Request('https://thrift.example/api/auth', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://thrift.example',
+        'Content-Type': 'application/json',
+        'x-thrift-user': invited.id,
+      },
+      body: JSON.stringify({ action: 'password', password: 'Friend12' }),
+    }),
+  );
+  expect(weak.status).toBe(400);
+  expect((await weak.json()).error).toBe(
+    'Choose a stronger password that meets the account password policy.',
+  );
+  expect(invited.password).toBe('');
+  const change = await authenticate(
+    new Request('https://thrift.example/api/auth', {
+      method: 'POST',
+      headers: {
+        Origin: 'https://thrift.example',
+        'Content-Type': 'application/json',
+        'x-thrift-user': invited.id,
+      },
+      body: JSON.stringify({ action: 'password', password: 'Friend12' }),
+    }),
+  );
+  expect(change.status).toBe(200);
+  expect(await loadWorkspace(invited.id)).toEqual(before);
+  session = null;
+  const signin = await authenticate(
+    new Request('https://thrift.example/api/auth', {
+      method: 'POST',
+      headers: { Origin: 'https://thrift.example', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'signin', email: invited.email, password: 'Friend12' }),
+    }),
+  );
+  expect(signin.status).toBe(200);
+  expect((await requireUser()).id).toBe(invited.id);
+  const workspace = await getWorkspace(
+    new Request(`https://thrift.example/api/workspace?userId=${ownerId}`),
+  );
+  expect(await workspace.json()).toEqual(before);
+  expect(
+    (
+      await getWorkspace(
+        new Request('https://thrift.example/api/workspace', {
+          headers: { 'x-thrift-user': ownerId },
+        }),
+      )
+    ).status,
+  ).toBe(401);
+  expect(
+    (await getPhoto(new Request(`https://thrift.example/api/photos?path=${ownerId}/retained.png`)))
+      .status,
+  ).toBe(404);
+  expect(mocks.download).not.toHaveBeenCalled();
+  expect(
+    (
+      await getPhoto(
+        new Request(`https://thrift.example/api/photos?path=${invited.id}/retained.png`),
+      )
+    ).status,
+  ).toBe(200);
+  expect(mocks.download).toHaveBeenCalledWith(`${invited.id}/retained.png`);
+  expect(accounts.size).toBe(2);
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(403);
+  session = null;
+  expect((await redeemSetup(redeemRequest(token))).status).toBe(400);
+});
+it('denies setup issuance to anonymous users, testers, stale tabs and foreign origins', async () => {
+  const invited = await invitedAccount();
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(403);
+  session = invited;
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(403);
+  ownerSession();
+  const stale = betaRequest(invited.email);
+  stale.headers.set('x-thrift-user', invited.id);
+  expect((await manageBeta(stale)).status).toBe(403);
+  const foreign = betaRequest(invited.email);
+  foreign.headers.set('origin', 'https://evil.example');
+  expect((await manageBeta(foreign)).status).toBe(400);
+  expect(mocks.listUsers).not.toHaveBeenCalled();
+  expect(mocks.generateLink).not.toHaveBeenCalled();
+});
+it('does not set up owners, unknown or revoked testers, or create a missing Auth account', async () => {
+  const invited = await invitedAccount();
+  await db.query('select public.beta_manage_access($1,$2,false)', [ownerId, invited.email]);
+  ownerSession();
+  for (const email of [ownerEmail, 'unknown@example.test', invited.email])
+    expect((await manageBeta(betaRequest(email))).status).toBe(400);
+  await authorize('not-created@example.test');
+  expect((await manageBeta(betaRequest('not-created@example.test'))).status).toBe(400);
+  expect(mocks.generateLink).not.toHaveBeenCalled();
+  expect(mocks.create).not.toHaveBeenCalled();
+  expect(mocks.changePassword).not.toHaveBeenCalled();
+});
+it('rejects unexpected provider identities/types and sanitizes Auth failures without sharing secrets', async () => {
+  const invited = await invitedAccount();
+  ownerSession();
+  mocks.generateLink.mockResolvedValueOnce({
+    data: {
+      user: { ...invited, id: ownerId },
+      properties: { hashed_token: 'b'.repeat(64), verification_type: 'recovery' },
+    },
+    error: null,
+  });
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(400);
+  mocks.generateLink.mockResolvedValueOnce({
+    data: {
+      user: invited,
+      properties: { hashed_token: 'b'.repeat(64), verification_type: 'invite' },
+    },
+    error: null,
+  });
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(400);
+  mocks.generateLink.mockResolvedValueOnce({
+    data: null,
+    error: { message: 'provider-private-secret' },
+  });
+  const r = await manageBeta(betaRequest(invited.email));
+  expect(r.status).toBe(400);
+  expect(await r.text()).not.toContain('provider-private-secret');
+});
+it('withholds a generated link if access is revoked during issuance and denies redemption after revocation', async () => {
+  const invited = await invitedAccount();
+  ownerSession();
+  const generate = mocks.generateLink.getMockImplementation()!;
+  mocks.generateLink.mockImplementationOnce(async (args) => {
+    const result = await generate(args);
+    await db.query('select public.beta_manage_access($1,$2,false)', [ownerId, invited.email]);
+    return result;
+  });
+  expect((await manageBeta(betaRequest(invited.email))).status).toBe(400);
+  const token = [...setupTokens.keys()][0];
+  session = null;
+  expect((await redeemSetup(redeemRequest(token))).status).toBe(400);
+  expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  expect(mocks.changePassword).not.toHaveBeenCalled();
+  await expect(requireUser()).rejects.toThrow('Unauthorized');
+});
+it('does not accept email, identity or role parameters instead of a recovery proof, or expose raw provider errors', async () => {
+  expect((await redeemSetup(redeemRequest('invalid'))).status).toBe(400);
+  expect(
+    (
+      await redeemSetup(
+        redeemRequest('b'.repeat(64), { userId: ownerId, email: ownerEmail, role: 'owner' }),
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (await redeemSetup(redeemRequest('b'.repeat(64), {}, 'https://evil.example'))).status,
+  ).toBe(400);
+  expect(mocks.verifyOtp).not.toHaveBeenCalled();
+  mocks.verifyOtp.mockResolvedValueOnce({
+    data: { user: null },
+    error: { status: 429, message: 'private diagnostic' },
+  });
+  expect((await redeemSetup(redeemRequest('b'.repeat(64)))).status).toBe(429);
+  mocks.verifyOtp.mockResolvedValueOnce({
+    data: { user: null },
+    error: { status: 403, message: 'private diagnostic' },
+  });
+  const r = await redeemSetup(redeemRequest('b'.repeat(64)));
+  expect(r.status).toBe(400);
+  expect(await r.text()).not.toContain('private diagnostic');
+});
+it('cannot redeem an owner recovery token through tester setup or recover access to a different bound Auth UUID', async () => {
+  setupTokens.set('a'.repeat(64), accounts.get(ownerEmail)!);
+  expect((await redeemSetup(redeemRequest('a'.repeat(64)))).status).toBe(400);
+  expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  const invited = await invitedAccount();
+  await authQuery('update auth.users set email=$1 where id=$2', [
+    'old-address@example.test',
+    invited.id,
+  ]);
+  const other = { ...invited, id: randomUUID() };
+  await authQuery('insert into auth.users values($1,$2,null)', [other.id, other.email]);
+  setupTokens.set('b'.repeat(64), other);
+  expect((await redeemSetup(redeemRequest('b'.repeat(64)))).status).toBe(400);
+  expect(mocks.changePassword).not.toHaveBeenCalled();
+  expect(
+    (
+      await db.query<{ user_id: string }>(
+        'select user_id from thrift_log_private.beta_access where email=$1',
+        [invited.email],
+      )
+    ).rows[0].user_id,
+  ).toBe(invited.id);
 });

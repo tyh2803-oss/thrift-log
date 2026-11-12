@@ -11,7 +11,7 @@ import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'private, no-store' };
 const denied =
-  'Account creation could not be completed. Check your details or ask the owner to authorize your email. If you already have an account, sign in or ask the owner for setup help.';
+  'Account creation could not be completed. Check your details or ask the owner to authorize your email. Already invited? Ask the owner to use Set up tester account for a private setup link. Existing users can sign in.';
 const passwordSchema = z
   .string()
   .min(MIN_PASSWORD_LENGTH)

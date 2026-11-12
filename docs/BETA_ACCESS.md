@@ -2,6 +2,8 @@
 
 For approved testers creating their own accounts without invitation email, use [preauthorized registration](BETA_REGISTRATION.md). It is opt-in, requires the subsequent schema-7 migration, and leaves public Supabase signup disabled. The migration/bootstrap instructions below remain the prerequisites.
 
+Previously invited testers can complete their existing account using **Settings → Beta testers → Set up tester account**. See [the private setup-link guide](TESTER_ACCOUNT_SETUP.md); this needs no new migration, SMTP or Terminal and preserves the original UUID/workspace.
+
 This PR contains beta access and its two prerequisite migrations. The larger pending inventory-management and visual-polish changes remain separate. Nothing here automatically applies SQL, merges main, creates accounts, or deploys Production. **Database changes and merging main still require your explicit approval.**
 
 Use the existing Thrift Log Supabase project (`gvwgasebholdawlakwdf`) and Vercel project. A separate testing database is not required for this small rollout: the migration, tenant isolation, revocation and owner-data preservation tests run locally in isolated PostgreSQL/PGlite. No unresolved security issue identified by those checks currently requires another project.

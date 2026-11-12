@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { adminClient, requireOwner, checkOrigin } from '@/lib/supabase/server';
 import { betaInviteRedirect } from '@/lib/supabase/beta';
+import { testerSetupLink } from '@/lib/supabase/tester-setup';
 export const dynamic = 'force-dynamic';
 const headers = { 'Cache-Control': 'private, no-store' };
 async function access(actor: string, email?: string, active?: boolean) {
@@ -34,12 +35,24 @@ export async function POST(request: Request) {
     if (text.length > 2000) throw new Error('Use one tester email at a time.');
     const body = z
       .object({
-        action: z.enum(['authorize', 'revoke', 'invite']),
+        action: z.enum(['authorize', 'revoke', 'invite', 'setup']),
         email: z.string().trim().toLowerCase().max(320).pipe(z.email()),
       })
       .parse(JSON.parse(text));
     if (body.email === owner.email?.toLowerCase())
       throw new Error('The owner’s access is protected.');
+    if (body.action === 'setup') {
+      const link = await testerSetupLink(owner, body.email, request.headers.get('origin')!);
+      return NextResponse.json(
+        {
+          testers: await access(owner.id),
+          setup: { email: body.email, link },
+          message:
+            'Private one-use setup link created. Share it only with this tester. No password was changed.',
+        },
+        { headers: { ...headers, 'Referrer-Policy': 'no-referrer' } },
+      );
+    }
     if (body.action === 'invite') {
       const testers = await access(owner.id);
       if (!testers.some((t) => t.email === body.email && t.active))

@@ -1,5 +1,16 @@
 # Thrift Log project status
 
+## Owner-managed setup for existing invited testers
+
+Prepared on `feat/tester-account-setup` from main `8e23862`. No production accounts were inspected or modified; Supabase tools are not exposed in this Cloud session. No production deployment, schema migration or Auth-setting change was performed.
+
+- Owner-only **Settings → Beta testers → Set up tester account** issues a private, single-use recovery link for an existing active tester. It never creates/recreates users, displays passwords, changes business records or authorizes arbitrary emails. No SMTP, Terminal, new environment variable or migration is required.
+- The owner copies the link privately; its proof uses a fragment and is scrubbed from browser history before same-origin POST redemption. Live beta checks protect issuance/redemption. The friend chooses their own password through the existing authenticated form, retaining the same UUID, inventory, financials, photos and workspace. Revoked, reused, foreign-origin, forged-identity and owner-token requests fail safely. Expiry/rate limits remain Supabase-controlled.
+- Typecheck, lint, production build and 244 unit/database tests pass (one opt-in live-image test skipped), along with 70 desktop/mobile browser checks: 62 existing regressions, four registration checks and four full setup checks. Integration tests use actual local PostgreSQL/PGlite RLS/RPCs with explicit Auth doubles; full browser tests use real SDKs/routes/cookies against a loopback Auth double. Owner Auth and all 18 business tables are compared through setup, including posted financial records; business writes stay zero in browser setup.
+- Hosted account setup and actual iPhone Safari still require an approved live check. Keep the setup link private and generate it from the normal Production app once deployment/account actions are approved; a protected Preview may be inaccessible to friends. Existing unrelated pipeline/visual work remains preserved in the original checkout.
+
+Exact owner/friend steps are in [TESTER_ACCOUNT_SETUP.md](docs/TESTER_ACCOUNT_SETUP.md).
+
 ## Preauthorized account creation — November 11, 2026
 
 Prepared for review on `feat/preauthorized-registration` from merged main `a9a833c`. No production deployment, hosted Auth account creation, production SQL or Auth settings changes were performed.
