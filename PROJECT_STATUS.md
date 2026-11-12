@@ -1,5 +1,15 @@
 # Thrift Log project status
 
+## Nonblocking sale-history imports — November 12, 2026
+
+Prepared on `fix/history-import-nonblocking-matches` from main `4daf91912a9666a76d735cf0f62f6854606b54b0` in response to the requested all-row import behavior.
+
+- Removed similarity/candidate checks and repeated-source rejection from CSV/PDF sale-history approval. Every source row is retained, including 60 identical rows across identical-looking source sections. The optional inventory selector remains; screenshot/listing approval retains its existing behavior.
+- Available exact inventory identifiers can reuse unsold stock once per import. Other rows create separate physical inventory; repeated source SKUs receive unique internal SKUs. Previously used external order IDs remain in receipts without reusing their unique database external IDs. Existing financial records and known costs are preserved. A deliberately new import can repeat the source; retrying the same approval still replays its receipt without another transaction.
+- Extraction notes are informational rather than checkbox blockers. Required valid name, price, sale date, seller fees and marketplace remain validated, along with currency/event correctness, access checks, revision handling and database integrity. Purchase cost and actual acquisition date remain optional; clearing a purchase date restores explicit unknown-date provenance. Unknown costs remain distinct from confirmed zero.
+- Verified typecheck, lint, production build, **292 unit/database/API tests**, **44 assistant/import/workflow browser checks plus four signed-in import browser checks** across desktop and iPhone Chromium emulation. The supplied Depop report separately passes with **44 physical rows and all 40 sales ready**, with no match exceptions or production writes. Local SQL verifies reimports, original-record preservation and account isolation. Final checks ran sequentially after an initial parallel run caused generated-type races and database setup timeouts in the Cloud environment.
+- No migration, RLS/Storage/Auth change or financial-calculation change is added. No production database records were modified during implementation. Physical iPhone Safari and live paid PDF extraction remain manual checks.
+
 ## Optional-column sale history imports — November 12, 2026
 
 Prepared on `feat/bulk-sale-history-imports` from latest main `a7998b497e3f39a07af0dc2383dd50d1321fb01a`. Original unpublished work remains preserved in the separate original checkout.

@@ -94,8 +94,8 @@ test('show planner, CSV preview and duplicate prevention', async ({ page }) => {
   await expect(dialog.getByText('Imported 1 sale records.', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Review sales', exact: true }).click();
   await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
+    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
+  ).toBeEnabled();
 });
 test('responsive navigation, date filtering, and PWA assets', async ({
   page,

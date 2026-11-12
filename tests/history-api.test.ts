@@ -20,7 +20,7 @@ vi.mock('../src/lib/supabase/server', () => ({
 vi.mock('../src/lib/supabase/workspace', () => ({ loadWorkspace: mocks.loadWorkspace }));
 import { POST } from '../src/app/api/assistant/approve/route';
 const owner = '11111111-1111-4111-8111-111111111111';
-async function batch() {
+async function batch(w = emptyWorkspace()) {
   const text = 'Name,Price,Date,Fees\nCoatUnique,25,2026-11-10,1\nBootUnique,30,2026-11-11,2';
   const parsed = readCsv(text);
   return createHistoryBatch(
@@ -29,7 +29,7 @@ async function batch() {
       marketplace: 'Depop',
       dateFormat: 'auto',
     }),
-    emptyWorkspace(),
+    w,
   );
 }
 const request = (body: unknown) =>
@@ -97,4 +97,27 @@ it('replays confirmed retries without another SQL call, and fails unconfirmed sa
   const failed = await POST(request({ mode: 'history', batch: b, rowIds: ids }));
   expect(failed.status).toBe(400);
   expect((await failed.json()).error).not.toContain('private database');
+});
+
+it('allows all rows in a deliberate reimport but a retry of that approval remains idempotent', async () => {
+  const first = await batch();
+  const existing = historyCommands(
+    emptyWorkspace(),
+    first,
+    first.rows.map((r) => r.id),
+  ).reduce(applyCommand, emptyWorkspace());
+  const next = await batch(existing);
+  mocks.loadWorkspace.mockResolvedValueOnce(existing);
+  mocks.rpc.mockResolvedValueOnce({ data: existing.revision + 1, error: null });
+  const payload = { mode: 'history', batch: next, rowIds: next.rows.map((r) => r.id) };
+  const response = await POST(request(payload));
+  const data = await response.json();
+  expect(response.status, JSON.stringify(data)).toBe(200);
+  const { workspace: saved } = data;
+  expect(saved.items).toHaveLength(4);
+  expect(saved.orders).toHaveLength(4);
+  expect(saved.orders.slice(0, 2)).toEqual(existing.orders);
+  mocks.loadWorkspace.mockResolvedValueOnce(saved);
+  expect((await (await POST(request(payload))).json()).replayed).toBe(true);
+  expect(mocks.rpc).toHaveBeenCalledTimes(1);
 });

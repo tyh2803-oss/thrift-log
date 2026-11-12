@@ -73,7 +73,7 @@ test('four columns import without order IDs or SKUs; optional decimal cost, unkn
   ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
 });
-test('native 44-item Depop report preserves the five-item bundle, needs no extra columns, and approves 40 sales once', async ({
+test('native 44-item Depop report preserves the five-item bundle, needs no extra columns, and allows a deliberate new import of all 40 sales', async ({
   page,
 }) => {
   await seed(page);
@@ -92,13 +92,14 @@ test('native 44-item Depop report preserves the five-item bundle, needs no extra
   await expect(dialog.getByText('Imported 40 sale records.', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Review sales', exact: true }).click();
   await expect(
-    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
-  ).toBeDisabled();
-  await expect(dialog.getByText('This source record was already imported.').first()).toBeVisible();
+    dialog.getByRole('button', { name: 'Approve All Ready (40)', exact: true }),
+  ).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Approve All Ready (40)', exact: true }).click();
+  await expect(dialog.getByText('Imported 40 sale records.', { exact: true })).toBeVisible();
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key);
-  expect(saved.items).toHaveLength(44);
-  expect(saved.orders).toHaveLength(40);
-  expect(saved.orders.filter((o: { lines: unknown[] }) => o.lines.length === 5)).toHaveLength(1);
+  expect(saved.items).toHaveLength(88);
+  expect(saved.orders).toHaveLength(80);
+  expect(saved.orders.filter((o: { lines: unknown[] }) => o.lines.length === 5)).toHaveLength(2);
   expect(JSON.stringify(saved)).not.toMatch(/PRIVATE_BUYER|PRIVATE_ADDRESS|PRIVATE_PERSON/);
 });
 test('marketplace/date mapping and explicit zero costs work, and malformed monetary input cannot save old values', async ({
@@ -196,4 +197,50 @@ test('optional packaging and show mappings persist while unknown costs cannot in
   ).toContainText('—');
   const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key);
   expect(saved.orders[0]).toMatchObject({ packaging: 75, showId });
+});
+
+test('matching Patagonia descriptions import every row without duplicate menus or confirmation checkboxes, with required-field readiness intact', async ({
+  page,
+}) => {
+  await seed(page);
+  const csv =
+    'Name,Price,Date,Fees\n' +
+    Array(5)
+      .fill('Blue Patagonia quarter zip pullover. Great Condition,25,2026-11-10,1.32')
+      .join('\n');
+  const dialog = await importFile(page, csv);
+  await dialog.getByLabel('CSV marketplace').selectOption('Depop');
+  await dialog.getByRole('button', { name: 'Review sales', exact: true }).click();
+  const approve = dialog.getByRole('button', { name: 'Approve All Ready (5)', exact: true });
+  await expect(approve).toBeEnabled();
+  await expect(dialog.getByText('Possible existing item', { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0);
+  await expect(dialog.getByLabel('Inventory match 1-1')).toHaveValue('new');
+  await dialog.locator('.history-item').first().locator('details > summary').click();
+  const purchaseDate = dialog
+    .getByLabel('Actual purchase date (optional)', { exact: true })
+    .first();
+  await purchaseDate.fill('2026-10-01');
+  await purchaseDate.fill('');
+  await expect(approve).toBeEnabled();
+  await dialog.getByLabel('Item name 1-1', { exact: true }).fill('');
+  await expect(
+    dialog.getByRole('button', { name: 'Approve All Ready (4)', exact: true }),
+  ).toBeEnabled();
+  await dialog
+    .getByLabel('Item name 1-1', { exact: true })
+    .fill('Blue Patagonia quarter zip pullover. Great Condition');
+  await expect(approve).toBeEnabled();
+  await approve.click();
+  await expect(dialog.getByText('Imported 5 sale records.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  await page.reload();
+  const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), key);
+  expect(saved.items).toHaveLength(5);
+  expect(saved.orders).toHaveLength(5);
+  expect(
+    new Set(
+      saved.orders.flatMap((o: { lines: { itemId: string }[] }) => o.lines.map((l) => l.itemId)),
+    ).size,
+  ).toBe(5);
 });

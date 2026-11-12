@@ -269,8 +269,9 @@ export async function historyCsvSources(
   const sources: Screenshot[] = [];
   for (let start = 0; start < records.length; start += 30) {
     const section = records.slice(start, start + 30);
-    // Exact safe facts form repeatable source identities; buyer names/addresses are excluded.
-    const hash = await digest(JSON.stringify(section));
+    // Include the part position so identical sections never drop repeated source rows.
+    // Buyer names and addresses remain excluded from these safe facts.
+    const hash = await digest(JSON.stringify({ start, records: section }));
     sources.push({
       hash,
       originalHash,

@@ -548,7 +548,7 @@ it('stores optional-cost sale history through the real SQL transaction while pre
   const ownerBefore = await load(owner),
     testerBefore = await load(tester);
   const unique = crypto.randomUUID();
-  const csv = `Name,Price,Date,Fees,Purchase cost\nHistory-${unique},25,2026-11-11,1,\nKnown-${unique},30,2026-11-11,2,0`;
+  const csv = `Name,Price,Date,Fees,Purchase cost,Order ID\nHistory-${unique},25,2026-11-11,1,,history-${unique}\nKnown-${unique},30,2026-11-11,2,0,known-${unique}`;
   const parsed = readCsv(csv);
   const batch = createHistoryBatch(
     await historyCsvSources(csv, 'history.csv', {
@@ -583,4 +583,31 @@ it('stores optional-cost sale history through the real SQL transaction while pre
       (await db.query('select id from public.orders where id=$1', [batch.rows[0].id])).rows,
     ).toHaveLength(0);
   });
+  const repeat = createHistoryBatch(
+    await historyCsvSources(csv, 'history.csv', {
+      mapping: historyMapping(parsed.columns),
+      marketplace: 'Depop',
+      dateFormat: 'auto',
+    }),
+    restored,
+  );
+  const repeated = historyCommands(
+    restored,
+    repeat,
+    repeat.rows.map((r) => r.id),
+  ).reduce(applyCommand, restored);
+  await db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+    tester,
+    restored.revision,
+    JSON.stringify(repeated),
+  ]);
+  const reloaded = await load(tester);
+  expect(reloaded.items).toHaveLength(testerBefore.items.length + 4);
+  expect(reloaded.orders).toHaveLength(testerBefore.orders.length + 4);
+  expect(reloaded.orders.find((o) => o.id === repeat.rows[0].id)?.externalId).toBe('');
+  expect(reloaded.orders.filter((o) => restored.orders.some((r) => r.id === o.id))).toEqual(
+    restored.orders,
+  );
+  expect(metrics(reloaded).unknownCosts).toBe(2);
+  expect(await load(owner)).toEqual(ownerBefore);
 });

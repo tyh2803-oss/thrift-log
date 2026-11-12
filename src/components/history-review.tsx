@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { previewHistory, historyWarnings } from '@/lib/assistant/history';
 import { newInventoryDraft, type DraftBatch, type DraftRow } from '@/lib/assistant/drafts';
-import { plausibleInventoryMatches } from '@/lib/assistant/matching';
 import { confirmedFreeInventory, listingAmount } from '@/lib/assistant/listing-review';
 import { money } from '@/lib/money';
 import { marketplaces } from '@/lib/model';
@@ -47,7 +46,8 @@ export function HistoryReview({
         <details>
           <summary>How this import is saved</summary>
           <p>
-            Approve All authorizes new physical records where no unresolved inventory match exists.
+            Every source row is included, even when titles repeat or a new import uses the same
+            file. Approve All saves the reviewed sales; matching existing inventory is optional.
             Only recorded selling amounts are included; payouts and shipping status are not
             inferred. When a purchase date is missing, the sale date is a labeled placeholder, not
             verified purchase history. You can enter the real date on each item.
@@ -208,11 +208,6 @@ export function HistoryReview({
             {r.lines.map((line, lineIndex) => {
               const match = row.matches[lineIndex],
                 item = w.items.find((i) => i.id === match?.itemId);
-              const candidates =
-                p.candidatesByLine[lineIndex] || plausibleInventoryMatches(w, r, line);
-              const unresolvedMatch =
-                !match.itemId &&
-                candidates.some((c) => !match.dismissedCandidateIds?.includes(c.item.id));
               const recorded =
                 item && (item.cost > 0 || confirmedFreeInventory(w, item.id)) ? item.cost : null;
               const cost = match?.newItem ? match.newItem.cost : (match?.purchaseCost ?? recorded);
@@ -264,14 +259,10 @@ export function HistoryReview({
                       />
                     </label>
                     <label className="field">
-                      <span>
-                        {candidates.length && !match.itemId
-                          ? 'Possible existing item'
-                          : 'Physical inventory'}
-                      </span>
+                      <span>Link existing inventory · optional</span>
                       <select
                         aria-label={`Inventory match ${index + 1}-${lineIndex + 1}`}
-                        value={unresolvedMatch ? 'review' : match.itemId || 'new'}
+                        value={match.itemId || 'new'}
                         disabled={busy}
                         onChange={(e) => {
                           const next = structuredClone(row),
@@ -281,7 +272,6 @@ export function HistoryReview({
                             m.newItem = newInventoryDraft(line.sku, cost);
                             m.newItem.purchasedAt = r.date || '';
                             m.newItem.assumedAcquisitionDate = true;
-                            m.dismissedCandidateIds = candidates.map((c) => c.item.id);
                           } else {
                             m.itemId = e.target.value;
                             m.newItem = null;
@@ -290,12 +280,7 @@ export function HistoryReview({
                           update(next);
                         }}
                       >
-                        {unresolvedMatch && (
-                          <option value="review" disabled>
-                            Choose existing or a distinct new item
-                          </option>
-                        )}
-                        <option value="new">Create a distinct physical item</option>
+                        <option value="new">Create a separate physical item</option>
                         {w.items.map((i) => (
                           <option key={i.id} value={i.id}>
                             {i.sku} · {i.title}
@@ -320,12 +305,16 @@ export function HistoryReview({
                       <label className="field">
                         <span>Actual purchase date (optional)</span>
                         <input
-                          value={match.newItem.purchasedAt}
+                          value={
+                            match.newItem.assumedAcquisitionDate ? '' : match.newItem.purchasedAt
+                          }
                           disabled={busy}
                           onChange={(e) => {
                             const next = structuredClone(row);
-                            next.matches[lineIndex].newItem!.purchasedAt = e.target.value;
-                            next.matches[lineIndex].newItem!.assumedAcquisitionDate = false;
+                            next.matches[lineIndex].newItem!.purchasedAt =
+                              e.target.value || r.date || '';
+                            next.matches[lineIndex].newItem!.assumedAcquisitionDate =
+                              !e.target.value;
                             update(next);
                           }}
                         />
@@ -378,19 +367,10 @@ export function HistoryReview({
               </small>
             </details>
             {!!historyWarnings(r).length && (
-              <div className="error-box">
+              <div className="hint">
                 {historyWarnings(r).map((warning, i) => (
                   <p key={i}>{warning}</p>
                 ))}
-                <label className="check-row">
-                  <input
-                    type="checkbox"
-                    checked={row.acknowledgedWarnings}
-                    disabled={busy}
-                    onChange={(e) => update({ ...row, acknowledgedWarnings: e.target.checked })}
-                  />
-                  I reviewed these exceptions.
-                </label>
               </div>
             )}
             {!p.ready && (

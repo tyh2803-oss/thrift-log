@@ -79,7 +79,7 @@ it('parses the example-shaped 44-item Depop export as 40 sales with one five-ite
   ).toBe(true);
   expect(
     previewHistory(saved, createHistoryBatch(await sources(synthetic), saved)).every(
-      (p) => !p.ready,
+      (p) => p.ready,
     ),
   ).toBe(true);
 });
@@ -204,6 +204,7 @@ it.runIf(!!process.env.HISTORY_EXAMPLE_CSV)(
         .every((l) => l.purchaseCost === null && l.sku === null),
     ).toBe(true);
     const preview = previewHistory(emptyWorkspace(), batch);
+    expect(preview.filter((p) => p.ready)).toHaveLength(40);
     console.log(
       JSON.stringify({
         providedExample: 'Depop',
@@ -326,4 +327,72 @@ it('includes buyer shipping only when explicitly mapped as money received by the
   expect(
     src.flatMap((s) => s.extraction.records).find((r) => r.lines.length === 5)!.shippingCollected,
   ).toBe(500);
+});
+
+it('imports similar descriptions and all 60 identical source rows without candidate confirmation or dropped sections', async () => {
+  const w = assistantWorkspace();
+  w.items[0].title = 'Blue Patagonia quarter zip pullover. Great Condition';
+  const text =
+    'Name,Price,Date,Fees\n' +
+    Array(60)
+      .fill('Blue Patagonia quarter zip pullover. Great Condition,25,2026-11-10,1.32')
+      .join('\n');
+  const batch = createHistoryBatch(await sources(text), w);
+  expect(batch.screenshots).toHaveLength(2);
+  expect(batch.rows).toHaveLength(60);
+  expect(previewHistory(w, batch).every((p) => p.ready)).toBe(true);
+  expect(batch.rows.every((r) => r.matches[0].dismissedCandidateIds === undefined)).toBe(true);
+  const saved = historyCommands(
+    w,
+    batch,
+    batch.rows.map((r) => r.id),
+  ).reduce(applyCommand, w);
+  expect(saved.items).toHaveLength(61);
+  expect(saved.orders).toHaveLength(60);
+  expect(saved.items.find((i) => i.id === w.items[0].id)).toEqual(w.items[0]);
+  expect(metrics(saved).revenue).toBe(150000);
+  expect(metrics(saved).fees).toBe(7920);
+});
+it('keeps repeated source SKUs and reimported order IDs as separate history while preserving existing records and original identifiers', async () => {
+  const w = assistantWorkspace();
+  const text =
+    'Name,Price,Date,Fees,SKU,Order ID\nBlue Carhartt jacket,25,2026-11-10,1,JACKET-1,order-a\nBlue Carhartt jacket,30,2026-11-10,2,JACKET-1,order-b';
+  const first = createHistoryBatch(await sources(text), w);
+  const save = (base: typeof w, b: typeof first) =>
+    historyCommands(
+      base,
+      b,
+      b.rows.map((r) => r.id),
+    ).reduce(applyCommand, base);
+  const saved = save(w, first);
+  expect(saved.items).toHaveLength(2);
+  expect(new Set(saved.orders.flatMap((o) => o.lines.map((l) => l.itemId))).size).toBe(2);
+  expect(saved.orders[0].lines[0].itemId).toBe(w.items[0].id);
+  const second = createHistoryBatch(await sources(text), saved);
+  expect(previewHistory(saved, second).every((p) => p.ready)).toBe(true);
+  const repeated = save(saved, second);
+  expect(repeated.items).toHaveLength(4);
+  expect(repeated.orders).toHaveLength(4);
+  expect(repeated.orders.slice(0, 2)).toEqual(saved.orders);
+  expect(repeated.orders.slice(2).every((o) => o.externalId === '')).toBe(true);
+  expect(
+    repeated.imports.slice(2).map((r) => JSON.parse(r.rawCsv).corrected.externalOrderId),
+  ).toEqual(['order-a', 'order-b']);
+  expect(new Set(repeated.items.map((i) => i.sku.toLowerCase())).size).toBe(4);
+  expect(
+    alreadyApproved(
+      repeated,
+      second,
+      second.rows.map((r) => r.id),
+    ),
+  ).toBe(true);
+});
+it('shows extraction notes without requiring another checkbox when all core values are valid', async () => {
+  const w = emptyWorkspace();
+  const b = createHistoryBatch(await sources('Name,Price,Date,Fees\nCoat,25,2026-11-10,1'), w);
+  b.rows[0].facts.warnings = ['Similar title to another row; verify if needed.'];
+  b.rows[0].matches[0].newItem!.purchasedAt = '';
+  b.rows[0].matches[0].newItem!.assumedAcquisitionDate = false;
+  expect(b.rows[0].acknowledgedWarnings).toBe(false);
+  expect(previewHistory(w, b)[0].ready).toBe(true);
 });
