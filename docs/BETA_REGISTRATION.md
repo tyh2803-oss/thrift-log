@@ -18,12 +18,12 @@ Supabase's server-only [`auth.admin.createUser`](https://supabase.com/docs/refer
 
 **An approved email is not proof that the person typing it owns that mailbox. Someone who knows an unused approved address could claim it first.** Owner email addresses and existing accounts are protected from this signup path. Rate limiting cannot resolve ownership. Use no-email mode only for a small trusted beta, approve addresses immediately before your friends register, and verify with them out of band. It is not suitable for public registration.
 
-Without working email delivery there is no self-service email password recovery. The owner must verify the tester out of band and reset **that existing Auth UUID** through the trusted Supabase Auth Admin API/local authenticated tooling. The tester then chooses a password at `/set-password`. Never delete/recreate accounts to resolve setup, share the service key, or share the owner's credentials. Registration cannot reset passwords merely because someone types an approved email.
+Without working email delivery there is no self-service email password recovery. The owner verifies the tester out of band and uses **Settings → Beta testers → Set up tester account** to copy a private one-use setup link. The friend opens it and chooses a password for **that existing Auth UUID**. See [the setup guide](TESTER_ACCOUNT_SETUP.md). Never delete/recreate accounts, share service keys, or share the owner's credentials. Registration cannot reset passwords merely because someone types an approved email.
 
 ### Existing invited or registered users
 
 - Registered users sign in normally. Create Account with the correct existing password also signs in to the same UUID/workspace. A different password cannot replace it or create another account.
-- Pending invitations keep the existing `/auth/confirm` setup path and UUID. Use the original invite link when available. If email is unavailable, the owner verifies the friend out of band and completes that same account through the Auth Admin API using a unique temporary password and confirmed email. The friend signs in and visits `/set-password`. This exception requires owner assistance: registration deliberately cannot take over an existing invited account. No business records are replaced.
+- Pending invitations keep their UUID and original invitation path. If email is unavailable, the owner uses **Set up tester account**, privately shares the one-use link, and the friend chooses a password. No temporary password, SMTP or Terminal is needed. Registration deliberately cannot take over an existing invited account; no business records are replaced.
 - Revoked accounts must first be restored in Beta testers. Signup never restores authorization automatically.
 
 ## Enable confirmation later

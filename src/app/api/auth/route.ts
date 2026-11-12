@@ -38,7 +38,18 @@ export async function POST(request: Request) {
         );
       const password = parsed.data;
       const { error } = await client.auth.updateUser({ password });
-      if (error) throw error;
+      if (error) {
+        if (formRequest) return redirect('/login?error=signin');
+        return NextResponse.json(
+          {
+            error:
+              error.code === 'weak_password'
+                ? 'Choose a stronger password that meets the account password policy.'
+                : 'Password save was not confirmed. Try again or ask the owner for a new private setup link.',
+          },
+          { status: 400, headers: { 'Cache-Control': 'no-store' } },
+        );
+      }
     } else {
       if (!body.email || !body.password) throw new Error('Missing credentials');
       const { data, error } = await client.auth.signInWithPassword({
