@@ -4,12 +4,13 @@
 import { Package, ArrowUpRight, Check, Shirt } from 'lucide-react';
 import { money } from '@/lib/finance';
 import type { Item } from '@/lib/model';
+import type { FinancialTone } from './financial-metric';
 export function Badge({
   children,
   tone = 'neutral',
 }: {
   children: React.ReactNode;
-  tone?: 'neutral' | 'green' | 'amber' | 'red' | 'purple';
+  tone?: 'neutral' | 'green' | 'amber' | 'red' | 'purple' | 'blue' | 'teal';
 }) {
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
@@ -17,13 +18,17 @@ export function Status({ value }: { value: string }) {
   return (
     <Badge
       tone={
-        ['Sold', 'Completed', 'Paid', 'Delivered', 'Ended', 'Listed', 'Active'].includes(value)
-          ? 'green'
-          : ['Reserved', 'Needs delisting', 'Pending', 'Unfulfilled', 'Paused'].includes(value)
-            ? 'amber'
-            : ['Cancelled', 'Returned'].includes(value)
-              ? 'red'
-              : 'neutral'
+        ['Shipped', 'Delivered', 'Completed', 'Handed over'].includes(value)
+          ? 'teal'
+          : ['Listed', 'Active', 'For Sale'].includes(value)
+            ? 'blue'
+            : ['Sold', 'Paid', 'Ended', 'Running'].includes(value)
+              ? 'green'
+              : ['Reserved', 'Needs delisting', 'Pending', 'Unfulfilled', 'Paused'].includes(value)
+                ? 'amber'
+                : ['Cancelled', 'Returned'].includes(value)
+                  ? 'red'
+                  : 'neutral'
       }
     >
       {value}
@@ -71,7 +76,11 @@ export function Metric({
   note,
   positive = false,
   icon,
+  tone = 'neutral',
+  negative = value.trimStart().startsWith('-'),
 }: {
+  tone?: FinancialTone | 'neutral';
+  negative?: boolean;
   label: string;
   value: string;
   note: string;
@@ -79,12 +88,12 @@ export function Metric({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="metric">
+    <div className="metric" data-metric={tone}>
       <div className="metric-top">
         <span>{label}</span>
         {icon}
       </div>
-      <strong className={positive ? 'positive' : ''}>{value}</strong>
+      <strong className={negative ? 'negative' : positive ? 'positive' : ''}>{value}</strong>
       <div className="metric-note">
         {positive && <ArrowUpRight size={13} />} {note}
       </div>

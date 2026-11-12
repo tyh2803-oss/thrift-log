@@ -2,6 +2,8 @@
 
 A private reselling workspace built with Next.js App Router, TypeScript, Tailwind, shadcn-style Radix components, Lucide, Recharts, and Supabase/PostgreSQL.
 
+The [visual system](docs/VISUAL_SYSTEM.md) uses functional financial/status colors and accessible light/dark controls. The floating timer widget is removed; timers are started through Activity or Quick add and managed inline in Activity.
+
 **Existing invited testers:** the owner can use **Settings → Beta testers → Set up tester account** to privately share a one-use link. Friends choose their own password on the existing account, without SMTP or Terminal. See [tester account setup](docs/TESTER_ACCOUNT_SETUP.md). No new database migration or Auth setting change is required.
 
 **Preauthorized registration:** [BETA_REGISTRATION.md](docs/BETA_REGISTRATION.md) adds Create Account for owner-approved tester emails without SMTP. Registration defaults to disabled; schema 7 and an explicit server setting are required. Public Supabase signup and global Auth settings stay unchanged. The guide explains email-ownership/recovery tradeoffs and optional confirmation mode.

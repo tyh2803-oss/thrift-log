@@ -1,5 +1,13 @@
 # Thrift Log project status
 
+## Mobile dashboard polish and timer placement
+
+Built from main `c12f3e7` on `feat/mobile-dashboard-polish`. The floating timer widget is removed entirely. Start timers through Activity or Quick add; manage the active timer inline in Activity. Existing session handlers, persistence, associations and labor calculations are reused, so running timers survive navigation and refresh.
+
+The reusable light/dark visual system adds blue revenue, coral costs, green profit, amber warnings and teal fulfillment, with separate lifecycle/financial accents. Dashboard hierarchy, chart colors, stage icons, status badges, form controls, focus rings and touch targets are refined. Losses keep their negative sign and red treatment. Charts and pipeline retain their original calculations and independent selection/date semantics. Earlier inventory-management work remains separate in the original checkout.
+
+Typecheck, lint, 244 unit/database tests (one opt-in live-image test skipped), production build and 76 desktop/mobile browser checks pass. Focused checks cover WCAG 4.5:1 text pairs, light/dark themes, visible keyboard focus, reduced motion, 320/390/430px layouts, unchanged stored business data during metric selection, and timer reload/pause/resume/end without the dock. Mobile/desktop screenshots were inspected. No database migration, API, authentication, financial calculation or production account change is part of this release. See [VISUAL_SYSTEM.md](docs/VISUAL_SYSTEM.md).
+
 ## Owner-managed setup for existing invited testers
 
 Prepared on `feat/tester-account-setup` from main `8e23862`. No production accounts were inspected or modified; Supabase tools are not exposed in this Cloud session. No production deployment, schema migration or Auth-setting change was performed.

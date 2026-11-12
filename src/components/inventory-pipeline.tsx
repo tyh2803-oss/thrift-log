@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowUpRight, ArrowRight, Info } from 'lucide-react';
+import { ArrowUpRight, ArrowRight, Info, Package, Tag, CircleCheck, Truck } from 'lucide-react';
+import { FinancialMetricToggle, financialTone } from './financial-metric';
 import {
   inventoryPipeline,
   pipelineValue,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/pipeline';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money } from '@/lib/money';
+const stageIcons = { unlisted: Package, 'for-sale': Tag, sold: CircleCheck, shipped: Truck };
 export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineSnapshot }) {
   const { w, scope } = useWorkspace(),
     base = usePathname().startsWith('/demo') ? '/demo' : '';
@@ -35,7 +37,11 @@ export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineS
     } catch {}
   }
   return (
-    <section className="card pipeline-widget" aria-label="Inventory Pipeline">
+    <section
+      className="card pipeline-widget"
+      data-metric={financialTone(metric)}
+      aria-label="Inventory Pipeline"
+    >
       <div className="pipeline-heading">
         <div>
           <h2>Inventory Pipeline</h2>
@@ -46,38 +52,26 @@ export function InventoryPipeline({ snapshot: provided }: { snapshot?: PipelineS
             </span>
           </p>
         </div>
-        <div className="segmented pipeline-toggle" role="group" aria-label="Pipeline metric">
-          {(
-            [
-              ['cost', 'Cost'],
-              ['sale', 'Sale Value'],
-              ['profit', 'Profit'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              aria-pressed={metric === value}
-              className={metric === value ? 'active' : ''}
-              onClick={() => choose(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <FinancialMetricToggle metric={metric} onChange={choose} label="Pipeline metric" />
       </div>
       <div className="pipeline-grid">
         {pipelineStages.map((stage) => {
           const g = snapshot.groups[stage],
             v = pipelineValue(g, metric);
+          const Icon = stageIcons[stage];
           return (
             <Link
               key={stage}
+              data-stage={stage}
               className={`pipeline-stage pipeline-${stage}`}
               href={`${base}/${stage === 'unlisted' || stage === 'for-sale' ? 'inventory' : 'sales'}?pipeline=${stage}`}
               aria-label={`View ${stageNames[stage]} items`}
             >
               <div className="pipeline-stage-title">
-                <span>{stageNames[stage]}</span>
+                <span>
+                  <Icon size={16} aria-hidden="true" />
+                  {stageNames[stage]}
+                </span>
                 <ArrowUpRight size={16} />
               </div>
               <strong className="pipeline-count">

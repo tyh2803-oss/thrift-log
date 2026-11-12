@@ -137,12 +137,14 @@ export function Insights({
           <div className="metric-grid">
             <Metric
               label="Operating profit"
+              tone="profit"
               value={money(m.profit)}
               note={`${m.margin.toFixed(1)}% margin`}
               positive={m.profit > 0}
             />
             <Metric
               label="Average profit / sold item"
+              tone="profit"
               value={
                 m.sold
                   ? money(
@@ -157,6 +159,7 @@ export function Insights({
             <Metric label="Items sold" value={String(m.sold)} note="Completed merchandise sales" />
             <Metric
               label="Capital in inventory"
+              tone="cost"
               value={money(m.inventoryCost)}
               note="Current unsold item purchase costs"
             />
@@ -271,29 +274,31 @@ export function Insights({
             <span className="eyebrow">PROFIT & LOSS</span>
             <h2>Your money, made clear.</h2>
             <dl className="financial-statement">
-              <div>
+              <div data-metric="revenue">
                 <dt>Seller revenue</dt>
                 <dd>{money(m.revenue)}</dd>
               </div>
-              <div>
+              <div data-metric="cost">
                 <dt>Cost of goods sold</dt>
                 <dd>− {money(m.cogs)}</dd>
               </div>
-              <div className="statement-subtotal">
+              <div className="statement-subtotal" data-metric="profit">
                 <dt>Gross profit</dt>
-                <dd>{money(m.revenue - m.cogs)}</dd>
+                <dd className={m.revenue - m.cogs < 0 ? 'negative' : ''}>
+                  {money(m.revenue - m.cogs)}
+                </dd>
               </div>
-              <div>
+              <div data-metric="cost">
                 <dt>Direct selling costs</dt>
                 <dd>− {money(m.direct)}</dd>
               </div>
-              <div>
+              <div data-metric="cost">
                 <dt>Operating expenses</dt>
                 <dd>− {money(m.expenses)}</dd>
               </div>
-              <div className="statement-total">
+              <div className="statement-total" data-metric="profit">
                 <dt>Net operating profit</dt>
-                <dd>{money(m.profit)}</dd>
+                <dd className={m.profit < 0 ? 'negative' : ''}>{money(m.profit)}</dd>
               </div>
             </dl>
             <p className="hint">

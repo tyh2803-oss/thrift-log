@@ -22,6 +22,7 @@ import { TrendChart } from './charts';
 import { inventoryPipeline } from '@/lib/pipeline';
 import { InventoryPipeline } from './inventory-pipeline';
 import { Button } from './ui/button';
+import { FinancialMetricToggle } from './financial-metric';
 import type { EditorTarget } from './editor';
 export function Home({
   range,
@@ -73,15 +74,17 @@ export function Home({
   const max = Math.max(1, ...revenueByMarket.map((r) => r.revenue));
   return (
     <>
-      <div className="metric-grid">
+      <div className="metric-grid dashboard-metrics">
         <Metric
           label="Total revenue"
+          tone="revenue"
           value={money(m.revenue)}
           note={`${m.sold} physical items sold`}
           icon={<Wallet size={17} />}
         />
         <Metric
           label="Net operating profit"
+          tone="profit"
           value={money(m.profit)}
           note={`${m.margin.toFixed(1)}% profit margin`}
           positive={m.profit > 0}
@@ -95,6 +98,7 @@ export function Home({
         />
         <Metric
           label="Effective hourly earnings"
+          tone={m.hourly === null ? 'neutral' : 'profit'}
           value={m.hourly === null ? '—' : `${money(m.hourly)}/hr`}
           note="Profit ÷ hours in this period"
           positive={!!m.hourly && m.hourly > 0}
@@ -106,28 +110,23 @@ export function Home({
         {w.settings.widgets.map((widget) => {
           if (widget === 'chart')
             return (
-              <section className="card chart-card" key={widget}>
+              <section className="card chart-card" data-metric={metric} key={widget}>
                 <div className="card-heading">
                   <div>
                     <span className="eyebrow">THE BIG PICTURE</span>
                     <h2>A little progress, every day.</h2>
                   </div>
-                  <div className="segmented">
-                    <button
-                      className={metric === 'profit' ? 'active' : ''}
-                      onClick={() => setMetric('profit')}
-                    >
-                      Profit
-                    </button>
-                    <button
-                      className={metric === 'revenue' ? 'active' : ''}
-                      onClick={() => setMetric('revenue')}
-                    >
-                      Revenue
-                    </button>
-                  </div>
+                  <FinancialMetricToggle
+                    metric={metric === 'revenue' ? 'sale' : 'profit'}
+                    onChange={(value) => setMetric(value === 'sale' ? 'revenue' : 'profit')}
+                    label="Chart metric"
+                    saleLabel="Revenue"
+                    showCost={false}
+                  />
                 </div>
-                <div className="chart-total">
+                <div
+                  className={`chart-total ${(metric === 'profit' ? m.profit : m.revenue) < 0 ? 'negative' : ''}`}
+                >
                   {money(metric === 'profit' ? m.profit : m.revenue)}
                   <span>{metric === 'profit' ? 'earned after costs' : 'seller revenue'}</span>
                 </div>

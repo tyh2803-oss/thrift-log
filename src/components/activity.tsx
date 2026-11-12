@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Plus, MapPin, Clock3, Download, Navigation } from 'lucide-react';
+import { Plus, MapPin, Clock3, Download, Navigation, Pause, Play, Square } from 'lucide-react';
 import { currentLineProfits } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { laborMs, duration, money } from '@/lib/finance';
@@ -13,10 +13,14 @@ export function Activity({
   range,
   onEdit,
   onStart,
+  activeSession,
+  onControl,
 }: {
   range: [number, number];
   onEdit: (t: EditorTarget) => void;
   onStart: (category: Session['category'], links?: Partial<Session>) => void;
+  activeSession?: Session;
+  onControl: (action: 'pause' | 'resume' | 'end') => void;
 }) {
   const { w, dispatch, notify } = useWorkspace();
   const [tab, setTab] = useState('Time');
@@ -109,6 +113,43 @@ export function Activity({
       </div>
       {tab === 'Time' ? (
         <>
+          {activeSession && (
+            <section className="card active-timer" aria-label="Active timer">
+              <span className="icon-tile">
+                <Clock3 size={22} />
+              </span>
+              <div className="grow">
+                <h2>
+                  {activeSession.category}{' '}
+                  {activeSession.state === 'Paused' ? '· paused' : '· running'}
+                </h2>
+                <p>
+                  {duration(laborMs([activeSession]))} tracked · Your timer continues when you
+                  navigate away.
+                </p>
+              </div>
+              <div className="actions">
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label={activeSession.state === 'Running' ? 'Pause timer' : 'Resume timer'}
+                  onClick={() => onControl(activeSession.state === 'Running' ? 'pause' : 'resume')}
+                >
+                  {activeSession.state === 'Running' ? <Pause size={16} /> : <Play size={16} />}
+                  {activeSession.state === 'Running' ? 'Pause' : 'Resume'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-label="End timer"
+                  onClick={() => onControl('end')}
+                >
+                  <Square size={16} />
+                  End timer
+                </Button>
+              </div>
+            </section>
+          )}
           <div className="time-categories">
             {(['Buying', 'Listing', 'Selling'] as const).map((category, i) => (
               <section className={`card time-category time-color-${i}`} key={category}>

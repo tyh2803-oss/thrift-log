@@ -18,8 +18,6 @@ import {
   Radio,
   MapPin,
   Play,
-  Pause,
-  Square,
   Leaf,
   LogOut,
   WifiOff,
@@ -31,7 +29,6 @@ import { WorkspaceProvider, useWorkspace } from '@/lib/use-workspace';
 import { SecureWorkspace } from './secure-workspace';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
-import { duration, laborMs } from '@/lib/finance';
 import { lineFulfillment } from '@/lib/fulfillment-state';
 import { readPipelineStage } from '@/lib/pipeline';
 import type { Session } from '@/lib/model';
@@ -105,7 +102,6 @@ function Shell({
   const [notifications, setNotifications] = useState(false);
   const [help, setHelp] = useState(false);
   const [online, setOnline] = useState(true);
-  const [, tick] = useState(0);
   const [association, setAssociation] = useState('');
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -120,14 +116,12 @@ function Shell({
   const range = periodRange(period, w.settings.timezone, customStart, customEnd);
   const active = w.sessions.find((s) => ['Running', 'Paused'].includes(s.state));
   useEffect(() => {
-    const interval = setInterval(() => tick((n) => n + 1), 1000);
     const connection = () => setOnline(navigator.onLine);
     const initial = setTimeout(connection, 0);
     window.addEventListener('online', connection);
     window.addEventListener('offline', connection);
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     return () => {
-      clearInterval(interval);
       clearTimeout(initial);
       window.removeEventListener('online', connection);
       window.removeEventListener('offline', connection);
@@ -575,6 +569,8 @@ function Shell({
               {section === 'activity' && (
                 <Activity
                   range={range}
+                  activeSession={active}
+                  onControl={(action) => void control(action)}
                   onEdit={edit}
                   onStart={(category, links) => void start(category, links)}
                 />
@@ -584,73 +580,6 @@ function Shell({
             </>
           )}
         </main>
-        <div className={`timer-dock ${active ? 'has-active' : ''}`}>
-          <span className="timer-icon">
-            <Clock3 size={19} />
-          </span>
-          {active ? (
-            <>
-              <div>
-                <strong>
-                  {active.category} {active.state === 'Paused' ? '· paused' : ''}
-                </strong>
-                <span>
-                  {duration(laborMs([active]))}{' '}
-                  <span className="timer-seconds">
-                    {String(Math.floor(laborMs([active]) / 1000) % 60).padStart(2, '0')}s
-                  </span>
-                </span>
-              </div>
-              <button
-                aria-label={active.state === 'Running' ? 'Pause timer' : 'Resume timer'}
-                onClick={() => void control(active.state === 'Running' ? 'pause' : 'resume')}
-              >
-                {active.state === 'Running' ? <Pause size={17} /> : <Play size={17} />}
-              </button>
-              <button aria-label="End timer" onClick={() => void control('end')}>
-                <Square size={16} />
-              </button>
-            </>
-          ) : (
-            <>
-              <div>
-                <strong>A little time, well tracked.</strong>
-                <span>Know what your work is worth.</span>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setTimerMenu(!timerMenu)}>
-                <Play size={13} />
-                Start timer
-              </Button>
-            </>
-          )}
-          {timerMenu && (
-            <div className="popover timer-menu">
-              <strong>What are you working on?</strong>
-              {(['Buying', 'Listing', 'Selling'] as const).map((c) => (
-                <button key={c} onClick={() => void start(c)}>
-                  <Play size={15} />
-                  {c}
-                </button>
-              ))}
-              <label className="field">
-                <span>Link to a show or trip</span>
-                <select value={association} onChange={(e) => setAssociation(e.target.value)}>
-                  <option value="">General business</option>
-                  {w.shows.map((s) => (
-                    <option key={s.id} value={`show:${s.id}`}>
-                      {s.name}
-                    </option>
-                  ))}
-                  {w.trips.map((t) => (
-                    <option key={t.id} value={`trip:${t.id}`}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          )}
-        </div>
         <nav className="mobile-nav">
           {nav.map((n) => (
             <Link
@@ -664,6 +593,44 @@ function Shell({
           ))}
         </nav>
       </div>
+      {timerMenu && (
+        <Dialog
+          open
+          onClose={() => setTimerMenu(false)}
+          title="Start timer"
+          description="Choose the work you’re tracking. Manage running timers in Activity."
+        >
+          <div className="timer-start-options">
+            {(['Buying', 'Listing', 'Selling'] as const).map((category) => (
+              <Button
+                type="button"
+                variant="outline"
+                key={category}
+                onClick={() => void start(category)}
+              >
+                <Play size={16} />
+                {category}
+              </Button>
+            ))}
+          </div>
+          <label className="field">
+            <span>Link to a show or trip</span>
+            <select value={association} onChange={(e) => setAssociation(e.target.value)}>
+              <option value="">General business</option>
+              {w.shows.map((s) => (
+                <option key={s.id} value={`show:${s.id}`}>
+                  {s.name}
+                </option>
+              ))}
+              {w.trips.map((t) => (
+                <option key={t.id} value={`trip:${t.id}`}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </Dialog>
+      )}
       {editor && (
         <Editor
           key={`${editor.kind}-${editor.value?.id || 'new'}`}

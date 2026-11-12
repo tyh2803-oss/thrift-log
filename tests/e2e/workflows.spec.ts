@@ -47,16 +47,23 @@ test('inventory → cross-list → sale → return; money and persistence', asyn
 test('timer survives reload, pauses, resumes, and ends', async ({ page }) => {
   await page.goto('/demo');
   await expect(page.getByText('Fictional sample data, saved in this browser.')).toBeVisible();
+  await expect(page.locator('.timer-dock')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Quick add', exact: true }).click();
   await page.getByRole('button', { name: 'Start timer', exact: true }).click();
-  await page.getByRole('button', { name: 'Buying', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Buying', exact: true }).click();
+  await page.goto('/demo/activity');
   await expect(page.getByRole('button', { name: 'Pause timer' })).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Pause timer' })).toBeVisible();
   await page.getByRole('button', { name: 'Pause timer' }).click();
   await expect(page.getByText('Buying · paused')).toBeVisible();
+  await page.goto('/demo');
+  await expect(page.locator('.timer-dock')).toHaveCount(0);
+  await page.goto('/demo/activity');
   await page.getByRole('button', { name: 'Resume timer' }).click();
   await page.getByRole('button', { name: 'End timer' }).click();
-  await expect(page.getByRole('button', { name: 'Start timer', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Active timer', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start timer', exact: true })).toHaveCount(3);
 });
 test('show planner, CSV preview and duplicate prevention', async ({ page }) => {
   await page.goto('/demo/sales');
