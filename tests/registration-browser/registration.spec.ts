@@ -15,12 +15,15 @@ test('mobile-friendly account creation uses the approved-email endpoint and pres
     'true',
   );
   await page.getByLabel('Email', { exact: true }).fill('friend@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('A distinct beta password 123');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('minlength', '8');
+  await expect(page.getByText(/password of at least 8 characters/)).toBeVisible();
+  await page.getByLabel('Password', { exact: true }).fill('Abc1234');
+  await page.getByRole('button', { name: 'Create my account', exact: true }).click();
+  expect(calls).toEqual([]);
+  await page.getByLabel('Password', { exact: true }).fill('Abc12345');
   await page.getByRole('button', { name: 'Create my account', exact: true }).click();
   await expect(page.locator('form').getByRole('alert')).toContainText('authorize your email');
-  expect(calls).toEqual([
-    { email: 'friend@example.test', password: 'A distinct beta password 123' },
-  ]);
+  expect(calls).toEqual([{ email: 'friend@example.test', password: 'Abc12345' }]);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByLabel('Email', { exact: true })).toHaveValue('friend@example.test');
   await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute(

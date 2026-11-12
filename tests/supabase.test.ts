@@ -769,6 +769,25 @@ describe('invite-only beta authorization', () => {
     );
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
   });
+  it.each([
+    ['Abc1234', 400],
+    ['Abc12345', 200],
+    ['Abc123456', 200],
+    ['x'.repeat(129), 400],
+  ])(
+    'validates new-password length without changing authorization: %s',
+    async (password, status) => {
+      asTester();
+      const response = await authenticate(
+        post('/api/auth', { action: 'password', password }, tester.id),
+      );
+      expect(response.status).toBe(status);
+      if (status === 400) {
+        expect(mocks.updateUser).not.toHaveBeenCalled();
+        expect((await response.json()).error).toContain('between 8 and 128 characters');
+      } else expect(mocks.updateUser).toHaveBeenCalledWith({ password });
+    },
+  );
   it('sets only an approved account’s own password and exposes no public registration action', async () => {
     asTester();
     expect(

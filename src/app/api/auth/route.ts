@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authClient, checkOrigin, requireUser } from '@/lib/supabase/server';
 import { betaRole } from '@/lib/supabase/beta';
 import { ConfigurationError } from '@/lib/supabase/config';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 export async function POST(request: Request) {
   const formRequest =
     request.headers.get('content-type')?.split(';')[0].trim() ===
@@ -29,7 +30,13 @@ export async function POST(request: Request) {
       if (error) throw error;
     } else if (body.action === 'password') {
       await requireUser(request);
-      const password = z.string().min(12).max(128).parse(body.password);
+      const parsed = z.string().min(MIN_PASSWORD_LENGTH).max(128).safeParse(body.password);
+      if (!parsed.success)
+        return NextResponse.json(
+          { error: `Use a password between ${MIN_PASSWORD_LENGTH} and 128 characters.` },
+          { status: 400, headers: { 'Cache-Control': 'no-store' } },
+        );
+      const password = parsed.data;
       const { error } = await client.auth.updateUser({ password });
       if (error) throw error;
     } else {

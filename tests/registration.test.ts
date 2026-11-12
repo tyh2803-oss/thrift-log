@@ -450,6 +450,22 @@ it('validates passwords without consuming the authorization or retaining an aban
   expect(mocks.create).not.toHaveBeenCalled();
   expect((await register(request())).status).toBe(200);
 });
+it.each([
+  ['Abc1234', 400],
+  ['Abc12345', 200],
+  ['Abc123456', 200],
+])('enforces the eight-character registration boundary for %s', async (newPassword, status) => {
+  await authorize('friend@example.test');
+  const response = await register(request(undefined, { password: newPassword }));
+  expect(response.status).toBe(status);
+  if (status === 400) {
+    expect((await response.json()).error).toContain('at least 8 characters');
+    expect(mocks.create).not.toHaveBeenCalled();
+  } else {
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ password: newPassword }));
+    expect((await requireUser()).betaRole).toBe('tester');
+  }
+});
 it('returns a clean password-policy error and permits correcting it without a duplicate user', async () => {
   await authorize('friend@example.test');
   mocks.create.mockResolvedValueOnce({

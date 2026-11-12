@@ -42,7 +42,7 @@ Switching modes affects **new** accounts. Previously created no-email accounts a
 
 ## Abuse prevention and isolation
 
-- Same-origin POST only, bounded 4 KB bodies, normalized emails and 12-character minimum passwords (maximum 72 UTF-8 bytes to avoid bcrypt truncation). Existing sign-in rules are unchanged; Supabase also enforces its password policy.
+- Same-origin POST only, bounded 4 KB bodies, normalized emails and 8-character minimum passwords (maximum 72 UTF-8 bytes to avoid bcrypt truncation). Existing sign-in rules are unchanged; Supabase also enforces its password policy.
 - Shared database budgets: 5 attempts per email, 20 per client and 100 globally per 15 minutes, including denied attempts. HTTP 429 includes `Retry-After`. Keys are HMACs using the server credential; raw IPs are not stored. Vercel's overwritten client-IP header is trusted only on Vercel; other hosts share a conservative bucket. Caller-controlled `X-Forwarded-For` cannot bypass limits. Old counters are cleaned up; no in-memory limiter or extra service is required.
 - A two-minute private reservation serializes competing signups. Linking rechecks its token, exact Auth email/UUID, tester role and active authorization. Revocation blocks subsequent access. Uncertain creates recover through password-authenticated sign-in. Registration never updates or deletes existing accounts.
 - Existing RLS, tenant foreign keys, live membership checks, financial safeguards, UUID-scoped drafts and authenticated photo delivery remain. Signup cannot authorize emails, grant owner privileges or select another user's workspace.
