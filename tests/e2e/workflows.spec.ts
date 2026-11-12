@@ -81,14 +81,21 @@ test('show planner, CSV preview and duplicate prevention', async ({ page }) => {
   const file = {
     name: 'sales.csv',
     mimeType: 'text/csv',
-    buffer: Buffer.from('order_id,sku,price,marketplace,fees\nE2E-WN,TL-0021,35,Whatnot,2.50'),
+    buffer: Buffer.from(
+      'order_id,sku,price,marketplace,fees,date\nE2E-WN,TL-0021,35,Whatnot,2.50,2026-11-08',
+    ),
   };
   await dialog.locator('input[type=file]').setInputFiles(file);
-  await expect(dialog.getByText('1 rows · 1 new records · 0 duplicates skipped')).toBeVisible();
-  await dialog.getByRole('button', { name: 'Import validated records' }).click();
-  await expect(dialog.getByText('Imported 1 records. Skipped 0 existing records.')).toBeVisible();
-  await dialog.locator('input[type=file]').setInputFiles(file);
-  await expect(dialog.getByText('1 rows · 0 new records · 1 duplicates skipped')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Review sales', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }),
+  ).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Approve All Ready (1)', exact: true }).click();
+  await expect(dialog.getByText('Imported 1 sale records.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Review sales', exact: true }).click();
+  await expect(
+    dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }),
+  ).toBeDisabled();
 });
 test('responsive navigation, date filtering, and PWA assets', async ({
   page,

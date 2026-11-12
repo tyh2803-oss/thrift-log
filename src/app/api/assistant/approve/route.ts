@@ -6,6 +6,7 @@ import { ConfigurationError, DatabaseReadinessError } from '@/lib/supabase/confi
 import { batchSchema } from '@/lib/assistant/drafts';
 import { approvalCommands, alreadyApproved } from '@/lib/assistant/planner';
 import { verifyScreenshotReferences } from '@/lib/assistant/provenance';
+import { historyCommands } from '@/lib/assistant/history';
 import { applyCommand } from '@/lib/commands';
 export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
@@ -16,8 +17,12 @@ export async function POST(request: Request) {
     const raw = await request.text();
     if (raw.length > 3_000_000)
       throw new Error('This draft is too large. Approve a smaller batch.');
-    const { batch, rowIds } = z
-      .object({ batch: batchSchema, rowIds: z.array(z.string().uuid()).min(1).max(300) })
+    const { batch, rowIds, mode } = z
+      .object({
+        mode: z.literal('history').optional(),
+        batch: batchSchema,
+        rowIds: z.array(z.string().uuid()).min(1).max(300),
+      })
       .parse(JSON.parse(raw));
     if (
       new Set(rowIds).size !== rowIds.length ||
@@ -35,7 +40,10 @@ export async function POST(request: Request) {
         },
         { status: 409, ...options },
       );
-    const commands = approvalCommands(current, batch, rowIds);
+    const commands =
+      mode === 'history'
+        ? historyCommands(current, batch, rowIds)
+        : approvalCommands(current, batch, rowIds);
     await verifyScreenshotReferences(user.id, batch, rowIds);
     const next = commands.reduce(applyCommand, current);
     const { data, error } = await adminClient().rpc('commit_workspace', {

@@ -533,3 +533,54 @@ it('persists bulk pipeline sales, fulfillment and reversals through the real ten
   expect(w.items).toHaveLength(original.items.length + 2);
   expect(w.imports.filter((r) => r.mapping.format === 'pipeline-v1')).toHaveLength(4);
 });
+
+it('stores optional-cost sale history through the real SQL transaction while preserving the owner workspace and tenant isolation', async () => {
+  const { historyCsvSources, historyMapping } = await import('../src/lib/assistant/csv-history');
+  const { createHistoryBatch, historyCommands } = await import('../src/lib/assistant/history');
+  const { readCsv } = await import('../src/lib/csv');
+  const load = async (id: string) =>
+    (
+      await db.query<{ w: ReturnType<typeof emptyWorkspace> }>(
+        'select public.load_workspace($1) as w',
+        [id],
+      )
+    ).rows[0].w;
+  const ownerBefore = await load(owner),
+    testerBefore = await load(tester);
+  const unique = crypto.randomUUID();
+  const csv = `Name,Price,Date,Fees,Purchase cost\nHistory-${unique},25,2026-11-11,1,\nKnown-${unique},30,2026-11-11,2,0`;
+  const parsed = readCsv(csv);
+  const batch = createHistoryBatch(
+    await historyCsvSources(csv, 'history.csv', {
+      mapping: historyMapping(parsed.columns),
+      marketplace: 'Depop',
+      dateFormat: 'auto',
+    }),
+    testerBefore,
+  );
+  const next = historyCommands(
+    testerBefore,
+    batch,
+    batch.rows.map((r) => r.id),
+  ).reduce(applyCommand, testerBefore);
+  await db.query('select public.commit_workspace($1,$2,$3::jsonb)', [
+    tester,
+    testerBefore.revision,
+    JSON.stringify(next),
+  ]);
+  const restored = await load(tester);
+  expect(restored.orders).toHaveLength(testerBefore.orders.length + 2);
+  expect(restored.items).toHaveLength(testerBefore.items.length + 2);
+  expect(metrics(restored).unknownCosts).toBe(1);
+  expect(
+    restored.imports
+      .filter((r) => r.mapping.history === 'true')
+      .map((r) => JSON.parse(r.rawCsv).unknownCostItemIds.length),
+  ).toEqual([1, 0]);
+  expect(await load(owner)).toEqual(ownerBefore);
+  await actor(owner, async () => {
+    expect(
+      (await db.query('select id from public.orders where id=$1', [batch.rows[0].id])).rows,
+    ).toHaveLength(0);
+  });
+});

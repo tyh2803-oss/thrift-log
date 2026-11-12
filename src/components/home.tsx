@@ -61,6 +61,7 @@ export function Home({
         }),
         revenue: value.revenue / 100,
         profit: value.profit / 100,
+        profitKnown: value.profitKnown,
       };
     },
   );
@@ -85,9 +86,13 @@ export function Home({
         <Metric
           label="Net operating profit"
           tone="profit"
-          value={money(m.profit)}
-          note={`${m.margin.toFixed(1)}% profit margin`}
-          positive={m.profit > 0}
+          value={m.profitKnown ? money(m.profit) : '—'}
+          note={
+            m.profitKnown
+              ? `${m.margin.toFixed(1)}% profit margin`
+              : `${m.unknownCosts} purchase costs unknown · profit incomplete`
+          }
+          positive={m.profitKnown && m.profit > 0}
           icon={<TrendingUp size={17} />}
         />
         <Metric
@@ -127,10 +132,20 @@ export function Home({
                 <div
                   className={`chart-total ${(metric === 'profit' ? m.profit : m.revenue) < 0 ? 'negative' : ''}`}
                 >
-                  {money(metric === 'profit' ? m.profit : m.revenue)}
+                  {metric === 'profit' && !m.profitKnown
+                    ? '—'
+                    : money(metric === 'profit' ? m.profit : m.revenue)}
                   <span>{metric === 'profit' ? 'earned after costs' : 'seller revenue'}</span>
                 </div>
-                <TrendChart data={data} metric={metric} />
+                {metric === 'profit' &&
+                (!m.profitKnown || data.some((point) => !point.profitKnown)) ? (
+                  <p className="error-box">
+                    Some chart dates have unknown purchase costs. Profit is incomplete for those
+                    dates; revenue remains available.
+                  </p>
+                ) : (
+                  <TrendChart data={data} metric={metric} />
+                )}
                 <div className="chart-footer">
                   <span className="dot" />{' '}
                   {metric === 'profit' ? 'Net operating profit' : 'Revenue'}{' '}
@@ -251,7 +266,9 @@ export function Home({
                                 currentOrderTotals(w, o).profit >= 0 ? 'positive' : 'negative'
                               }
                             >
-                              {money(currentOrderTotals(w, o).profit)} profit
+                              {currentOrderTotals(w, o).profitKnown
+                                ? `${money(currentOrderTotals(w, o).profit)} profit`
+                                : 'Purchase cost unknown · profit incomplete'}
                             </span>
                           </span>
                         </button>
@@ -307,7 +324,8 @@ export function Home({
           <div>
             <h3>Your next sale is already here.</h3>
             <p>
-              {needing.length} items waiting to be listed · {money(m.inventoryCost)} in unsold
+              {needing.length} items waiting to be listed ·{' '}
+              {m.inventoryUnknownCosts ? 'Cost incomplete' : money(m.inventoryCost)} in unsold
               inventory
             </p>
           </div>
@@ -321,7 +339,13 @@ export function Home({
             <span>
               {Math.min(
                 100,
-                Math.max(0, Math.round((month.profit / Math.max(1, w.settings.monthlyGoal)) * 100)),
+                Math.max(
+                  0,
+                  Math.round(
+                    ((month.profitKnown ? month.profit : 0) / Math.max(1, w.settings.monthlyGoal)) *
+                      100,
+                  ),
+                ),
               )}
               %
             </span>
@@ -329,12 +353,13 @@ export function Home({
           <div className="progress-track">
             <span
               style={{
-                width: `${Math.min(100, Math.max(0, (month.profit / Math.max(1, w.settings.monthlyGoal)) * 100))}%`,
+                width: `${Math.min(100, Math.max(0, ((month.profitKnown ? month.profit : 0) / Math.max(1, w.settings.monthlyGoal)) * 100))}%`,
               }}
             />
           </div>
           <p>
-            {money(month.profit)} of {money(w.settings.monthlyGoal)} <span>this month</span>
+            {month.profitKnown ? money(month.profit) : 'Profit incomplete'} of{' '}
+            {money(w.settings.monthlyGoal)} <span>this month</span>
           </p>
         </section>
       </div>

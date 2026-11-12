@@ -200,7 +200,7 @@ try {
       .toBuffer();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const assistant = page.getByRole('dialog');
-  await assistant.getByLabel('Screenshot files').setInputFiles([
+  await assistant.getByLabel('Import files').setInputFiles([
     { name: 'https-sale.png', mimeType: 'image/png', buffer: image },
     { name: 'remove-me.png', mimeType: 'image/png', buffer: other },
   ]);

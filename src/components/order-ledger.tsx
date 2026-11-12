@@ -72,9 +72,9 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
           />
           <Metric
             label="Lifetime profit"
-            value={money(total.profit)}
-            note="After actual costs"
-            positive={total.profit > 0}
+            value={total.profitKnown ? money(total.profit) : '—'}
+            note={total.profitKnown ? 'After actual costs' : 'Purchase cost unknown · incomplete'}
+            positive={total.profitKnown && total.profit > 0}
           />
           <Metric
             label="Inventory returned"

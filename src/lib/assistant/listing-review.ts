@@ -7,6 +7,15 @@ export function confirmedFreeInventory(w: Workspace, itemId: string) {
     if (!['assistant-v1', 'pipeline-v1'].includes(receipt.mapping.format)) return false;
     try {
       const audit = JSON.parse(receipt.rawCsv);
+      if (
+        receipt.mapping.history === 'true' &&
+        audit.knownZeroItemIds?.includes(itemId) &&
+        w.orders
+          .find((o) => o.id === receipt.id)
+          ?.lines.some((l) => l.itemId === itemId && l.costBasis === 0)
+      )
+        return true;
+
       if (receipt.mapping.format === 'pipeline-v1')
         return (
           audit.result?.successIds?.includes(itemId) &&

@@ -1,3 +1,4 @@
+import { historyCostUnknown } from './cost-knowledge';
 import { orderPostings, returnedItemIds } from './ledger';
 import { allocate } from './money';
 import { lineFulfillment, type FulfillmentState } from './fulfillment-state';
@@ -133,6 +134,14 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
             freeCosts.add(row.itemId);
         continue;
       }
+      if (receipt.mapping.history === 'true')
+        for (const itemId of audit.knownZeroItemIds || [])
+          if (
+            w.orders
+              .find((o) => o.id === receipt.id)
+              ?.lines.some((l) => l.itemId === itemId && l.costBasis === 0)
+          )
+            freeCosts.add(itemId);
       const facts = audit.corrected;
       for (const m of audit.matches || []) {
         if (
@@ -187,7 +196,9 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
       const line = order.lines.find((l) => l.itemId === item.id)!,
         f = financial.get(`${order.id}:${item.id}`)!;
       const fulfillment = lineFulfillment(order, item.id);
-      const knownCost = line.costBasis > 0 || confirmed.has(order.id);
+      const knownCost =
+        !historyCostUnknown(w, order.id, item.id) &&
+        (line.costBasis > 0 || confirmed.has(order.id) || freeCosts.has(item.id));
       const cost = knownCost ? line.costBasis : null;
       entries.push({
         item,

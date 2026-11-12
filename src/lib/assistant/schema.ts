@@ -22,6 +22,7 @@ export const extractedLineSchema = z.strictObject({
   listingId: text,
   url: text,
   price: amount,
+  purchaseCost: amount.optional(),
   clothing: clothingSchema.optional(),
 });
 export const lifecycleSchema = z.strictObject({
@@ -71,6 +72,8 @@ export const extractedRecordSchema = z.strictObject({
   discount: amount,
   refund: amount,
   other: amount,
+  packaging: amount.optional(),
+  showId: text.optional(),
   warnings: z.array(z.string().max(500)).max(20),
   marketplaceIdentification: identificationSchema.optional(),
   event: lifecycleSchema.optional(),
@@ -86,18 +89,37 @@ export const visionExtractionSchema = z.strictObject({
   identification: wireIdentificationSchema,
   records: z
     .array(
-      extractedRecordSchema.omit({ marketplaceIdentification: true }).extend({
-        marketplace: z.enum(['Vinted', 'Depop', 'eBay', 'Whatnot']).nullable(),
-        event: lifecycleSchema.omit({ confirmedByUser: true }),
-        lines: z
-          .array(
-            extractedLineSchema.extend({
-              description: z.string().max(300).nullable(),
-              clothing: wireClothingSchema,
-            }),
-          )
-          .max(30),
-      }),
+      extractedRecordSchema
+        .omit({ marketplaceIdentification: true, packaging: true, showId: true })
+        .extend({
+          marketplace: z.enum(['Vinted', 'Depop', 'eBay', 'Whatnot']).nullable(),
+          event: lifecycleSchema.omit({ confirmedByUser: true }),
+          lines: z
+            .array(
+              extractedLineSchema.omit({ purchaseCost: true }).extend({
+                description: z.string().max(300).nullable(),
+                clothing: wireClothingSchema,
+              }),
+            )
+            .max(30),
+        }),
+    )
+    .max(30),
+  message: z.string().max(1000),
+});
+/** Text/document facts use the same review model, without fabricated clothing/image metadata. */
+export const documentExtractionSchema = z.strictObject({
+  complete: z.boolean(),
+  rowsAccountedFor: z.number().int().nonnegative().nullable(),
+  records: z
+    .array(
+      extractedRecordSchema
+        .omit({ marketplaceIdentification: true, event: true, packaging: true, showId: true })
+        .extend({
+          lines: z
+            .array(extractedLineSchema.omit({ clothing: true }).extend({ purchaseCost: amount }))
+            .max(30),
+        }),
     )
     .max(30),
   message: z.string().max(1000),
@@ -124,6 +146,14 @@ export const screenshotSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/),
   name: z.string().max(200),
   reference: z.string().max(500).optional(),
+  sourceType: z.enum(['image', 'pdf', 'csv']).optional(),
+  originalHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  part: z.number().int().min(1).max(10).optional(),
+  parts: z.number().int().min(1).max(10).optional(),
+  analysisModel: z.string().max(100).optional(),
   extraction: extractionSchema,
   processing: processingSchema.optional(),
 });

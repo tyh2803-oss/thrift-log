@@ -14,6 +14,7 @@ import { applyPipelineMove, type PipelineMove, type MoveResult } from './pipelin
 import { demoWorkspace } from './demo';
 import type { DraftBatch } from './assistant/drafts';
 import { approvalCommands, alreadyApproved } from './assistant/planner';
+import { historyCommands } from './assistant/history';
 import { emptyWorkspace, workspaceSchema, type Command, type Workspace } from './model';
 const KEY = 'thrift-log.demo.v1';
 type Value = {
@@ -30,7 +31,11 @@ type Value = {
   dispatch: (c: Command | Command[]) => Promise<boolean>;
   refresh: () => Promise<void>;
   movePipeline: (input: PipelineMove) => Promise<MoveResult | false>;
-  approveAssistant: (batch: DraftBatch, rowIds: string[]) => Promise<Workspace | false>;
+  approveAssistant: (
+    batch: DraftBatch,
+    rowIds: string[],
+    mode?: 'history',
+  ) => Promise<Workspace | false>;
   notify: (s: string) => void;
   resetDemo: () => void;
 };
@@ -162,7 +167,7 @@ export function WorkspaceProvider({
     [demo, install, userId],
   );
   const approveAssistant = useCallback(
-    async (batch: DraftBatch, rowIds: string[]) => {
+    async (batch: DraftBatch, rowIds: string[], mode?: 'history') => {
       if (busy.current) return false;
       busy.current = true;
       setSaving(true);
@@ -178,7 +183,11 @@ export function WorkspaceProvider({
             }
             if (current.revision !== batch.revision)
               throw new Error('Demo workspace changed. Refresh and review before approving.');
-            const next = approvalCommands(current, batch, rowIds).reduce(applyCommand, current);
+            const next = (
+              mode === 'history'
+                ? historyCommands(current, batch, rowIds)
+                : approvalCommands(current, batch, rowIds)
+            ).reduce(applyCommand, current);
             localStorage.setItem(KEY, JSON.stringify(next));
             install(next);
           };
@@ -188,7 +197,7 @@ export function WorkspaceProvider({
           const response = await fetch('/api/assistant/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-thrift-user': userId || '' },
-            body: JSON.stringify({ batch, rowIds }),
+            body: JSON.stringify({ batch, rowIds, mode }),
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.error);

@@ -335,8 +335,11 @@ export function PipelineMoveDialog({
         {undo && (
           <p className="error-box">
             Undo accidental sale entries for {orders.length} complete orders: net recognized revenue
-            decreases by {money(impact)} and recognized profit changes by {money(profitImpact)};
-            their remaining purchase cost and recorded selling costs are reversed with dated
+            decreases by {money(impact)} and recognized profit changes by{' '}
+            {orders.every((o) => currentOrderTotals(w, o).profitKnown)
+              ? money(profitImpact)
+              : 'an unknown amount (purchase costs incomplete)'}
+            ; their remaining purchase cost and recorded selling costs are reversed with dated
             correction entries. Original orders, shipping references and ledger history remain. No
             cash refund is sent. Real returns/refunds belong in the order ledger; paid-out sales
             require cash reconciliation first.

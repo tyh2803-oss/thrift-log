@@ -18,7 +18,8 @@
     "supabase:test-hosted": "node --env-file=.env.local --experimental-strip-types scripts/verify-hosted.mjs",
     "supabase:test-browser": "node --env-file=.env.local --experimental-strip-types scripts/verify-browser-auth.mjs",
     "https:setup": "node scripts/setup-local-https.mjs",
-    "dev:https": "node scripts/dev-https.mjs"
+    "dev:https": "node scripts/dev-https.mjs",
+    "test:history-browser": "playwright test --config=playwright.history.config.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "latest",

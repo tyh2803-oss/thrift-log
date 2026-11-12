@@ -120,7 +120,8 @@ const server = createServer(async (request, response) => {
     let raw = '';
     for await (const chunk of request) {
       raw += chunk;
-      if (raw.length > 100000) throw new Error('Test request too large');
+      if (raw.length > (process.env.HISTORY_BROWSER_WRITES === '1' ? 8_000_000 : 100_000))
+        throw new Error('Test request too large');
     }
     if (raw) body = JSON.parse(raw);
     if (url.pathname === '/__health') return send({ ready: true });
@@ -245,6 +246,19 @@ const server = createServer(async (request, response) => {
           : send({ message: 'Denied' }, 403);
       if (name === 'commit_workspace') {
         metrics.businessWrites++;
+        // Explicit, loopback-only history test mode. The account-setup suite still rejects all writes.
+        if (
+          process.env.HISTORY_BROWSER_WRITES === '1' &&
+          actor?.active &&
+          actor.email_confirmed_at
+        ) {
+          const current = workspaces.get(actor.id);
+          if (body.p_expected_revision !== current.revision)
+            return send({ message: 'revision_conflict' }, 409);
+          const next = { ...body.p_payload, revision: current.revision + 1 };
+          workspaces.set(actor.id, next);
+          return send(next.revision);
+        }
         return send({ message: 'Browser setup must not write business records' }, 400);
       }
     }

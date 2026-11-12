@@ -1,3 +1,4 @@
+import { historyUnknownCosts, historyInventoryCostUnknown } from './cost-knowledge';
 import type { Session, Workspace } from './model';
 import { orderPostings, payoutOutstanding, payoutReceived } from './ledger';
 export * from './money';
@@ -39,6 +40,14 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
   const postings = orderPostings(w, from, to).filter((p) => !showId || p.showId === showId);
   const sum = (key: 'revenue' | 'cogs' | 'fees' | 'direct' | 'gross') =>
     postings.reduce((n, p) => n + p[key], 0);
+  const unknown = historyUnknownCosts(w);
+  const netUnknown = new Map<string, number>();
+  for (const p of postings)
+    if (p.itemId && unknown.get(p.orderId)?.has(p.itemId)) {
+      const key = `${p.orderId}:${p.itemId}`;
+      netUnknown.set(key, (netUnknown.get(key) || 0) + p.units);
+    }
+  const unknownCosts = [...netUnknown.values()].filter((n) => n !== 0).length;
   const profit = sum('revenue') - sum('cogs') - sum('direct') - expenses;
   const hours =
     laborMs(
@@ -54,19 +63,22 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
   return {
     revenue: sum('revenue'),
     profit,
+    profitKnown: unknownCosts === 0,
+    unknownCosts,
     gross: sum('gross'),
     cogs: sum('cogs'),
     fees: sum('fees'),
     direct: sum('direct'),
     expenses,
     hours,
-    hourly: hours > 0 ? profit / hours : null,
+    hourly: hours > 0 && !unknownCosts ? profit / hours : null,
     sold,
     returned,
     netSold: sold - returned,
     payoutReceived: payoutReceived(w, from, to),
     margin: sum('revenue') > 0 ? (profit / sum('revenue')) * 100 : 0,
     inventoryCost: unsold.reduce((n, i) => n + i.cost, 0),
+    inventoryUnknownCosts: unsold.filter((i) => historyInventoryCostUnknown(w, i.id)).length,
     inventoryAsking: unsold.reduce((n, i) => n + i.asking, 0),
     pendingPayout: orders.reduce((n, o) => n + payoutOutstanding(w, o), 0),
   };

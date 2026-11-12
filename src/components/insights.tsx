@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { orderPostings, ledgerExportRows } from '@/lib/ledger';
+import { historyCostUnknown, assumedHistoryAcquisition } from '@/lib/cost-knowledge';
 import { useWorkspace } from '@/lib/use-workspace';
 import { metrics, money, laborMs, allocate } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
@@ -28,6 +29,8 @@ export function Insights({
       name: string;
       revenue: number;
       profit: number;
+      profitKnown: boolean;
+      datedUnits: number;
       units: number;
       cogs: number;
       fees: number;
@@ -50,6 +53,8 @@ export function Insights({
       name,
       revenue: 0,
       profit: 0,
+      profitKnown: true,
+      datedUnits: 0,
       units: 0,
       cogs: 0,
       fees: 0,
@@ -59,12 +64,15 @@ export function Insights({
     };
     r.revenue += line.revenue;
     r.profit += line.revenue - line.cogs - line.direct;
+    if (historyCostUnknown(w, line.orderId, line.itemId) && line.units !== 0) r.profitKnown = false;
     r.cogs += line.cogs;
     r.units += line.units;
     r.fees += line.fees;
     if (line.id === order.id && line.units > 0 && order.type === 'Sale') {
-      if (item)
+      if (item && !assumedHistoryAcquisition(w, item.id)) {
         r.days += Math.max(0, (Date.parse(order.date) - Date.parse(item.purchasedAt)) / 86400000);
+        r.datedUnits++;
+      }
       r.salesUnits++;
       r.merchandise +=
         line.gross -
@@ -80,7 +88,12 @@ export function Insights({
     (e) => +new Date(e.date) >= range[0] && +new Date(e.date) <= range[1],
   );
   const cashPurchases = w.items
-    .filter((i) => +new Date(i.purchasedAt) >= range[0] && +new Date(i.purchasedAt) <= range[1])
+    .filter(
+      (i) =>
+        !assumedHistoryAcquisition(w, i.id) &&
+        +new Date(i.purchasedAt) >= range[0] &&
+        +new Date(i.purchasedAt) <= range[1],
+    )
     .reduce((n, i) => n + i.cost, 0);
   return (
     <>
@@ -112,10 +125,11 @@ export function Insights({
                           from: new Date(range[0]).toISOString(),
                           to: new Date(range[1]).toISOString(),
                           revenue: m.revenue / 100,
-                          cogs: m.cogs / 100,
+                          cogs: m.profitKnown ? m.cogs / 100 : '',
+                          unknown_purchase_costs: m.unknownCosts,
                           direct_costs: m.direct / 100,
                           operating_expenses: m.expenses / 100,
-                          net_operating_profit: m.profit / 100,
+                          net_operating_profit: m.profitKnown ? m.profit / 100 : '',
                           hours: m.hours,
                           hourly: m.hourly === null ? '' : m.hourly / 100,
                         },
@@ -132,21 +146,31 @@ export function Insights({
           </Button>
         </div>
       </div>
+      {!m.profitKnown && (
+        <p className="error-box">
+          {m.unknownCosts} purchase costs are unknown. Profit, margin, ROI and profit charts are
+          incomplete; revenue and recorded fees remain available.
+        </p>
+      )}
       {tab === 'Overview' ? (
         <>
           <div className="metric-grid">
             <Metric
               label="Operating profit"
               tone="profit"
-              value={money(m.profit)}
-              note={`${m.margin.toFixed(1)}% margin`}
-              positive={m.profit > 0}
+              value={m.profitKnown ? money(m.profit) : '—'}
+              note={
+                m.profitKnown
+                  ? `${m.margin.toFixed(1)}% margin`
+                  : `${m.unknownCosts} purchase costs unknown`
+              }
+              positive={m.profitKnown && m.profit > 0}
             />
             <Metric
               label="Average profit / sold item"
               tone="profit"
               value={
-                m.sold
+                m.sold && m.profitKnown
                   ? money(
                       postings
                         .filter((p) => w.orders.find((o) => o.id === p.orderId)?.type === 'Sale')
@@ -160,8 +184,12 @@ export function Insights({
             <Metric
               label="Capital in inventory"
               tone="cost"
-              value={money(m.inventoryCost)}
-              note="Current unsold item purchase costs"
+              value={m.inventoryUnknownCosts ? '—' : money(m.inventoryCost)}
+              note={
+                m.inventoryUnknownCosts
+                  ? `${m.inventoryUnknownCosts} purchase costs unknown`
+                  : 'Current unsold item purchase costs'
+              }
             />
           </div>
           <section className="card">
@@ -183,7 +211,11 @@ export function Insights({
             </div>
             {rows.length ? (
               <>
-                <BreakdownChart data={rows.map((r) => ({ name: r.name, value: r.profit / 100 }))} />
+                <BreakdownChart
+                  data={rows
+                    .filter((r) => r.profitKnown)
+                    .map((r) => ({ name: r.name, value: r.profit / 100 }))}
+                />
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -206,13 +238,17 @@ export function Insights({
                           </td>
                           <td>{money(r.revenue)}</td>
                           <td className={r.profit >= 0 ? 'positive' : 'negative'}>
-                            {money(r.profit)}
+                            {r.profitKnown ? money(r.profit) : 'Unknown cost'}
                           </td>
                           <td>{r.units}</td>
                           <td>{r.salesUnits ? money(r.merchandise / r.salesUnits) : '—'}</td>
                           <td>{money(r.fees)}</td>
-                          <td>{r.salesUnits ? (r.days / r.salesUnits).toFixed(1) : '—'}</td>
-                          <td>{r.cogs > 0 ? `${((r.profit / r.cogs) * 100).toFixed(0)}%` : '—'}</td>
+                          <td>{r.datedUnits ? (r.days / r.datedUnits).toFixed(1) : '—'}</td>
+                          <td>
+                            {r.profitKnown && r.cogs > 0
+                              ? `${((r.profit / r.cogs) * 100).toFixed(0)}%`
+                              : '—'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -280,12 +316,16 @@ export function Insights({
               </div>
               <div data-metric="cost">
                 <dt>Cost of goods sold</dt>
-                <dd>− {money(m.cogs)}</dd>
+                <dd>
+                  {m.profitKnown
+                    ? `− ${money(m.cogs)}`
+                    : `${money(m.cogs)} known · ${m.unknownCosts} unknown`}
+                </dd>
               </div>
               <div className="statement-subtotal" data-metric="profit">
                 <dt>Gross profit</dt>
                 <dd className={m.revenue - m.cogs < 0 ? 'negative' : ''}>
-                  {money(m.revenue - m.cogs)}
+                  {m.profitKnown ? money(m.revenue - m.cogs) : '—'}
                 </dd>
               </div>
               <div data-metric="cost">
@@ -298,7 +338,9 @@ export function Insights({
               </div>
               <div className="statement-total" data-metric="profit">
                 <dt>Net operating profit</dt>
-                <dd className={m.profit < 0 ? 'negative' : ''}>{money(m.profit)}</dd>
+                <dd className={m.profit < 0 ? 'negative' : ''}>
+                  {m.profitKnown ? money(m.profit) : '—'}
+                </dd>
               </div>
             </dl>
             <p className="hint">
@@ -321,11 +363,18 @@ export function Insights({
               </div>
               <div>
                 <dt>Inventory acquired at cost</dt>
-                <dd>{money(cashPurchases)}</dd>
+                <dd>
+                  {money(cashPurchases)}
+                  {w.items.some((i) => assumedHistoryAcquisition(w, i.id)) && (
+                    <small>Historical items with unknown purchase dates are excluded.</small>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>Unsold inventory at cost (current)</dt>
-                <dd>{money(m.inventoryCost)}</dd>
+                <dd>
+                  {m.inventoryUnknownCosts ? 'Unknown purchase costs' : money(m.inventoryCost)}
+                </dd>
               </div>
               <div>
                 <dt>Unsold inventory asking value</dt>
@@ -387,9 +436,15 @@ export function Insights({
                           {w.items.find((item) => item.id === p.itemId)?.sku || 'No physical item'}
                         </td>
                         <td>{money(p.revenue)}</td>
-                        <td>{money(p.cogs)}</td>
+                        <td>
+                          {historyCostUnknown(w, p.orderId, p.itemId) ? 'Unknown' : money(p.cogs)}
+                        </td>
                         <td>{money(p.direct)}</td>
-                        <td>{money(p.revenue - p.cogs - p.direct)}</td>
+                        <td>
+                          {historyCostUnknown(w, p.orderId, p.itemId)
+                            ? 'Unknown cost'
+                            : money(p.revenue - p.cogs - p.direct)}
+                        </td>
                       </tr>
                     ))}
                 </tbody>

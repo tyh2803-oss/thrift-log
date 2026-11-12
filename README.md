@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Sale history imports:** [CSV and PDF guide](docs/SALE_HISTORY_IMPORTS.md). Sales CSVs require only item name, actual price, sale date and seller fees; select the marketplace and optionally include purchase cost. Native Depop bundles and assistant PDF/CSV review use the existing atomic approval flow. Unknown costs remain visibly incomplete, distinct from confirmed zero.
+
 A private reselling workspace built with Next.js App Router, TypeScript, Tailwind, shadcn-style Radix components, Lucide, Recharts, and Supabase/PostgreSQL.
 
 The [visual system](docs/VISUAL_SYSTEM.md) uses functional financial/status colors and accessible light/dark controls. The floating timer widget is removed; timers are started through Activity or Quick add and managed inline in Activity.
@@ -58,15 +60,16 @@ The cloud environment's restricted network policy must allow your exact Supabase
 
 ## Imports and exports
 
-Use the CSV templates in the import dialog. Pick Inventory, Sales, Listings, or Expenses; preview the file and map columns before saving. Validation errors prevent the entire batch from committing. Maximum file size is 3 MB, 5,000 input rows, and 999 new records per batch.
+Use the CSV templates in the import dialog. Pick Inventory, Sales, Listings, or Expenses; preview and map columns before saving. The standalone importer accepts files under 3 MB. Sales use a maximum of 300 physical item rows; the other import types retain their 5,000-row input and 999-new-record limits.
 
 - Inventory requires a unique SKU, title, and explicit purchase cost (`0` is allowed for free inventory).
-- Sales require stable `order_id`, exact SKU, and final per-item `price`. Marketplace defaults to Whatnot when unmapped. Repeated marketplace/order IDs group multiple physical items into one order. Each fee/shipping/discount/refund column is **per row**, not a repeated order total. Split shared totals first with an exact-cent allocation.
-- The same marketplace/order ID is skipped on a later overlapping report. A changed report does **not** silently overwrite an earlier import: edit the existing order for corrections. Missing/ambiguous SKUs require explicit inventory mapping; no fuzzy title matching or invented cost basis.
+- Sales require only item name, actual price, sale date and seller fees. Purchase cost, order ID, SKU and other amounts are optional. Select the marketplace or use its column. The downloaded Sales template contains the four core columns plus optional purchase cost.
+- Native Depop exports preserve verified bundles and count shared seller charges once. Generic repeated marketplace/order IDs group physical pieces; financial columns are per row, so allocate any shared totals before importing. Existing optional packaging and show-ID mappings remain supported. See [the sale history guide](docs/SALE_HISTORY_IMPORTS.md).
+- Exact identifiers link existing inventory; plausible matches require an explicit decision. Reimports and completed physical sales are checked for duplicates. Unknown costs stay unknown, distinct from confirmed zero. Ready records can be approved together while unresolved drafts remain pending; each approval is atomic.
 - Listings require stable marketplace/listing IDs and a known SKU. Expenses require a stable UUID `expense_id`.
-- Dates should be ISO 8601 with an explicit offset; date-only strings are interpreted as UTC. Monetary import amounts are decimal dollars with up to two decimal places. Internally they become integer cents.
-- Original CSV content, column mapping, record IDs, filename, and import time are retained in private `imports` storage (or separate demo storage) for audit. They are not sent to a marketplace.
-- Official Whatnot show/weekly/ledger formats have not been verified. Mapped import is operational; automatic official-report detection and ledger-specific reconciliation remain pending.
+- Sales dates use the workspace reporting timezone for date-only values; ambiguous slash dates require a format choice. Other legacy import types interpret date-only strings as UTC. Monetary values are decimal dollars with up to two decimal places, stored as integer cents.
+- Sales retain safe extracted facts, source hashes and approval decisions in private receipts; buyer/contact columns and original binaries are not retained. Other CSV import types retain their original content and mappings. No import updates an external marketplace.
+- Official Whatnot show/weekly/ledger formats have not been verified. Automatic official-report detection and ledger-specific reconciliation remain pending.
 
 Exports are on the relevant section. Financial and order-level amounts are not a bank ledger. See [calculation definitions](docs/CALCULATIONS.md) and [integration limitations](docs/INTEGRATIONS.md).
 

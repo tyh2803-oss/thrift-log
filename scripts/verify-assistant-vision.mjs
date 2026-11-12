@@ -286,7 +286,7 @@ try {
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog');
   await dialog
-    .getByLabel('Screenshot files')
+    .getByLabel('Import files')
     .setInputFiles([
       output + '/completed-sale.png',
       output + '/missing-costs.png',

@@ -13,7 +13,7 @@ test('assistant attachments, private analysis boundary, and responsive chat', as
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Your Thrift Log assistant' })).toBeVisible();
-  await dialog.getByLabel('Screenshot files').setInputFiles(image);
+  await dialog.getByLabel('Import files').setInputFiles(image);
   await expect(dialog.getByRole('button', { name: 'Remove sale.png' })).toBeVisible();
   await dialog.getByLabel('Message assistant').fill('Log this sale.');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
@@ -35,7 +35,7 @@ test('assistant attachments, private analysis boundary, and responsive chat', as
     .png()
     .toBuffer();
   await dialog
-    .getByLabel('Screenshot files')
+    .getByLabel('Import files')
     .setInputFiles({ name: 'readable-detail.png', mimeType: 'image/png', buffer: large });
   const preview = dialog.getByRole('img', { name: 'readable-detail.png', exact: true });
   await expect(preview).toBeVisible();
@@ -81,7 +81,7 @@ test('assistant draft corrections, conflict recovery, approval, and reload witho
     animations: 'disabled',
     path: `test-results/assistant-review-${page.viewportSize()!.width}.png`,
   });
-  await dialog.getByText('Message assistant / add screenshots', { exact: true }).click();
+  await dialog.getByText('Message assistant / add files', { exact: true }).click();
   await dialog.getByLabel('Message assistant').fill('The first item sold for $35.');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(dialog.getByText('Net profit: $16.00', { exact: true })).toBeVisible();
@@ -480,7 +480,7 @@ test('batch trash and confirmed Clear All discard only drafts and partial approv
   expect(current.b.revision).toBe(current.w.revision);
   expect(current.w.items).toHaveLength(1);
   expect(current.w.listings[0].price).toBe(4800);
-  await dialog.getByText('Message assistant / add screenshots', { exact: true }).click();
+  await dialog.getByText('Message assistant / add files', { exact: true }).click();
   await dialog.getByLabel('Message assistant').fill('The first item cost me $8.');
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(rows.nth(0).getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('8');

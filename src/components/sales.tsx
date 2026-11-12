@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Plus, Radio, ArrowUpRight, Download, Printer, CheckCircle2 } from 'lucide-react';
+import { historyInventoryCostUnknown } from '@/lib/cost-knowledge';
 import { currentOrderTotals, payoutStatus } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, metrics, duration } from '@/lib/finance';
@@ -64,10 +65,11 @@ export function Sales({
           date: o.date,
           merchandise_gross: t.gross / 100,
           lifetime_revenue: t.revenue / 100,
-          lifetime_cogs: t.cogs / 100,
+          lifetime_cogs: t.profitKnown ? t.cogs / 100 : '',
+          purchase_cost_status: t.profitKnown ? 'Recorded' : 'Unknown',
           lifetime_fees: t.fees / 100,
           lifetime_direct_costs: t.direct / 100,
-          lifetime_profit: t.profit / 100,
+          lifetime_profit: t.profitKnown ? t.profit / 100 : '',
           status: o.status,
           fulfillment: o.fulfillment,
           payout: payoutStatus(w, o),
@@ -209,7 +211,9 @@ export function Sales({
                             : 'negative number'
                         }
                       >
-                        {money(currentOrderTotals(w, o).profit)}
+                        {currentOrderTotals(w, o).profitKnown
+                          ? money(currentOrderTotals(w, o).profit)
+                          : 'Unknown cost'}
                       </td>
                       <td>
                         <Status value={o.fulfillment} />
@@ -260,14 +264,17 @@ export function Sales({
                   <div>
                     <span>{s.status === 'Ended' ? 'Realized profit' : 'Lineup asking value'}</span>
                     <strong>
-                      {money(
-                        s.status === 'Ended'
-                          ? m.profit
-                          : s.lineup.reduce(
-                              (n, l) => n + (w.items.find((i) => i.id === l.itemId)?.asking || 0),
-                              0,
-                            ),
-                      )}
+                      {s.status === 'Ended' && !m.profitKnown
+                        ? 'Profit incomplete'
+                        : money(
+                            s.status === 'Ended'
+                              ? m.profit
+                              : s.lineup.reduce(
+                                  (n, l) =>
+                                    n + (w.items.find((i) => i.id === l.itemId)?.asking || 0),
+                                  0,
+                                ),
+                          )}
                     </strong>
                   </div>
                   <ArrowUpRight size={22} />
@@ -308,9 +315,13 @@ export function Sales({
               <Metric label="Revenue" value={money(sm.revenue)} note={`${sm.sold} items sold`} />
               <Metric
                 label="Realized profit"
-                value={money(sm.profit)}
-                note="After direct & event costs"
-                positive={sm.profit > 0}
+                value={sm.profitKnown ? money(sm.profit) : '—'}
+                note={
+                  sm.profitKnown
+                    ? 'After direct & event costs'
+                    : `${sm.unknownCosts} purchase costs unknown`
+                }
+                positive={sm.profitKnown && sm.profit > 0}
               />
               <Metric
                 label="Labor earnings"
@@ -320,7 +331,7 @@ export function Sales({
               <Metric
                 label="Livestream earnings"
                 value={
-                  show.durationMinutes
+                  show.durationMinutes && sm.profitKnown
                     ? `${money(sm.profit / (show.durationMinutes / 60))}/hr`
                     : '—'
                 }
@@ -393,7 +404,8 @@ export function Sales({
                     <div className="grow">
                       <strong>{i.title}</strong>
                       <small>
-                        {i.sku} · {money(i.cost)} cost · {money(line.startingBid)} starting bid
+                        {i.sku} · {historyInventoryCostUnknown(w, i.id) ? 'Unknown' : money(i.cost)}{' '}
+                        cost · {money(line.startingBid)} starting bid
                       </small>
                     </div>
                     <Status value={i.status} />
@@ -409,7 +421,7 @@ export function Sales({
               <dl>
                 <div>
                   <dt>Cost of goods sold</dt>
-                  <dd>{money(sm.cogs)}</dd>
+                  <dd>{sm.profitKnown ? money(sm.cogs) : 'Unknown purchase costs'}</dd>
                 </div>
                 <div>
                   <dt>Direct selling costs</dt>

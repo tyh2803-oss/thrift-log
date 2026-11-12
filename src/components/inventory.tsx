@@ -18,6 +18,7 @@ import { Status, ItemPhoto, Empty } from './shared';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 import { listingMetrics } from '@/lib/listing-metrics';
+import { assumedHistoryAcquisition, historyInventoryCostUnknown } from '@/lib/cost-knowledge';
 import { PhotoGallery } from './photo-gallery';
 import { PipelineMoveDialog } from './pipeline-move-dialog';
 import { OrderFulfillment } from './order-fulfillment';
@@ -93,6 +94,9 @@ export function Inventory({
           ? +new Date(a.purchasedAt) - +new Date(b.purchasedAt)
           : +new Date(b.createdAt) - +new Date(a.createdAt),
     );
+  const unknownViewCosts = items.filter(
+    (i) => i.status !== 'Sold' && i.status !== 'Archived' && historyInventoryCostUnknown(w, i.id),
+  ).length;
   const item = w.items.find((i) => i.id === detail);
   const listings = w.listings.filter((l) => {
     const item = w.items.find((i) => i.id === l.itemId);
@@ -105,6 +109,7 @@ export function Inventory({
   });
   async function updateCost(i: Item, value: string) {
     try {
+      if (!value.trim() && historyInventoryCostUnknown(w, i.id)) return;
       const cost = parseMoney(value);
       if (cost !== i.cost && (await dispatch({ type: 'item', value: { ...i, cost } })))
         notify('Purchase cost updated. Historical sale cost basis is unchanged.');
@@ -136,9 +141,12 @@ export function Inventory({
                   brand: i.brand,
                   category: i.category,
                   size: i.size,
-                  cost: (i.cost / 100).toFixed(2),
+                  cost: historyInventoryCostUnknown(w, i.id) ? '' : (i.cost / 100).toFixed(2),
+                  purchase_cost_status: historyInventoryCostUnknown(w, i.id)
+                    ? 'Unknown'
+                    : 'Recorded',
                   asking: (i.asking / 100).toFixed(2),
-                  purchase_date: i.purchasedAt,
+                  purchase_date: assumedHistoryAcquisition(w, i.id) ? '' : i.purchasedAt,
                   source: i.source,
                   status: i.status,
                 })),
@@ -224,7 +232,7 @@ export function Inventory({
                     .reduce((n, i) => n + i.cost, 0),
                 )}
               </strong>{' '}
-              at cost
+              {unknownViewCosts ? `known cost · ${unknownViewCosts} unknown` : 'at cost'}
             </span>
             <span>
               <strong>
@@ -368,7 +376,13 @@ export function Inventory({
                           {i.sku} · {i.size}
                         </p>
                         <strong>{money(i.asking)}</strong>
-                        <span className="muted"> · {money(i.cost)} cost</span>
+                        <span className="muted">
+                          {' '}
+                          ·{' '}
+                          {historyInventoryCostUnknown(w, i.id)
+                            ? 'Cost unknown'
+                            : `${money(i.cost)} cost`}
+                        </span>
                       </div>
                     </button>
                     <Button size="sm" variant="outline" onClick={() => changeStatus(i)}>
@@ -466,7 +480,12 @@ export function Inventory({
                               className="cost-input"
                               aria-label={`Cost for ${i.sku}`}
                               key={`${i.id}-${i.cost}`}
-                              defaultValue={(i.cost / 100).toFixed(2)}
+                              defaultValue={
+                                historyInventoryCostUnknown(w, i.id)
+                                  ? ''
+                                  : (i.cost / 100).toFixed(2)
+                              }
+                              placeholder="Unknown"
                               type="number"
                               step="0.01"
                               min="0"
@@ -477,7 +496,9 @@ export function Inventory({
                             {money(i.asking)}
                           </td>
                           <td data-label="Age">
-                            <span className={age > 90 ? 'negative' : 'muted'}>{age}d</span>
+                            <span className={age > 90 ? 'negative' : 'muted'}>
+                              {assumedHistoryAcquisition(w, i.id) ? 'Unknown' : `${age}d`}
+                            </span>
                           </td>
                           <td>
                             <div className="market-dots">
@@ -596,7 +617,7 @@ export function Inventory({
               <dl>
                 <div>
                   <dt>Purchase cost</dt>
-                  <dd>{money(item.cost)}</dd>
+                  <dd>{historyInventoryCostUnknown(w, item.id) ? 'Unknown' : money(item.cost)}</dd>
                 </div>
                 <div>
                   <dt>Asking price</dt>
@@ -700,7 +721,11 @@ export function Inventory({
                   <span>
                     {o.marketplace} · {new Date(o.date).toLocaleDateString()}
                   </span>
-                  <strong>{money(currentOrderTotals(w, o).profit)} profit</strong>
+                  <strong>
+                    {currentOrderTotals(w, o).profitKnown
+                      ? `${money(currentOrderTotals(w, o).profit)} profit`
+                      : 'Unknown cost · profit incomplete'}
+                  </strong>
                   <Status value={o.status} />
                 </button>
               ))}

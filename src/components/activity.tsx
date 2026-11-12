@@ -254,6 +254,10 @@ export function Activity({
         <div className="show-grid">
           {w.trips.map((trip) => {
             const items = w.items.filter((i) => i.tripId === trip.id);
+            const profitKnown = w.orders
+              .flatMap((o) => currentLineProfits(w, o))
+              .filter((l) => items.some((i) => i.id === l.itemId))
+              .every((l) => l.profitKnown);
             const profit =
               w.orders
                 .flatMap((o) => currentLineProfits(w, o))
@@ -292,12 +296,12 @@ export function Activity({
                   <div>
                     <span>Realized profit</span>
                     <strong className={profit >= 0 ? 'positive' : 'negative'}>
-                      {money(profit)}
+                      {profitKnown ? money(profit) : 'Unknown costs'}
                     </strong>
                   </div>
                   <div>
                     <span>Batch profit / labor hour</span>
-                    <strong>{hours ? money(profit / hours) : '—'}</strong>
+                    <strong>{hours && profitKnown ? money(profit / hours) : '—'}</strong>
                   </div>
                 </div>
                 <p className="hint">

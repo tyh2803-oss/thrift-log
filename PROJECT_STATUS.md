@@ -1,5 +1,19 @@
 # Thrift Log project status
 
+## Optional-column sale history imports — November 12, 2026
+
+Prepared on `feat/bulk-sale-history-imports` from latest main `a7998b497e3f39a07af0dc2383dd50d1321fb01a`. Original unpublished work remains preserved in the separate original checkout.
+
+- Sales CSVs require only item name, actual price, sale date and seller fees. Purchase cost, SKU, order ID, processing/shipping amounts, packaging and existing-show IDs are optional. The simple downloadable template includes the four core columns plus optional purchase cost. Marketplace/date-format selectors and editable review support mapping and exceptions.
+- The provided Depop export was validated locally as **44 physical item rows / 40 sales / one five-item bundle** without importing it into a live workspace. Shared charges count once. Buyer platform fees/tax are excluded; buyer shipping is excluded unless explicitly mapped as money received by the seller. Buyer/contact/address fields are not retained. Only synthetic fixtures are committed.
+- Assistant attachments now accept PDF and UTF-8 CSV alongside existing screenshots. Recognizable CSVs parse without AI; unfamiliar CSVs and native PDFs use bounded strict Responses extraction, owner-isolated caching and the shared analysis budget. Incomplete extracts fail closed. The screenshot wire contract, image processing and photo approval remain preserved.
+- Existing exact inventory identifiers are reused; plausible matches need a deliberate decision. Server replanning, tenant checks, revision conflicts, duplicate guards, durable retry receipts and the existing atomic SQL transaction remain in place. Optional costs never silently become confirmed free inventory. Unknown cost/acquisition-date proofs persist with the approval receipt, and profit/ROI/hourly values or acquisition-timed totals do not invent missing history. Existing financial records remain unchanged.
+- Historical posted cost basis remains immutable. Current inventory edits do not backfill a previously posted unknown historical sale cost; enter available costs during review. A dedicated audited historical cost-backfill workflow is outside this feature.
+- Typecheck, lint, production build and **288 unit/database/API tests passed** (two opt-in cases skipped in the normal run). The actual supplied CSV also passed its separate opt-in local check. The complete 86-case main browser suite passed; all 10 focused desktop/mobile import checks then passed against the final build, including template download and optional-show financial guards. Four authenticated-import, four registration and four tester-setup browser checks also passed. Authenticated checks use loopback service doubles; local database tests execute the real saved SQL/RLS, including preservation of existing owner rows and tenant rejection.
+- **No database migration, Auth setting, Storage change, hosted business write or production deployment is included.** Production Supabase persistence, paid live PDF extraction and physical iPhone/Safari remain unverified. Mobile/desktop Chromium views are checked and screenshots inspected. Release requires approval under the user's standing instruction for significant financial changes; no main push or deployment has occurred.
+
+See [SALE_HISTORY_IMPORTS.md](docs/SALE_HISTORY_IMPORTS.md) for exact requirements, limits, provenance and verification details.
+
 ## Inventory stages and potential-profit display — November 12, 2026
 
 Prepared on `feat/inventory-stage-management` from main `d8efecfe3e607e61b6cf4f2b97e7ea64458add72`.

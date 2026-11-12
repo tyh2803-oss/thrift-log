@@ -979,3 +979,86 @@ input[type='checkbox']:disabled {
     margin: 0;
   }
 }
+
+/* Historical CSV/PDF review shares the app's forms and semantic colors. */
+.history-review,
+.csv-sales-review {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.history-review-summary p,
+.history-card small {
+  color: var(--muted);
+}
+.history-card {
+  padding: 16px;
+  min-width: 0;
+}
+.history-card .card-heading {
+  padding: 0 0 12px;
+}
+.history-item {
+  padding-block: 12px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.history-review input,
+.history-review select,
+.csv-sales-review select {
+  min-height: 44px;
+  font-size: 16px;
+  min-width: 0;
+}
+.history-approval-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.history-review .warning-text {
+  color: var(--warning);
+}
+.assistant-document {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+}
+.assistant-document small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.assistant-thumbnails:has(.assistant-document) {
+  flex-wrap: wrap;
+}
+.assistant-thumbnails > div:has(.assistant-document) {
+  width: auto;
+  height: auto;
+  padding-right: 22px;
+}
+@media (max-width: 700px) {
+  .history-review .form-grid,
+  .csv-sales-review .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .history-approval-bar {
+    position: static;
+  }
+  .history-approval-bar .btn {
+    flex: 1 1 130px;
+  }
+}

@@ -73,31 +73,72 @@ export function planImport(
   );
   const seen = new Set<string>();
   if (kind === 'Sales') {
+    const saleLine = (r: Record<string, string>) => {
+      if (!r.price?.trim()) throw new Error('Sale price is required on every row.');
+      const item = w.items.find((i) => i.sku === r.sku);
+      if (!item)
+        throw new Error(`Unmatched SKU “${r.sku}”. Add or map the physical inventory item first.`);
+      return { itemId: item.id, price: cents(r.price), costBasis: item.cost };
+    };
     const groups = new Map<string, Record<string, string>[]>();
-    normalized.forEach((r, i) => {
-      if (!r.order_id) {
-        errors.push(`Row ${i + 2}: order_id is required.`);
+    normalized.forEach((raw, i) => {
+      const r: Record<string, string> = {
+        ...raw,
+        order_id: raw.order_id?.trim() || '',
+        marketplace: raw.marketplace?.trim() || 'Whatnot',
+      };
+      if (r.order_id) {
+        const key = `${r.marketplace}:${r.order_id}`;
+        groups.set(key, [...(groups.get(key) || []), r]);
         return;
       }
-      const key = `${r.marketplace || 'Whatnot'}:${r.order_id}`;
-      groups.set(key, [...(groups.get(key) || []), r]);
+      try {
+        const line = saleLine(r);
+        // Each ID-less row is a separate sale. Use canonical source values, not the
+        // generated UUID, row position, current time or mutable acquisition cost.
+        // A missing date stays null in this key even though the saved date defaults to today.
+        const key = `csv-sale-row-v1:${JSON.stringify([
+          r.marketplace,
+          line.itemId,
+          r.date?.trim() ? date(r.date) : null,
+          line.price,
+          r.show_id?.trim() || null,
+          ...[
+            'discount',
+            'shipping_collected',
+            'fees',
+            'processing',
+            'shipping',
+            'packaging',
+            'refund',
+          ].map((field) => cents(r[field])),
+        ])}`;
+        if (seen.has(key)) {
+          duplicates++;
+          return;
+        }
+        seen.add(key);
+        groups.set(key, [r]);
+      } catch (e) {
+        errors.push(`Row ${i + 2}: ${e instanceof Error ? e.message : 'Invalid row'}`);
+      }
     });
     for (const [key, group] of groups)
       try {
-        if (w.orders.some((o) => `${o.marketplace}:${o.externalId}` === key)) {
+        const first = group[0];
+        if (
+          w.orders.some(
+            (o) =>
+              o.importKey === key ||
+              (first.order_id &&
+                o.marketplace === first.marketplace &&
+                o.externalId === first.order_id),
+          )
+        ) {
           duplicates++;
           continue;
         }
-        const first = group[0];
-        const lines = group.map((r) => {
-          if (!r.price?.trim()) throw new Error('Sale price is required on every row.');
-          const item = w.items.find((i) => i.sku === r.sku);
-          if (!item)
-            throw new Error(
-              `Unmatched SKU “${r.sku}”. Add or map the physical inventory item first.`,
-            );
-          return { itemId: item.id, price: cents(r.price), costBasis: item.cost };
-        });
+        const lines = group.map(saleLine);
         // Monetary fee columns are per line; sum once per row, never duplicate an order-level total.
         const sum = (k: string) => group.reduce((n, r) => n + cents(r[k]), 0);
         commands.push({

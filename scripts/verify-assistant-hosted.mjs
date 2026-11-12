@@ -231,7 +231,7 @@ try {
     window.__thriftAssistantFixtures = data;
   }, records);
   await dialog
-    .getByLabel('Screenshot files')
+    .getByLabel('Import files')
     .setInputFiles({ name: 'fixture-listings.png', mimeType: 'image/png', buffer: listingImage });
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   const second = dialog.locator('.assistant-extraction').nth(1);
@@ -281,7 +281,7 @@ try {
     window.__thriftAssistantFixtures = data;
   }, records);
   await dialog
-    .getByLabel('Screenshot files')
+    .getByLabel('Import files')
     .setInputFiles({ name: 'fixture-sale.png', mimeType: 'image/png', buffer: saleImage });
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await dialog.getByText('Net profit: $26.00', { exact: true }).waitFor();
@@ -349,7 +349,7 @@ try {
       }),
     ],
   );
-  await dialog.getByLabel('Screenshot files').setInputFiles({
+  await dialog.getByLabel('Import files').setInputFiles({
     name: 'fixture-correction.png',
     mimeType: 'image/png',
     buffer: await png('#00ff00'),
@@ -409,7 +409,7 @@ try {
       }),
     ],
   );
-  await dialog.getByLabel('Screenshot files').setInputFiles({
+  await dialog.getByLabel('Import files').setInputFiles({
     name: 'fixture-delivered.png',
     mimeType: 'image/png',
     buffer: await png('#ffaa00'),
@@ -461,7 +461,7 @@ try {
         }),
       ],
     );
-    await dialog.getByLabel('Screenshot files').setInputFiles({
+    await dialog.getByLabel('Import files').setInputFiles({
       name: 'fixture-return.png',
       mimeType: 'image/png',
       buffer: await png('#abc001'),
@@ -504,7 +504,7 @@ try {
         }),
       ],
     );
-    await dialog.getByLabel('Screenshot files').setInputFiles({
+    await dialog.getByLabel('Import files').setInputFiles({
       name: 'fixture-cancel-sale.png',
       mimeType: 'image/png',
       buffer: await png('#abc002'),
@@ -537,7 +537,7 @@ try {
         }),
       ],
     );
-    await dialog.getByLabel('Screenshot files').setInputFiles({
+    await dialog.getByLabel('Import files').setInputFiles({
       name: 'fixture-cancel.png',
       mimeType: 'image/png',
       buffer: await png('#abc003'),
@@ -564,7 +564,7 @@ try {
     window.__thriftAssistantFixtures = data;
   }, records);
   await dialog
-    .getByLabel('Screenshot files')
+    .getByLabel('Import files')
     .setInputFiles({ name: 'fixture-sale.png', mimeType: 'image/png', buffer: saleImage });
   await dialog.getByRole('button', { name: 'Send', exact: true }).click();
   await dialog.getByRole('button', { name: 'Approve All Ready (0)', exact: true }).waitFor();

@@ -6,6 +6,7 @@ import { readCsv, planImport, importColumns, downloadCsv, type ImportKind } from
 import { applyCommand } from '@/lib/commands';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
+import { CsvSalesReview } from './csv-sales-review';
 export function Importer({ onClose }: { onClose: () => void }) {
   const { w, dispatch, saving, notify, error: workspaceError } = useWorkspace();
   const [kind, setKind] = useState<ImportKind>('Sales');
@@ -88,6 +89,7 @@ export function Importer({ onClose }: { onClose: () => void }) {
             <span>Import type</span>
             <select
               value={kind}
+              disabled={saving}
               onChange={(e) => {
                 setKind(e.target.value as ImportKind);
                 setRows([]);
@@ -104,7 +106,12 @@ export function Importer({ onClose }: { onClose: () => void }) {
               variant="outline"
               onClick={() =>
                 downloadCsv(`${kind.toLowerCase()}-template`, [
-                  Object.fromEntries(importColumns[kind].map((c) => [c, ''])),
+                  Object.fromEntries(
+                    (kind === 'Sales'
+                      ? ['item_name', 'price', 'date', 'fees', 'purchase_cost']
+                      : importColumns[kind]
+                    ).map((c) => [c, '']),
+                  ),
                 ])
               }
             >
@@ -119,6 +126,7 @@ export function Importer({ onClose }: { onClose: () => void }) {
           <span>Up to 3 MB · Data stays in your workspace</span>
           <input
             type="file"
+            disabled={saving}
             accept=".csv,text/csv"
             onChange={(e) => void read(e.target.files?.[0])}
           />
@@ -134,7 +142,17 @@ export function Importer({ onClose }: { onClose: () => void }) {
             {result}
           </div>
         )}
-        {!!rows.length && (
+        {!!rows.length && kind === 'Sales' && (
+          <CsvSalesReview
+            key={`${filename}:${rawCsv}`}
+            text={rawCsv}
+            filename={filename}
+            rows={rows}
+            columns={columns}
+            onClose={onClose}
+          />
+        )}
+        {!!rows.length && kind !== 'Sales' && (
           <>
             <h4>Match your columns</h4>
             <div className="form-grid">
@@ -154,10 +172,9 @@ export function Importer({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             <p className="hint">
-              Sale IDs are order-level identifiers. Repeated IDs form multi-item orders. Fees,
-              shipping, discounts, and refunds must be allocated per row; do not repeat an order
-              total on each line. SKU matching is exact. For official marketplace reports, map only
-              columns with verified equivalent meanings.
+              Fees, shipping, discounts, and refunds must be allocated per row; do not repeat an
+              order total on each line. SKU matching is exact. For official marketplace reports, map
+              only columns with verified equivalent meanings.
             </p>
             <div className="table-wrap">
               <table>
