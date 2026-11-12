@@ -1978,6 +1978,11 @@ dd {
 }
 .login-card .editor-form .btn {
   margin-top: 8px;
+  min-height: 44px;
+}
+.login-card .field input {
+  min-height: 44px;
+  font-size: 16px;
 }
 .setup-note {
   background: var(--light-green);

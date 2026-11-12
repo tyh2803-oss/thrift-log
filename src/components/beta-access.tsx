@@ -67,8 +67,9 @@ export function BetaAccess() {
     <section className="card padded beta-access">
       <h2>Beta testers</h2>
       <p>
-        Authorize an email, then send an invitation for a new Auth account. Existing approved
-        accounts can sign in normally. Every account has a separate workspace.
+        Authorize an email, then ask your friend to choose Create Account on the login page when
+        registration is enabled. Invitations remain optional. Existing approved accounts can sign in
+        normally. Every account has a separate workspace.
       </p>
       <form
         className="editor-form"

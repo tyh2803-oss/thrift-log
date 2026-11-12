@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { configurationStatus, readConfiguration } from '../src/lib/supabase/config.ts';
+import { registrationMode } from '../src/lib/supabase/registration-config.ts';
 // Node >=22.18 strips TypeScript types. No credentials or user records are printed.
 const status = configurationStatus(process.env);
 if (!status.ready) {
@@ -31,6 +32,11 @@ if (!status.ready) {
         data.schemaVersion >= 6 && data.inviteOnlyBeta === true,
       );
       report('Existing owner beta authorization', data.betaOwnerConfigured === true);
+      if (registrationMode() !== 'disabled')
+        report(
+          'Preauthorized registration migration and restricted RPCs',
+          data.schemaVersion >= 7 && data.betaRegistration === true,
+        );
     }
     if (!error && data)
       for (const key of [

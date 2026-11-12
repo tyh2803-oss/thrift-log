@@ -1,5 +1,7 @@
 # Invite-only beta: rollout on the existing projects
 
+For approved testers creating their own accounts without invitation email, use [preauthorized registration](BETA_REGISTRATION.md). It is opt-in, requires the subsequent schema-7 migration, and leaves public Supabase signup disabled. The migration/bootstrap instructions below remain the prerequisites.
+
 This PR contains beta access and its two prerequisite migrations. The larger pending inventory-management and visual-polish changes remain separate. Nothing here automatically applies SQL, merges main, creates accounts, or deploys Production. **Database changes and merging main still require your explicit approval.**
 
 Use the existing Thrift Log Supabase project (`gvwgasebholdawlakwdf`) and Vercel project. A separate testing database is not required for this small rollout: the migration, tenant isolation, revocation and owner-data preservation tests run locally in isolated PostgreSQL/PGlite. No unresolved security issue identified by those checks currently requires another project.
@@ -14,7 +16,7 @@ In your existing Supabase project's SQL Editor, run this read-only check:
 select public.verify_thrift_log();
 ```
 
-Check migration history before running SQL. Schema 4 needs these files in order; schema 5 needs only the second. If schema 6 and beta checks are already present, do not rerun either migration.
+Check migration history before running SQL. Schema 4 needs these files in order; schema 5 needs only the second. If schema 6 or later and beta checks are already present, do not rerun either migration.
 
 1. [`202611100001_pipeline_operational_corrections.sql`](../supabase/migrations/202611100001_pipeline_operational_corrections.sql)
 2. [`202611110001_invite_only_beta.sql`](../supabase/migrations/202611110001_invite_only_beta.sql)
@@ -27,7 +29,7 @@ The small schema-5 prerequisite allows per-item fulfillment metadata to change o
 
 Immediately after the migrations, open [`supabase/bootstrap_beta_owner.sql`](../supabase/bootstrap_beta_owner.sql) in that same SQL Editor. Replace `REPLACE_WITH_OWNER_EMAIL` **in the variable declaration** with the unchanged `OWNER_EMAIL` from Vercel, then run it. No password, new account, new key, or separate database is needed.
 
-The script finds the existing verified Auth UUID, authorizes it, and compares the full owner workspace, revision and all 18 business-table row counts before/after. Any mismatch rolls back the bootstrap. It refuses replacing a different configured owner. Final readiness must show `schemaVersion: 6`, `inviteOnlyBeta: true`, `betaOwnerConfigured: true`, and all existing RLS/private-bucket/RPC checks passing.
+The script finds the existing verified Auth UUID, authorizes it, and compares the full owner workspace, revision and all 18 business-table row counts before/after. Any mismatch rolls back the bootstrap. It refuses replacing a different configured owner. Final readiness must show `schemaVersion` at least 6 (7 with registration), `inviteOnlyBeta: true`, `betaOwnerConfigured: true`, and all existing RLS/private-bucket/RPC checks passing.
 
 **Run the migrations and bootstrap together in a short quiet window.** Schema 6 deliberately blocks private access until the owner is authorized. Do not merge/deploy the new application until the bootstrap succeeds. Existing records are retained if setup stops halfway; completing the bootstrap restores access. Keep the existing backup/recovery option available.
 

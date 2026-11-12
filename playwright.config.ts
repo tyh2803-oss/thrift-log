@@ -30,6 +30,7 @@ export default defineConfig({
       SUPABASE_SERVICE_ROLE_KEY: '',
       OWNER_EMAIL: '',
       BETA_SITE_URL: '',
+      BETA_REGISTRATION_MODE: '',
       OPENAI_API_KEY: '',
     },
     timeout: 120000,

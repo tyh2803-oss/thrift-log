@@ -2,6 +2,8 @@
 
 A private reselling workspace built with Next.js App Router, TypeScript, Tailwind, shadcn-style Radix components, Lucide, Recharts, and Supabase/PostgreSQL.
 
+**Preauthorized registration:** [BETA_REGISTRATION.md](docs/BETA_REGISTRATION.md) adds Create Account for owner-approved tester emails without SMTP. Registration defaults to disabled; schema 7 and an explicit server setting are required. Public Supabase signup and global Auth settings stay unchanged. The guide explains email-ownership/recovery tradeoffs and optional confirmation mode.
+
 **Invite-only beta rollout:** [BETA_ACCESS.md](docs/BETA_ACCESS.md) contains the current deployment steps for the existing Supabase and Vercel projects. This branch adds owner-managed tester access, separate private workspaces and revocation. It requires schema 6 and authorization of the existing owner before deployment; the older setup notes below describe the previous schema-4 checkpoint. Production SQL and merging main require explicit approval. No production migrations have been applied as part of this change.
 
 **Working core application, with a separate fictional demo.** Hosted Supabase configuration, real Auth sessions, inventory persistence and private photo upload/download are verified. Owner password entry, remaining financial UI checks and deployment are documented in [PROJECT_STATUS.md](PROJECT_STATUS.md). Live marketplace synchronization is outstanding. See [the original product specification](docs/PRODUCT_SPEC.md) for the long-term scope.

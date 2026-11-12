@@ -1,6 +1,7 @@
 import { Login } from '@/components/login';
 import { configured, requireUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { registrationMode } from '@/lib/supabase/registration-config';
 export const dynamic = 'force-dynamic';
 export default async function Page({
   searchParams,
@@ -23,5 +24,5 @@ export default async function Page({
     initialError =
       'Your browser could not keep your sign-in session. Allow cookies for this site and try again.';
   }
-  return <Login configured={ready} initialError={initialError} />;
+  return <Login configured={ready} initialError={initialError} registration={registrationMode()} />;
 }
