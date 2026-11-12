@@ -35,6 +35,11 @@ test('public requests cannot reach password setup, tester management or registra
     },
   });
   expect(signup.status()).toBe(400);
+  const disabledRegistration = await request.post('/api/register', {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { email: 'not-registered@example.test', password: 'not-a-real-password' },
+  });
+  expect(disabledRegistration.status()).toBe(503);
   await page.goto(
     '/auth/confirm?type=signup&token_hash=invalid-test-token&next=https://evil.example',
   );

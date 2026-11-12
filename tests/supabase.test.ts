@@ -748,9 +748,26 @@ describe('invite-only beta authorization', () => {
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
     mocks.verifyOtp.mockClear();
     await confirmInvite(
-      new Request('https://thrift.example/auth/confirm?token_hash=test-hash&type=signup'),
+      new Request('https://thrift.example/auth/confirm?token_hash=test-hash&type=email_change'),
     );
     expect(mocks.verifyOtp).not.toHaveBeenCalled();
+  });
+  it('requires a valid signup OTP and current beta membership before opening the workspace', async () => {
+    vi.stubEnv('BETA_SITE_URL', 'https://thrift.example');
+    asTester();
+    mocks.verifyOtp.mockResolvedValue({ data: { user: tester }, error: null });
+    const request = () =>
+      new Request(
+        'https://thrift.example/auth/confirm?token_hash=test-hash&type=signup&next=https://evil.test',
+      );
+    expect((await confirmInvite(request())).headers.get('location')).toBe(
+      'https://thrift.example/',
+    );
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    expect((await confirmInvite(request())).headers.get('location')).toBe(
+      'https://thrift.example/login?error=invite',
+    );
+    expect(mocks.signOut).toHaveBeenCalledWith({ scope: 'local' });
   });
   it('sets only an approved account’s own password and exposes no public registration action', async () => {
     asTester();

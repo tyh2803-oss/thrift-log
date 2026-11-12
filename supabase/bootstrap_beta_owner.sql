@@ -16,7 +16,7 @@ declare
 begin
  if position('@' in expected_owner_email)=0 then raise exception 'Set the owner email in the variable declaration before running this script'; end if;
  checks=public.verify_thrift_log();
- if (checks->>'schemaVersion')::int<>6 or not coalesce((checks->>'inviteOnlyBeta')::boolean,false) then
+ if (checks->>'schemaVersion')::int<6 or not coalesce((checks->>'inviteOnlyBeta')::boolean,false) then
   raise exception 'Apply and verify the two beta prerequisite migrations first';
  end if;
  select id into owner_id from auth.users where lower(email)=lower(trim(expected_owner_email)) and email_confirmed_at is not null;

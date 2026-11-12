@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const query = new URL(request.url).searchParams;
     const hash = query.get('token_hash'),
       type = query.get('type');
-    if (!hash || hash.length > 512 || (type !== 'invite' && type !== 'recovery'))
+    if (!hash || hash.length > 512 || (type !== 'invite' && type !== 'recovery' && type !== 'signup'))
       throw new Error('Invalid invitation');
     const client = await authClient({ writableCookies: true, request });
     const { data, error } = await client.auth.verifyOtp({ token_hash: hash, type });
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       await client.auth.signOut({ scope: 'local' });
       throw error;
     }
-    target = new URL('/set-password', canonical);
+    target = new URL(type === 'signup' ? '/' : '/set-password', canonical);
   } catch {
     /* Fail closed without displaying invitation secrets. */
   }

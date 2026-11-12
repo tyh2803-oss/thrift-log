@@ -1,5 +1,17 @@
 # Thrift Log project status
 
+## Preauthorized account creation — November 11, 2026
+
+Prepared for review on `feat/preauthorized-registration` from merged main `a9a833c`. No production deployment, hosted Auth account creation, production SQL or Auth settings changes were performed.
+
+- Login now offers Create Account. The server checks existing tester authorization, creates only new approved tester accounts, binds their Auth UUID and signs them into their own empty workspace. Existing accounts must prove their current password; pending invitations retain the same setup path/UUID and need their original link or owner-assisted completion. Signup never resets existing credentials or authorizes emails.
+- `BETA_REGISTRATION_MODE` defaults to `disabled`. Opt-in `preauthorized` mode needs no SMTP and does not enable public signup or disable global confirmations. It explicitly confirms only new allowlisted accounts through the Auth Admin API, without proving mailbox ownership. Someone knowing an unused approved email could claim it; verify friends out of band. Without mail, password recovery requires owner assistance. Optional `email` mode supports confirmation later without rewriting registration.
+- Pending schema-7 migration `202611110002_beta_registration.sql` adds private claims, database-backed per-email/client/global attempt budgets, bounded counter growth and service-only RPCs. RLS, photo policies and financial calculations remain unchanged. The existing owner bootstrap now supports schema 7 as well as 6.
+- Passed typecheck, lint, production build, 230 unit/database tests (one opt-in live-image test skipped), all 62 existing browser regressions and four additional desktop/mobile registration browser checks. Actual migrations/registration handlers run against local PostgreSQL/PGlite; Auth service calls use explicit doubles. All 18 owner business tables, including posted financial records, are compared before/after migration and every registration test. A dedicated schema-6 upgrade fixture also preserves all owner/tester Auth UUIDs, password hashes, invitation timestamps, authorization/revocation states, business rows and photo references exactly through migration 7. Registration UI tests use intercepted responses and loopback-only configuration.
+- Hosted registration/email delivery, actual iPhone Safari and live schema readiness remain unverified. Existing unrelated pipeline and visual-polish work stays preserved in the original checkout.
+
+See [BETA_REGISTRATION.md](docs/BETA_REGISTRATION.md) for the approval-gated migration/environment steps and existing-account recovery details. Keep public Supabase signup disabled.
+
 ## Invite-only beta deployment preparation — November 11, 2026
 
 Prepared on `feat/invite-only-beta-rollout` from verified latest main `a211c80df0eac1c795d05bce4c0fc85a32c0f960`. This focused branch preserves main's existing AI import, financial and inventory behavior. Unpublished inventory-management and visual-polish work remains untouched in the original workspace.
