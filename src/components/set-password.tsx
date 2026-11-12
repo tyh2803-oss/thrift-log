@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 export function SetPassword({ userId }: { userId: string }) {
   const [saving, setSaving] = useState(false),
     [error, setError] = useState('');
@@ -30,7 +31,7 @@ export function SetPassword({ userId }: { userId: string }) {
               });
               if (!response.ok)
                 throw new Error(
-                  'Password was not saved. Use at least 12 characters or request a fresh invitation.',
+                  `Password was not saved. Use at least ${MIN_PASSWORD_LENGTH} characters or request a fresh invitation.`,
                 );
               clearPrivateBrowserState();
               // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Fresh authenticated document.
@@ -47,7 +48,7 @@ export function SetPassword({ userId }: { userId: string }) {
             <input
               name="password"
               type="password"
-              minLength={12}
+              minLength={MIN_PASSWORD_LENGTH}
               maxLength={128}
               autoComplete="new-password"
               required
@@ -58,7 +59,7 @@ export function SetPassword({ userId }: { userId: string }) {
             <input
               name="confirm"
               type="password"
-              minLength={12}
+              minLength={MIN_PASSWORD_LENGTH}
               maxLength={128}
               autoComplete="new-password"
               required

@@ -6,6 +6,7 @@ import { adminClient, authClient, checkOrigin } from '@/lib/supabase/server';
 import { betaInviteRedirect, betaRole } from '@/lib/supabase/beta';
 import { readConfiguration } from '@/lib/supabase/config';
 import { registrationMode } from '@/lib/supabase/registration-config';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'private, no-store' };
@@ -13,7 +14,7 @@ const denied =
   'Account creation could not be completed. Check your details or ask the owner to authorize your email. If you already have an account, sign in or ask the owner for setup help.';
 const passwordSchema = z
   .string()
-  .min(12)
+  .min(MIN_PASSWORD_LENGTH)
   .max(128)
   .refine((v) => Buffer.byteLength(v, 'utf8') <= 72);
 function reply(error: string, status = 400) {
@@ -94,7 +95,9 @@ export async function POST(request: Request) {
     };
     if (!passwordSchema.safeParse(body.password).success) {
       await cancel();
-      return reply('Use a password of at least 12 characters and no more than 72 UTF-8 bytes.');
+      return reply(
+        `Use a password of at least ${MIN_PASSWORD_LENGTH} characters and no more than 72 UTF-8 bytes.`,
+      );
     }
     // Resolve canonical redirect before creating an unconfirmed account.
     const emailRedirectTo = mode === 'email' ? betaInviteRedirect() : undefined;

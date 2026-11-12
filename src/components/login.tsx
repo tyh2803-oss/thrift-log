@@ -4,6 +4,7 @@ import { Leaf, ArrowRight, LockKeyhole } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from './ui/button';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
+import { MIN_PASSWORD_LENGTH } from '@/lib/password-policy';
 export function Login({
   configured,
   initialError = '',
@@ -151,7 +152,7 @@ export function Login({
                 type="password"
                 name="password"
                 required
-                minLength={creating ? 12 : undefined}
+                minLength={creating ? MIN_PASSWORD_LENGTH : undefined}
                 maxLength={creating ? 72 : 500}
                 autoComplete={creating ? 'new-password' : 'current-password'}
                 disabled={pending}
@@ -159,8 +160,9 @@ export function Login({
             </label>
             {creating && (
               <p className="hint">
-                Use your owner-approved email and a password of at least 12 characters. Existing
-                accounts keep their current password; choose Sign in if you already have one.
+                Use your owner-approved email and a password of at least {MIN_PASSWORD_LENGTH}{' '}
+                characters. Existing accounts keep their current password; choose Sign in if you
+                already have one.
               </p>
             )}
             {creating && registration === 'disabled' && (
