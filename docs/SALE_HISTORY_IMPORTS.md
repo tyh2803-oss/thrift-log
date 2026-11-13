@@ -25,7 +25,17 @@ Provide at most 300 item rows per CSV batch and at most 30 physical pieces per o
 
 ## Assistant files
 
-**Add files** accepts JPEG/PNG/WebP images, PDF and UTF-8 CSV. Paste, drop or select files. The assistant's existing screenshot extraction and image approval path remains separate and unchanged in meaning.
+### Personal spreadsheets and missing information
+
+The assistant accepts informal CSV exports, including title/year rows before the table, blank columns, duplicate column headings, repeated headers, side-by-side totals, and comma/semicolon/tab delimiters. UTF-8 and BOM-marked UTF-16 text exports are supported. `Item`, `Purchased Price` and `Sold Price` are recognized without renaming columns. Explicitly labeled footer totals are excluded with a visible preparation note; side-summary columns never become item prices or acquisition costs. Original files are not changed.
+
+Readable item rows are prepared even when dates, prices or fees are missing. Missing values remain unknown and block saving only where the existing sale workflow requires them. The review offers **Fill missing dates** and **Fill missing fees** for included drafts. The fee amount is **per sale**, not a batch total; enter zero only when there really were no seller fees. Known source values and saved records are not overwritten. Purchase costs stay optional, with explicit zero separate from unknown.
+
+For example, attach a personal spreadsheet and say “These were sold on Depop yesterday.” Missing sale dates can use yesterday in the workspace reporting timezone, and the assistant labels that context-derived date for review. Source dates, marketplace fields and non-sale statuses take precedence. Conflicting or ambiguous context is left unresolved. A year heading alone does not establish a sale date. Non-sale rows require clarification or discarding; they are never silently posted as completed sales.
+
+Known sale tables use exact parsing instead of requiring an AI round trip per item. Other layouts and readable PDFs still use the configured file-capable AI model. AI CSV responses now identify their source data rows: skipped, repeated or out-of-range references are rejected, and an item cannot be silently classified as an ignored summary. Identical sections retain their distinct source positions even when extraction uses a cached response. Up to three prevalidated analysis parts run concurrently; caches remain isolated by account, context, date and timezone. These changes do not provide unrestricted ChatGPT tools, execute spreadsheet formulas, or add support for arbitrary binary office formats.
+
+**Add files** accepts JPEG/PNG/WebP images, PDF and CSV text exports. Paste, drop or select files. The assistant's existing screenshot extraction and image approval path remains separate and unchanged in meaning.
 
 Recognized sales CSVs use the same native parser as Import CSV. Unfamiliar CSV headers and PDFs use the configured OpenAI Responses model and strict structured facts, then the same history review. No document instructions, formulas or links are executed. Recognized buyer/contact columns are removed before an unfamiliar CSV reaches AI. PDFs are sent inline to the configured provider only after Send, with `store:false`; they are not opened as active browser documents or uploaded to the photos bucket. Missing values stay nullable. Explicit pending/cancelled/refunded/shipping events cannot become completed sales simply because a price appears.
 
@@ -51,4 +61,4 @@ Only valid reviewed records are approved together. Unresolved drafts remain pend
 
 ## Validation
 
-`npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run test:history-browser`, `npm run test:registration-browser`, and `npm run test:tester-setup-browser` are the checks for this change. The new authenticated browser harness permits business writes only in an explicitly opted-in loopback service double. Database tests execute the real saved SQL in local PostgreSQL/PGlite. Hosted Supabase writes and live paid PDF extraction are not part of these tests. Physical iPhone/Safari acceptance remains manual.
+`npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`, `npx playwright test --config=playwright.history.config.ts`, `npm run test:registration-browser`, and `npm run test:tester-setup-browser` are the available checks. The authenticated browser harness permits business writes only in an explicitly opted-in loopback service double. Database tests execute the real saved SQL in local PostgreSQL/PGlite. Hosted Supabase writes and live paid PDF extraction are not part of these tests. Physical iPhone/Safari acceptance remains manual.

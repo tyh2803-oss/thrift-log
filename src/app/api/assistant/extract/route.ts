@@ -3,7 +3,8 @@ import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 import { documentType, prepareDocument, type DocumentPart } from '@/lib/assistant/documents';
 import { historyCsvSources, historyMapping, isDepopReport } from '@/lib/assistant/csv-history';
-import { readCsv } from '@/lib/csv';
+import { decodeSpreadsheet, readDocumentCsv } from '@/lib/assistant/document-csv';
+import { documentContext, contextSaleDate } from '@/lib/assistant/document-context';
 import { marketplaceContextFromText } from '@/lib/assistant/vision';
 import { requireUser, checkOrigin } from '@/lib/supabase/server';
 import { ConfigurationError } from '@/lib/supabase/config';
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
     }).formData();
     const files = [...form.getAll('images'), ...form.getAll('files')];
     const context = String(form.get('message') || '').slice(0, 2000);
+    const clock = documentContext(String(form.get('timeZone') || 'UTC').slice(0, 100));
     if (!files.length || files.length > assistantConfig().batchLimit)
       throw new AssistantError(`Choose 1–${assistantConfig().batchLimit} files.`);
     const prepared: (
@@ -71,29 +73,65 @@ export async function POST(request: Request) {
       if (kind) {
         const originalHash = createHash('sha256').update(bytes).digest('hex');
         if (kind === 'csv') {
-          let text: string;
+          let parsed: ReturnType<typeof readDocumentCsv>;
           try {
-            text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          } catch {
-            throw new AssistantError('Save the CSV as UTF-8 and try again.');
+            parsed = readDocumentCsv(decodeSpreadsheet(bytes));
+          } catch (e) {
+            throw new AssistantError(
+              e instanceof Error ? e.message : 'This CSV could not be read.',
+            );
           }
-          const parsed = readCsv(text),
-            mapping = historyMapping(parsed.columns),
+          const mapping = historyMapping(parsed.columns),
             depop = isDepopReport(parsed.columns);
-          if (depop || ['title', 'price', 'date', 'fees'].every((key) => mapping[key])) {
-            const platform = depop ? 'Depop' : marketplaceContextFromText(context) || '';
+          const saleHistory =
+            !/\b(?:unsold|unlisted|not sold)\b/i.test(context) &&
+            (/\b(?:sold|paid|completed)\b/i.test(context) ||
+              /sold|sale/i.test(mapping.price) ||
+              ['date', 'fees'].every((key) => mapping[key]));
+          if (depop || (mapping.title && mapping.price && saleHistory)) {
+            const platform = depop
+              ? 'Depop'
+              : mapping.marketplace
+                ? ''
+                : marketplaceContextFromText(context) || '';
             let sources: Screenshot[];
             try {
-              sources = await historyCsvSources(text, file.name, {
+              sources = await historyCsvSources(parsed.text, file.name, {
                 mapping,
                 marketplace: platform,
                 dateFormat: 'auto',
                 depop,
+                allowIncomplete: !depop,
               });
             } catch (e) {
               throw new AssistantError(e instanceof Error ? e.message : 'Check the CSV columns.');
             }
-            sources = sources.map((source) => ({ ...source, originalHash }));
+            const suppliedDate = contextSaleDate(context, clock);
+            sources = sources.map((source) => ({
+              ...source,
+              originalHash,
+              extraction: {
+                ...source.extraction,
+                records: source.extraction.records.map((record) => ({
+                  ...record,
+                  // Explicit source dates and marketplaces always win over context defaults.
+                  date: record.date || (!mapping.date ? suppliedDate : null),
+                })),
+                message: [
+                  source.extraction.message,
+                  parsed.note,
+                  !mapping.date && suppliedDate
+                    ? `Missing sale dates use ${suppliedDate} from your message (${clock.timeZone}); review before approval.`
+                    : '',
+                  !mapping.fees && !depop
+                    ? 'Seller fees are missing. Use the batch fee field or enter each sale’s fees; nothing has been saved.'
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+                  .slice(0, 1000),
+              },
+            }));
             prepared.push({ sources });
             continue;
           }
@@ -145,16 +183,20 @@ export async function POST(request: Request) {
       throw new AssistantError(
         'Use a smaller batch: at most 10 analysis parts or 300 CSV sale records. No files were processed.',
       );
-    // Sequential, owner-isolated requests. CSV source facts contain no buyer contact information.
+    // Account-isolated requests. CSV source facts contain no buyer contact information.
     const screenshots: Screenshot[] = [];
-    for (const source of prepared) {
+    const analyze = async (source: (typeof prepared)[number]) => {
       let results: Screenshot[];
       if ('sources' in source) results = source.sources;
       else if ('part' in source) {
-        const result = await extractDocument(user.id, source.part, context);
+        const result = await extractDocument(user.id, source.part, context, fetch, clock);
         results = [
           {
             ...result,
+            // Identical sections are distinct source positions, not accidental duplicates.
+            hash: createHash('sha256')
+              .update(`${source.originalHash}:${source.partIndex}:${result.hash}`)
+              .digest('hex'),
             sourceType: source.part.kind,
             originalHash: source.originalHash,
             name: source.file.name.slice(0, 200),
@@ -169,7 +211,13 @@ export async function POST(request: Request) {
             name: source.file.name.slice(0, 200),
           },
         ];
-      for (const result of results)
+      return results;
+    };
+    // Bounded parallel reads keep multi-part spreadsheets within the request deadline.
+    // Validate every attachment before starting any billable analysis. All writes still require approval.
+    for (let start = 0; start < prepared.length; start += 3) {
+      const groups = await Promise.all(prepared.slice(start, start + 3).map(analyze));
+      for (const result of groups.flat())
         if (!screenshots.some((s) => s.hash === result.hash)) screenshots.push(result);
     }
     return NextResponse.json({ screenshots }, options);

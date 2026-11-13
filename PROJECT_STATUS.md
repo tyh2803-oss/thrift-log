@@ -1,5 +1,36 @@
 # Thrift Log project status
 
+## Approved business assistant release — November 13, 2026
+
+The user approved deployment after the implementation checks below. Applied only `202611130001_assistant_conversations.sql` to project `gvwgasebholdawlakwdf`, in a transaction with its original SQL recorded in migration history as version `202611130001` / `assistant_conversations`. The migration-specific API endpoint was unavailable to the configured token; the authorized Management SQL endpoint applied the same saved migration and migration-history insert atomically, followed by a PostgREST schema reload. No earlier migrations were replayed.
+
+Hosted verification confirms the existing schema-7 readiness checks, owner beta authorization, both new tables' RLS, restricted client RPC access, the private 5 MB source bucket and readiness helper. Service-role reads for all four authorized workspaces return isolated empty assistant histories/file lists without creating conversation/file rows. Fingerprints across 23 protected existing business/Auth/beta/photo tables are unchanged (2,125 existing business rows, five Auth accounts, three photo objects at baseline). Existing Whatnot worker metadata continued updating independently; no Whatnot operations were issued by the rollout.
+
+Release source passed typecheck, lint, all 390 default unit/database/API checks, 74 selected desktop/mobile Chromium checks, all 17 document checks with the supplied CSV acceptance enabled, three live synthetic Sol checks, the production build and a release secret scan. The code is prepared for a normal non-force push to GitHub main and its connected Vercel production deployment. Cloud's OpenAI key has been verified; Vercel's separate private runtime key configuration and signed-in iPhone testing still need confirmation.
+
+## Private reasoning business assistant — November 13, 2026
+
+Completed locally on `feat/business-assistant` at base commit `5f73df8b6b59deea289cbf4b83d4e63f8182379c`, retaining all earlier flexible-document work. See [minimum setup, architecture and limits](docs/BUSINESS_ASSISTANT.md). The configured API key was verified without exposing it; GPT-6.1 Sol is the default application model, with explicit model/effort overrides and no silent fallback. No new dependencies were added.
+
+- Natural conversation uses Responses reasoning and typed owned-workspace tools for inventory/listing/sale/history search, canonical financial/show summaries, private photos and pending drafts. Native iPhone dictation works through the normal keyboard text field. Likely sale/status matches become editable proposals; genuine ambiguity gets short selectable replies. Listing dates are never silently reused as sale dates, asking prices are never actual proceeds, unknown fees/costs are never confirmed zero, and known acquisition costs stay protected. Business changes still require existing explicit approval and an atomic canonical commit.
+- Added native private PDF/image reading, paginated/searchable CSV questions and literal exact-cent column summaries independently of imports. Preparing file imports reuses the established parsers/extraction, source coverage, matching and review. Shared pending edits, exact-cent physical-item cost allocations and cross-list overrides remain draft-only. Importing mixed listing/sale documents preserves original source-record indexes.
+- Added private conversation/source persistence, stable request replay, leases, durable rate limits, revocation checks, bounded model loops and safe retry/clear behavior. A failed follow-up preserves the previous completed review. Raw file IDs support source-image recovery after reload; approval promotes owned source images to existing private inventory storage. Clear chat does not remove approved photos or business records.
+- Saved optional additive **`202611130001_assistant_conversations.sql`**: two RLS-enabled private tables, two service-only RPCs, a readiness helper and a private source bucket/restrictive proxy policy. Schema-6 and schema-7 tests preserve existing owner inventory, photo references, sale and financial data. Revoked/foreign users, changed source hashes, accidental client RPC grants, permissive storage policies, bad bucket configuration and stale/expired turns are rejected. **The migration has not been applied to production. No production data, accounts, Auth settings, deployment, commit or push was changed for this feature.**
+
+Validation: **typecheck, lint and production build pass; all 390 default unit/database/API tests pass** (six opt-in tests skipped). Separately, all **17 document tests pass with the actual supplied CSV acceptance case enabled**, and **three live Sol tests pass** using synthetic data only: search/date clarification and follow-up sale preparation with exact $21 canonical profit, native PDF/structured image extraction, and private PDF tool reading without creating an import. **All 74 selected desktop/mobile Chromium checks pass:** 40 assistant/compact/history regressions and 34 authenticated business-chat/history/Whatnot/navigation checks. New browser tests verify missing-field readiness, partial decimal typing, explicit zero fees, one real approval transaction without duplicate inventory, reload recovery, owned attachment metadata, lost-turn replay, 44 px clarification buttons, clear behavior and no horizontal overflow.
+
+Remaining setup: apply the optional migration only after approval, ensure server-only `OPENAI_API_KEY` is configured in the intended Vercel environment (Cloud settings do not automatically propagate), then deploy the reviewed code after approval. No SMTP or separate Supabase project is required. Hosted migration/storage verification, genuine marketplace accuracy and physical iPhone/Safari dictation acceptance remain manual. Context/file/tool limits and unsupported text-only new-inventory/cost-correction operations are explicit in the guide.
+
+## Flexible assistant documents — November 13, 2026
+
+Implemented on `feat/flexible-assistant-documents`, preserving the existing workspace, screenshot extraction and approval paths. The supplied personal spreadsheet failed in the strict CSV reader before reaching AI because its first line was a sheet title. The new document-specific reader finds the actual table, handles blank/repeated headings and UTF-8/BOM-marked UTF-16 exports, and recognizes Item / Purchased Price / Sold Price. All **133 item rows in the actual attached CSV** reach review; purchase costs and explicit zero are retained, missing seller fees stay unknown, and one missing sale price remains unresolved. The original file is not committed or uploaded during acceptance testing.
+
+Review adds missing-date and per-sale seller-fee batch inputs, keeps existing source values, and retains unknown-versus-zero cost proofs. Context such as “sold on Depop yesterday” may supply missing dates in the workspace timezone with a visible explanation; explicit source dates/platforms/statuses win. Unfamiliar CSV/PDF extraction receives calendar context and stronger spreadsheet instructions. CSV AI responses must cover every source row exactly once; unsafe omission of physical items as summary rows fails closed. Identical source sections retain distinct identities, with bounded parallel analysis and account/context/date-isolated caches.
+
+No migration, new dependency, production database changes, hosted writes, commit, push or deployment is part of this implementation. At this earlier checkpoint the OpenAI key was unavailable; the subsequent private business assistant checkpoint adds live synthetic Sol verification. File parsing, planning, approval, reload and account-isolation tests run locally. Physical iPhone/Safari acceptance remains manual. Existing 5 MB/file, 16 MB/batch, 300 CSV item rows and 30 transactions/PDF limits remain; arbitrary binary office formats are not supported.
+
+Validation: **typecheck, lint and production build pass; 346 unit/database/API tests pass** with the actual supplied CSV acceptance case enabled (two other optional tests skipped). **68 desktop/mobile Chromium cases pass:** 40 existing assistant/compact-listing/history regressions and 28 authenticated history/Whatnot/navigation checks. New four-item and 133-item flows verify missing-field readiness, bulk fee/date entry, exact monetary values, one atomic save, correct physical-item counts, refresh persistence, no horizontal overflow and unchanged other-account records. The original CSV remains outside the repository; shared fixtures are synthetic.
+
 ## Navigation and interaction performance
 
 Prepared on `perf/persistent-workspace-navigation` from main `16c34af361fc51d8a30852d7a5ba6e060678586d`. See [performance architecture, security and controlled measurements](docs/PERFORMANCE.md).
@@ -10,13 +41,11 @@ Prepared on `perf/persistent-workspace-navigation` from main `16c34af361fc51d8a3
 - Controlled navigation comparison with 150 ms artificial backend latency: **12 → 2 backend requests**, **1 → 0 workspace downloads**, roughly **2.1 → 0.6–1.0 seconds**. These are local production-build measurements with synthetic data, not physical iPhone timings.
 - No production data/schema changes, migrations, new dependencies or environment settings are required. **Typecheck, lint, all 336 unit/database/API tests (two optional skips), and production build passed. All 128 desktop/mobile browser checks passed:** 96 core regressions, 24 authenticated history/Whatnot/performance checks, four registration checks and four tester-setup checks. These include account changes, revocation, save failure/retry and in-flight invalidation, public-demo separation, idle rendering and live timer/background accuracy. Tests used isolated doubles/PGlite and synthetic records; no hosted writes or live seller/AI calls were made.
 
-
 ## Sold/shipped marketplace filter correction
 
 - Fixed inventory marketplace filtering to use the canonical completed sale's marketplace for sold/shipped physical items. Imported sale history needs no linked listing to appear, and historical cross-listings cannot attribute a completed sale to the wrong marketplace. Unsold listing filters retain their existing behavior.
 - No business records, fulfillment statuses, financial calculations or schemas are changed. Historical CSV imports still start Sold/Unfulfilled until shipping is recorded.
 - Typecheck, lint, all **331 unit/database/API tests** (two optional skips), production build and **22 desktop/mobile pipeline/browser checks** passed. The new regression covers shipped/delivered imports without listings, cross-listing attribution, Sold/For Sale/Unlisted filters, bulk selection, grid/list views, reload and unchanged business data.
-
 
 ## Read-only Whatnot Seller API integration
 
@@ -29,7 +58,6 @@ Implemented on `feat/whatnot-read-only-integration` from main `108008781461bda6a
 - Saved additive migration **`supabase/migrations/202611120001_whatnot_read_only.sql`** adds three private RLS tables and one service-role-only RPC, compatible with schema 6 and 7. Local PostgreSQL tests verify owner/Auth/business preservation, revoked access, private grants, cross-tenant FK rollback, atomic commits, stale revisions, token rotation/disconnect races and webhook deduplication. No existing Auth, beta, photo or financial policies are weakened.
 - No production Supabase migration, settings change, account connection or business-data write was performed. Deployment before SQL is supported: Whatnot displays **Setup needed** and the existing app continues. Live seller token/report/webhook verification and physical iPhone acceptance remain pending account authorization. Tests use synthetic provider fixtures, local PGlite and explicit loopback Auth doubles.
 - Verification: typecheck, lint, **331 unit/database/API tests passed** (two opt-in cases skipped), and the final production build passed. **110 desktop/mobile Chromium checks passed**: 92 core regressions, 10 authenticated history/Whatnot checks (including live status polling with a controlled clock), four registration checks and four tester-setup/isolation checks. All hosted writes, live seller connections and billable AI calls were excluded.
-
 
 ## Nonblocking sale-history imports — November 12, 2026
 
@@ -161,11 +189,11 @@ Updated November 9, 2026 (Safari sign-in fix and browser verification). This is 
 
 Authenticated MCP returned `https://gvwgasebholdawlakwdf.supabase.co`, matching the handoff. Before DDL, inspection found no public/private application tables, recorded migrations, storage buckets/policies, or Auth users. Applied only the three missing repository migrations, in order, through MCP migration operations. No application source or existing migration SQL was replaced.
 
-| Repository migration | Recorded hosted version | Hosted name |
-| --- | --- | --- |
-| `202611090001_initial.sql` | `20261109162814` | `initial` |
-| `202611090002_auth_storage_hardening.sql` | `20261109162836` | `auth_storage_hardening` |
-| `202611090003_financial_ledger_shipments.sql` | `20261109162901` | `financial_ledger_shipments` |
+| Repository migration                          | Recorded hosted version | Hosted name                  |
+| --------------------------------------------- | ----------------------- | ---------------------------- |
+| `202611090001_initial.sql`                    | `20261109162814`        | `initial`                    |
+| `202611090002_auth_storage_hardening.sql`     | `20261109162836`        | `auth_storage_hardening`     |
+| `202611090003_financial_ledger_shipments.sql` | `20261109162901`        | `financial_ledger_shipments` |
 
 **Migration history warning:** MCP assigned different versions from the saved filenames. The SQL has already run. Before any later CLI push, reconcile local/remote migration identifiers using this mapping and inspect the planned changes. Do not replay the original files, reset the database, or delete hosted migration history. Local filenames and their test references remain intact.
 
@@ -327,13 +355,13 @@ Next: milestone 2 — reusable exact/ambiguous inventory matching, automatic sto
 
 Final implementation is on `feat/ai-assistant-screenshots`. Completed checkpoint commits before the final verification/documentation commit:
 
-| Checkpoint | Commit |
-| --- | --- |
+| Checkpoint                                     | Commit    |
+| ---------------------------------------------- | --------- |
 | Assistant foundation and structured extraction | `4e4483a` |
-| Sales matching and financial previews | `1287b4c` |
-| Editing, corrections and approved persistence | `87c4b4c` |
-| Active listings and new inventory | `669c86c` |
-| Existing-view marketplace metrics | `e547110` |
+| Sales matching and financial previews          | `1287b4c` |
+| Editing, corrections and approved persistence  | `87c4b4c` |
+| Active listings and new inventory              | `669c86c` |
+| Existing-view marketplace metrics              | `e547110` |
 
 Final verification actually performed:
 
@@ -362,7 +390,6 @@ Final hardening and recovery behavior:
 5. Re-run relevant checks only for new changes/failures. For hosted assistant verification after a new build, run `node --env-file=.env.local --experimental-strip-types scripts/verify-assistant-hosted.mjs`; it creates and removes only its disposable data. Broader deployment and the owner's normal password retry remain separate earlier tasks. Do not automatically deploy, push, replay migrations or implement the deferred Inventory → For Sale → Sold → Shipped pipeline.
 
 The final checkpoint selectively stages assistant changes while preserving unrelated working-tree changes from before this task. New assistant documentation/configuration additions are committed without sweeping in the earlier Auth edits. No credentials, private screenshots or runtime environment files are tracked. No changes have been pushed.
-
 
 ### Live OpenAI vision verification — November 9, 2026
 
@@ -617,7 +644,6 @@ After Supabase is reconnected: confirm project `gvwgasebholdawlakwdf`; reread th
 - Physical iPhone/Safari acceptance remains pending. Current positive UI checks are desktop/mobile-sized Chromium; earlier WebKit click-automation limitations were not relabeled as an iPhone pass.
 - The primary HTTPS development server remains running on port 3000. All isolated verification servers stop after their runs. `git diff --check` passes; HEAD remains `86942a6`, with no staged changes, commits, pushes or deployment.
 - Recoverable final source checkpoint: **`.git/checkpoints/smart-imports-final-uncommitted/`** contains the tracked patch, untracked-source archive and current status. Ignored credentials/TLS keys are excluded. The exact pending fixture cleanup metadata/plan stay in the separate private cleanup directory above. Resume from these documents; do not restart completed assistant/pipeline/Auth work or replay migrations.
-
 
 ## Codex Cloud transition — November 10, 2026
 

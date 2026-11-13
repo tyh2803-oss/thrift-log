@@ -7,6 +7,7 @@ import { money } from '@/lib/money';
 import { marketplaces } from '@/lib/model';
 import { useWorkspace } from '@/lib/use-workspace';
 import { Button } from './ui/button';
+import { HistoryBatchFields } from './history-batch-fields';
 export function HistoryReview({
   batch,
   onChange,
@@ -102,6 +103,7 @@ export function HistoryReview({
           Confirm unidentified amounts are USD (no conversion)
         </Button>
       )}
+      <HistoryBatchFields batch={batch} onChange={onChange} busy={busy} />
       <label className="field">
         <span>Set marketplace for all records (optional)</span>
         <select
@@ -154,6 +156,27 @@ export function HistoryReview({
               </Button>
             </div>
             <div className="form-grid">
+              {(r.kind !== 'sale' || r.status !== 'completed') && (
+                <label className="field">
+                  <span>What does this row represent?</span>
+                  <select
+                    aria-label={`Record meaning ${index + 1}`}
+                    value="review"
+                    disabled={busy}
+                    onChange={(e) => {
+                      if (e.target.value === 'sale')
+                        update({ ...row, facts: { ...r, kind: 'sale', status: 'completed' } });
+                    }}
+                  >
+                    <option value="review">Needs clarification · {r.status}</option>
+                    <option value="sale">Confirm this is a completed sale</option>
+                  </select>
+                  <small>
+                    Unsold inventory, refunds and pending orders are not new completed sales.
+                    Discard rows that do not belong in sale history.
+                  </small>
+                </label>
+              )}
               <label className="field">
                 <span>Sale date</span>
                 <input
@@ -404,13 +427,14 @@ export function HistoryReview({
   );
 }
 
-function HistoryMoney({
+export function HistoryMoney({
   value,
   label,
   onValue,
   onInvalid,
   disabled,
   readOnly = false,
+  missing,
 }: {
   value: number | null;
   label: string;
@@ -418,6 +442,7 @@ function HistoryMoney({
   onInvalid: (invalid: boolean) => void;
   disabled: boolean;
   readOnly?: boolean;
+  missing?: boolean;
 }) {
   const [raw, setRaw] = useState(value === null ? '' : String(value / 100));
   const [error, setError] = useState('');
@@ -438,6 +463,7 @@ function HistoryMoney({
         ref={ref}
         aria-label={label}
         aria-invalid={!!error}
+        data-review-missing={missing}
         placeholder="Unknown"
         inputMode="decimal"
         value={raw}

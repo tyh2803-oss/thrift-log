@@ -26,13 +26,33 @@ export type HistoryCsvOptions = {
   marketplace: string;
   dateFormat: 'auto' | 'mdy' | 'dmy';
   depop?: boolean;
+  /** Assistant preparation may retain unknowns for review; the mapped importer stays strict. */
+  allowIncomplete?: boolean;
 };
 const aliases: Record<string, string[]> = {
-  title: ['title', 'item name', 'item title', 'product name', 'description', 'name'],
-  price: ['price', 'sale price', 'sold price', 'item price'],
+  title: [
+    'title',
+    'item',
+    'item name',
+    'item title',
+    'product',
+    'product name',
+    'description',
+    'name',
+  ],
+  price: ['price', 'sale price', 'sold price', 'selling price', 'item price'],
   date: ['date', 'sale date', 'sold date', 'date of sale'],
   fees: ['fees', 'seller fees', 'selling fees', 'total fees'],
-  purchase_cost: ['purchase cost', 'purchase_cost', 'cost', 'cost basis', 'acquisition cost'],
+  purchase_cost: [
+    'purchase cost',
+    'purchase_cost',
+    'purchased price',
+    'purchase price',
+    'paid price',
+    'cost',
+    'cost basis',
+    'acquisition cost',
+  ],
   sku: ['sku'],
   marketplace: ['marketplace', 'platform'],
   processing: ['processing', 'processing fee'],
@@ -122,9 +142,19 @@ export function parseHistoryCsv(
   });
   return [...groups.values()].map((group) => {
     const first = group[0].row;
+    const warnings: string[] = [];
     if (group.length > 30)
       throw new Error('Use the manual order editor for orders with more than 30 physical items.');
     const get = (r: Record<string, string>, target: string) => r[options.mapping[target]] || '';
+    const amount = (value: string, label: string) => {
+      try {
+        return sourceAmount(value);
+      } catch (e) {
+        if (!options.allowIncomplete) throw e;
+        warnings.push(`Check ${label}: the source amount could not be read.`);
+        return null;
+      }
+    };
     const bundle = options.depop && first.Bundle === 'Yes';
     if (bundle) {
       const expected = group
@@ -135,8 +165,12 @@ export function parseHistoryCsv(
           `Row ${group[0].index + 2}: incomplete or ambiguous Depop bundle. Include all its item rows.`,
         );
     }
-    const sum = (target: string) =>
-      group.reduce((total, { row }) => total + (sourceAmount(get(row, target)) ?? 0), 0);
+    const sum = (target: string) => {
+      const values = group.map(({ row }) => amount(get(row, target), target));
+      // An absent or partly recorded expense is unknown, never a confirmed zero.
+      if (options.allowIncomplete && values.some((value) => value === null)) return null;
+      return values.reduce<number>((total, value) => total + (value ?? 0), 0);
+    };
     const depopMoney = (column: string, missingIsNone = false) => {
       const entries = group.map(({ row }) => sourceAmount(row[column]));
       if (
@@ -153,13 +187,13 @@ export function parseHistoryCsv(
     };
     const lines: ExtractedLine[] = group.map(({ row, index }) => {
       const title = cleanText(get(row, 'title'));
-      const price = sourceAmount(get(row, 'price'));
-      if (!title || price === null)
+      const price = amount(get(row, 'price'), `sale price on row ${index + 2}`);
+      if ((!title || price === null) && !options.allowIncomplete)
         throw new Error(`Row ${index + 2}: item name and sale price are required.`);
       return {
         title,
         price,
-        purchaseCost: sourceAmount(get(row, 'purchase_cost')),
+        purchaseCost: amount(get(row, 'purchase_cost'), `purchase cost on row ${index + 2}`),
         sku: cleanText(get(row, 'sku')),
         brand: options.depop ? cleanText(row.Brand) : null,
         size: options.depop ? cleanText(row.Size) : null,
@@ -172,23 +206,35 @@ export function parseHistoryCsv(
         url: null,
       };
     });
-    const saleDate = historyDate(get(first, 'date'), options.dateFormat, !!options.depop);
-    if (
-      group.some(
-        ({ row }) =>
-          historyDate(get(row, 'date'), options.dateFormat, !!options.depop) !== saleDate,
-      )
-    )
+    const date = (row: Record<string, string>) => {
+      try {
+        return historyDate(get(row, 'date'), options.dateFormat, !!options.depop);
+      } catch (e) {
+        if (!options.allowIncomplete) throw e;
+        if (get(row, 'date'))
+          warnings.push('Check the source sale date; it is ambiguous or unreadable.');
+        return null;
+      }
+    };
+    const saleDate = date(first);
+    if (group.some(({ row }) => date(row) !== saleDate))
       throw new Error('Rows grouped under one order must have the same sale date.');
-    const fee = options.depop ? depopMoney('Depop fee') : sourceAmount(get(first, 'fees'));
+    const fee = options.depop ? depopMoney('Depop fee') : amount(get(first, 'fees'), 'seller fees');
     const processing = options.depop ? depopMoney('Depop Payments fee') : sum('processing');
-    if (fee === null || processing === null)
+    if ((fee === null || processing === null) && !options.allowIncomplete)
       throw new Error(
         `Row ${group[0].index + 2}: seller fees are required; enter 0 explicitly for no fees.`,
       );
-    if (!options.depop && group.some(({ row }) => sourceAmount(get(row, 'fees')) === null))
+    if (
+      !options.depop &&
+      !options.allowIncomplete &&
+      group.some(({ row }) => sourceAmount(get(row, 'fees')) === null)
+    )
       throw new Error('Every row needs seller fees, including an explicit 0 when appropriate.');
-    const refund = options.depop ? depopMoney('Refunded to buyer amount', true)! : sum('refund');
+    // Refund indications cannot be downgraded to unknown and then imported as a new sale.
+    const refund = options.depop
+      ? depopMoney('Refunded to buyer amount', true)!
+      : group.reduce((total, { row }) => total + (sourceAmount(get(row, 'refund')) ?? 0), 0);
     const feeCredit = options.depop ? depopMoney('Fees refunded to seller', true)! : 0;
     if (refund || feeCredit)
       throw new Error(
@@ -229,7 +275,7 @@ export function parseHistoryCsv(
       date: saleDate,
       externalOrderId: cleanText(get(first, 'order_id')),
       lines,
-      fees: options.depop ? fee + depopMoney('Boosting fee', true)! : sum('fees'),
+      fees: options.depop ? fee! + depopMoney('Boosting fee', true)! : sum('fees'),
       processing,
       shipping: options.depop
         ? options.mapping.shipping
@@ -247,7 +293,7 @@ export function parseHistoryCsv(
       packaging: sum('packaging'),
       showId: cleanText(get(first, 'show_id')),
       warnings: completed
-        ? []
+        ? warnings
         : [
             `Source status is ${rawStatus}; confirm the original event through its order ledger instead of creating a completed sale.`,
           ],

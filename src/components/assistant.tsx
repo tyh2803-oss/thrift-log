@@ -25,9 +25,22 @@ import { marketplaceContextFromText } from '@/lib/assistant/vision';
 import { prepareSpokenFulfillment, appendConversationRow } from '@/lib/assistant/conversation';
 import { AssistantFulfillmentActions } from './assistant-fulfillment-actions';
 import { correctBatch } from '@/lib/assistant/corrections';
+import {
+  chatMessageSchema,
+  chatResponseSchema,
+  type ChatDrafts,
+  type ChatResponse,
+} from '@/lib/assistant/chat-schema';
 
 type Attachment = { id: string; file: File; url: string; kind?: 'pdf' | 'csv' };
-type Message = { id: string; role: 'user' | 'assistant'; text: string; images?: Attachment[] };
+type Message = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  images?: Attachment[];
+  files?: { id: string; name: string; mime: string }[];
+  replyTo?: string;
+};
 export function Assistant({
   open,
   onOpen,
@@ -63,6 +76,18 @@ export function Assistant({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [config, setConfig] = useState<{ enabled: boolean; batchLimit: number } | null>(null);
+  const [chat, setChat] = useState<{
+    ready: boolean;
+    enabled: boolean;
+    revision: number;
+    model: string;
+    setup?: string;
+  } | null>(null);
+  const [choices, setChoices] = useState<ChatResponse['choices']>([]);
+  const [chatRunning, setChatRunning] = useState(false);
+  const [chatRefresh, setChatRefresh] = useState(0);
+  const chatRetry = useRef<{ key: string; id: string } | null>(null);
+  const chatAbort = useRef<AbortController | null>(null);
   const [restored, setRestored] = useState(false);
   const storageKey = `thrift-log.draft.assistant.${scope}`;
   const sourceFiles = useRef(new Map<string, File>());
@@ -99,7 +124,10 @@ export function Assistant({
   }, [batch, historyBatch, storageKey, restored]);
   useEffect(() => {
     const all = urls.current;
-    return () => all.forEach(URL.revokeObjectURL);
+    return () => {
+      all.forEach(URL.revokeObjectURL);
+      chatAbort.current?.abort();
+    };
   }, []);
   useEffect(() => {
     if (!open || demo) return;
@@ -117,6 +145,46 @@ export function Assistant({
       ignore = true;
     };
   }, [open, demo, requestHeaders]);
+  useEffect(() => {
+    if (!open || demo) return;
+    let ignore = false;
+    fetch('/api/assistant/chat', { cache: 'no-store', headers: requestHeaders })
+      .then(async (response) => {
+        const data = await response.json();
+        if (ignore || !response.ok) return;
+        const parsed = chatMessageSchema.array().safeParse(data.messages);
+        if (!parsed.success || typeof data.ready !== 'boolean' || typeof data.revision !== 'number')
+          return;
+        setChat({
+          ready: data.ready,
+          enabled: data.enabled,
+          revision: data.revision,
+          model: data.model,
+          setup: data.setup,
+        });
+        setMessages((old) =>
+          old.length
+            ? old
+            : parsed.data.map((m) => ({ id: m.id, role: m.role, text: m.text, files: m.files })),
+        );
+        const saved = chatResponseSchema.safeParse(data.response);
+        if (saved.success) {
+          setChoices(saved.data.choices);
+          const pending = (b: DraftBatch | null) =>
+            b ? { ...b, rows: b.rows.filter((r) => !w.imports.some((i) => i.id === r.id)) } : null;
+          const b = pending(saved.data.drafts.batch),
+            h = pending(saved.data.drafts.historyBatch);
+          if (b?.rows.length) setBatch((old) => (old?.rows.length ? old : b));
+          if (h?.rows.length) setHistoryBatch((old) => (old?.rows.length ? old : h));
+        }
+      })
+      .catch(() => {
+        /* Existing import and draft review stay available. */
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [open, demo, requestHeaders, w.revision, w.imports, chatRefresh]);
   const reviewBatchId = batch?.id || historyBatch?.id;
   useEffect(() => {
     if (reviewBatchId) {
@@ -181,12 +249,37 @@ export function Assistant({
       setBusy(false);
     }
   }
-  function clear() {
+  async function clear() {
     if (
       (batch?.rows.length || historyBatch?.rows.length) &&
-      !window.confirm('Discard pending drafts and clear chat? Saved records stay intact.')
+      !window.confirm(
+        'Discard pending drafts, conversation and private chat attachments? Saved business records and inventory photos stay intact.',
+      )
     )
       return;
+    if (chat?.ready) {
+      if (
+        !batch?.rows.length &&
+        !historyBatch?.rows.length &&
+        !window.confirm(
+          'Clear this conversation and its private attachments? Saved business records and inventory photos stay intact.',
+        )
+      )
+        return;
+      try {
+        const response = await fetch(`/api/assistant/chat?revision=${chat.revision}`, {
+          method: 'DELETE',
+          headers: requestHeaders,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Could not clear the conversation.');
+        setChat({ ...chat, revision: data.revision });
+        if (data.notice) notify(data.notice);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Conversation was not cleared.');
+        return;
+      }
+    }
     urls.current.forEach(URL.revokeObjectURL);
     urls.current.clear();
     setAttachments([]);
@@ -196,10 +289,133 @@ export function Assistant({
     sourceFiles.current.clear();
     setSourceUrls(new Map());
     setError('');
+    setChoices([]);
+    chatRetry.current = null;
+  }
+  async function businessChat(
+    prompt: string,
+    drafts: ChatDrafts,
+    selectedItemId: string | null = null,
+    appendUser = true,
+    files: Attachment[] = [],
+  ) {
+    if (!chat?.ready || !chat.enabled) return;
+    const snapshot = {
+      batch: JSON.stringify(drafts.batch),
+      historyBatch: JSON.stringify(drafts.historyBatch),
+    };
+    const fileIds = files.map((f) => f.id);
+    const key = JSON.stringify({ message: prompt, drafts, selectedItemId, fileIds });
+    if (chatRetry.current?.key !== key) chatRetry.current = { key, id: crypto.randomUUID() };
+    const id = chatRetry.current!.id;
+    if (appendUser)
+      setMessages((old) =>
+        old.some((m) => m.id === id)
+          ? old
+          : [...old.slice(-39), { id, role: 'user', text: prompt, images: files }],
+      );
+    const controller = new AbortController();
+    chatAbort.current = controller;
+    setChatRunning(true);
+    try {
+      const response = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          requestId: id,
+          revision: chat.revision,
+          message: prompt,
+          drafts,
+          selectedItemId,
+          fileIds,
+        }),
+      });
+      const data = await response.json().catch(() => ({
+        error: 'The assistant could not finish. Your pending drafts are preserved.',
+      }));
+      if (!response.ok) throw new Error(data.error || 'Business chat could not finish.');
+      const result = chatResponseSchema.parse(data.response);
+      setChat((old) => (old ? { ...old, revision: data.revision } : old));
+      setBatch((current) =>
+        JSON.stringify(current) === snapshot.batch ? result.drafts.batch : current,
+      );
+      setHistoryBatch((current) =>
+        JSON.stringify(current) === snapshot.historyBatch ? result.drafts.historyBatch : current,
+      );
+      setChoices(result.choices);
+      setMessages((old) =>
+        old.some((m) => m.replyTo === id)
+          ? old
+          : [
+              ...old.slice(-38),
+              ...(appendUser && !old.some((m) => m.id === id)
+                ? [{ id, role: 'user' as const, text: prompt }]
+                : []),
+              { id: crypto.randomUUID(), role: 'assistant', text: result.message, replyTo: id },
+            ],
+      );
+      setText('');
+      if (files.length) setAttachments([]);
+      setError('');
+      chatRetry.current = null;
+    } catch (error) {
+      if (controller.signal.aborted)
+        throw new Error('Stopped. No business records changed; your message is ready to retry.');
+      throw error;
+    } finally {
+      chatAbort.current = null;
+      setChatRunning(false);
+    }
+  }
+  async function sendChoice(choice: ChatResponse['choices'][number]) {
+    if (lock.current || !chat?.ready) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await businessChat(choice.text, { batch, historyBatch }, choice.itemId);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Retry your reply.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
   }
   async function send() {
     if (lock.current || !ready || (!text.trim() && !attachments.length)) return;
     const prompt = text.trim() || 'Review these files for sale history or active listings.';
+    if (chat?.ready && chat.enabled && !demo && !context) {
+      lock.current = true;
+      setBusy(true);
+      setError('');
+      try {
+        for (const attachment of attachments) {
+          const body = new FormData();
+          body.set('id', attachment.id);
+          body.set('file', attachment.file);
+          const upload = await fetch('/api/assistant/files', {
+            method: 'POST',
+            headers: requestHeaders,
+            body,
+          });
+          const result = await upload.json();
+          if (!upload.ok)
+            throw new Error(result.error || 'Private attachment upload failed. Retry this file.');
+        }
+        await businessChat(prompt, { batch, historyBatch }, null, true, attachments);
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? error.message
+            : 'The assistant could not finish. Your records are unchanged.',
+        );
+      } finally {
+        lock.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     if (!attachments.length && historyBatch?.rows.length) {
       setError('Edit the sale history cards directly, then approve or cancel the pending review.');
       return;
@@ -271,16 +487,15 @@ export function Assistant({
       const body = new FormData();
       attachments.forEach((a) => body.append('files', a.file));
       body.set('message', prompt);
+      body.set('timeZone', w.settings.timezone);
       const response = await fetch('/api/assistant/extract', {
         method: 'POST',
         headers: requestHeaders,
         body,
       });
-      const data = await response
-        .json()
-        .catch(() => ({
-          error: 'The file analysis could not finish. Try a smaller file; no records changed.',
-        }));
+      const data = await response.json().catch(() => ({
+        error: 'The file analysis could not finish. Try a smaller file; no records changed.',
+      }));
       if (!response.ok || !Array.isArray(data.screenshots))
         throw new Error(
           data.error || 'File analysis could not finish. Your attachments are ready to retry.',
@@ -293,9 +508,14 @@ export function Assistant({
       const extracted = parsed.data;
       const documents = extracted.filter((s) => s.sourceType === 'csv' || s.sourceType === 'pdf');
       const images = extracted.filter((s) => !s.sourceType || s.sourceType === 'image');
-      if (documents.length) setHistoryBatch(createHistoryBatch(documents, w));
-      if (images.length)
-        setBatch(createBatch(images, w, context, marketplaceContextFromText(prompt)));
+      const nextDrafts = {
+        batch: images.length
+          ? createBatch(images, w, context, marketplaceContextFromText(prompt))
+          : batch,
+        historyBatch: documents.length ? createHistoryBatch(documents, w) : historyBatch,
+      };
+      if (documents.length) setHistoryBatch(nextDrafts.historyBatch);
+      if (images.length) setBatch(nextDrafts.batch);
       setMessages((old) => [
         ...old.slice(-38),
         { id: crypto.randomUUID(), role: 'user', text: prompt, images: attachments },
@@ -303,12 +523,23 @@ export function Assistant({
           id: crypto.randomUUID(),
           role: 'assistant',
           text:
-            extracted.map((s) => s.extraction.message).join('\n') ||
+            [...new Set(extracted.map((s) => s.extraction.message))].join('\n') ||
             'Review the extracted information below.',
         },
       ]);
       setText('');
       setAttachments([]);
+      if (chat?.ready && chat.enabled) {
+        try {
+          await businessChat(prompt, nextDrafts, null, false);
+        } catch (error) {
+          setError(
+            error instanceof Error
+              ? error.message
+              : 'Your file review is ready; business chat did not finish.',
+          );
+        }
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -366,8 +597,25 @@ export function Assistant({
       const prepared = structuredClone(batch);
       if (!demo)
         for (const screenshot of prepared.screenshots) {
-          if (!approvedHashes.has(screenshot.hash) || screenshot.reference) continue;
-          const file = sourceFiles.current.get(screenshot.hash);
+          if (
+            !approvedHashes.has(screenshot.hash) ||
+            screenshot.reference ||
+            (screenshot.sourceType && screenshot.sourceType !== 'image')
+          )
+            continue;
+          let file = sourceFiles.current.get(screenshot.originalHash || screenshot.hash);
+          if (!file && screenshot.chatFileId) {
+            const retained = await fetch(
+              `/api/assistant/files?id=${encodeURIComponent(screenshot.chatFileId)}`,
+              { headers: requestHeaders, cache: 'no-store' },
+            );
+            if (!retained.ok)
+              throw new Error(
+                'The private source image is unavailable. Reattach it before approval.',
+              );
+            const blob = await retained.blob();
+            file = new File([blob], screenshot.name || 'source-image', { type: blob.type });
+          }
           if (!file) continue;
           const body = new FormData();
           body.set('file', file);
@@ -478,8 +726,9 @@ export function Assistant({
                   <MessageCircle size={28} />
                   <h3>Less typing. More thrifting.</h3>
                   <p>
-                    Attach PDF/CSV sale history or listing screenshots from Depop, Vinted, eBay or
-                    Whatnot. I’ll help you review and import records in bulk.
+                    Ask about your business, describe a sale, or attach spreadsheets, PDFs and
+                    photos. You can use your iPhone keyboard’s dictation. I’ll find records, ask
+                    about missing details, and prepare changes for review.
                   </p>
                   <small>Your records change only after approval.</small>
                 </div>
@@ -495,10 +744,29 @@ export function Assistant({
                   and CSV imports remain available.
                 </p>
               )}
+              {chat?.ready === false && (
+                <p className="hint">
+                  Business chat needs administrator setup. Your existing file imports and review
+                  controls remain available.
+                </p>
+              )}
               {messages.map((m) => (
                 <div key={m.id} className={`assistant-message assistant-${m.role}`}>
                   <small>{m.role === 'user' ? 'You' : 'Thrift Log'}</small>
                   <p>{m.text}</p>
+                  {!!m.files?.length && (
+                    <div className="assistant-thumbnails">
+                      {m.files.map((file) => (
+                        <span className="assistant-document" key={file.id}>
+                          <FileText size={22} />
+                          <span>
+                            {file.name}
+                            <small>{file.mime.split('/')[1].toUpperCase()}</small>
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {m.images && (
                     <div className="assistant-thumbnails">
                       {m.images.map((a) =>
@@ -518,11 +786,38 @@ export function Assistant({
                   )}
                 </div>
               ))}
+              {!!choices.length && (
+                <div className="assistant-choices" aria-label="Assistant reply choices">
+                  {choices.map((choice, i) => (
+                    <Button
+                      key={`${choice.itemId || 'reply'}:${i}`}
+                      variant="outline"
+                      disabled={busy || saving}
+                      onClick={() => void sendChoice(choice)}
+                    >
+                      {choice.label}
+                    </Button>
+                  ))}
+                </div>
+              )}
               {batch && (
                 <AssistantReview
                   batch={batch}
                   footerHost={footerHost}
-                  sourceUrls={sourceUrls}
+                  sourceUrls={
+                    new Map([
+                      ...batch.screenshots
+                        .filter((s) => s.chatFileId && (!s.sourceType || s.sourceType === 'image'))
+                        .map(
+                          (s) =>
+                            [
+                              s.hash,
+                              `/api/assistant/files?id=${encodeURIComponent(s.chatFileId!)}`,
+                            ] as const,
+                        ),
+                      ...sourceUrls,
+                    ])
+                  }
                   onChange={setBatch}
                   onApprove={(ids) => void approve(ids)}
                   onCancel={() => setBatch(null)}
@@ -540,7 +835,16 @@ export function Assistant({
                 />
               )}
               {!!recentOrders.length && <AssistantFulfillmentActions orderIds={recentOrders} />}
-              {busy && <p role="status">Working on your files…</p>}
+              {busy && (
+                <div className="actions">
+                  <p role="status">Reading and checking your workspace…</p>
+                  {chatRunning && (
+                    <Button variant="ghost" onClick={() => chatAbort.current?.abort()}>
+                      Stop response
+                    </Button>
+                  )}
+                </div>
+              )}
               <div ref={end} />
             </div>
             {(error || workspaceError) && (
@@ -581,9 +885,11 @@ export function Assistant({
             <div ref={setFooterHost} className="assistant-review-footer-host" />
             <details
               className="assistant-compose-disclosure"
-              open={batch || historyBatch ? undefined : true}
+              open={chat?.ready ? true : batch || historyBatch ? undefined : true}
             >
-              <summary className={batch || historyBatch ? undefined : 'sr-only'}>
+              <summary
+                className={chat?.ready ? 'sr-only' : batch || historyBatch ? undefined : 'sr-only'}
+              >
                 Message assistant / add files
               </summary>
               <form
@@ -596,9 +902,11 @@ export function Assistant({
                 <textarea
                   aria-label="Message assistant"
                   disabled={busy}
-                  placeholder="Log these sales…"
+                  placeholder="Ask anything about your business…"
+                  autoCapitalize="sentences"
+                  spellCheck
                   value={text}
-                  maxLength={2000}
+                  maxLength={4000}
                   onChange={(e) => setText(e.target.value)}
                   onPaste={(e) => {
                     const files = Array.from(e.clipboardData.files);
@@ -647,6 +955,20 @@ export function Assistant({
                 <small>
                   Review before saving · {scope === 'demo' ? 'Demo' : 'Private workspace'}
                 </small>
+                {chat?.ready && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setMessages([]);
+                      setChoices([]);
+                      setChatRefresh((n) => n + 1);
+                    }}
+                  >
+                    Refresh chat
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" disabled={busy} onClick={clear}>
                   <Trash2 size={13} />
                   Clear chat

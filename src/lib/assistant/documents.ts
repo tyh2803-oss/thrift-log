@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { readCsv } from '../csv';
+import { decodeSpreadsheet, readDocumentCsv, safeCsvColumns } from './document-csv';
 import { IMAGE_LIMIT } from './schema';
 export type DocumentType = 'pdf' | 'csv';
 export const CSV_ROWS_PER_PART = 30;
@@ -12,7 +12,11 @@ export function documentType(file: Pick<File, 'name' | 'type'>): DocumentType | 
 }
 export type DocumentPart = { kind: DocumentType; bytes: Uint8Array; rows?: number };
 /** Bounded data only: never execute PDF content or spreadsheet formulas. */
-export function prepareDocument(bytes: Uint8Array, kind: DocumentType): DocumentPart[] {
+export function prepareDocument(
+  bytes: Uint8Array,
+  kind: DocumentType,
+  options: { groupOrders?: boolean; maxRows?: number; preserveSummaries?: boolean } = {},
+): DocumentPart[] {
   if (!bytes.length || bytes.length > IMAGE_LIMIT)
     throw new Error('Each PDF or CSV must be smaller than 5 MB.');
   if (kind === 'pdf') {
@@ -24,36 +28,14 @@ export function prepareDocument(bytes: Uint8Array, kind: DocumentType): Document
       throw new Error('Password-protected PDFs are unsupported. Export an unlocked copy.');
     return [{ kind, bytes }];
   }
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error('Save the CSV as UTF-8 and attach it again.');
-  }
-  if (text.includes('\0')) throw new Error('Use a UTF-8 CSV, not a binary spreadsheet.');
-  const parsed = readCsv(text);
-  const sensitive = new Set([
-    'buyer',
-    'buyername',
-    'buyeremail',
-    'email',
-    'address',
-    'addressline1',
-    'addressline2',
-    'city',
-    'state',
-    'postcode',
-    'zipcode',
-    'phone',
-    'phonenumber',
-  ]);
-  const columns = parsed.columns.filter(
-    (c) => !sensitive.has(c.toLowerCase().replace(/[^a-z0-9]/g, '')),
-  );
+  const parsed = readDocumentCsv(decodeSpreadsheet(bytes), options);
+  const columns = safeCsvColumns(parsed.columns);
   const rows = parsed.rows;
   if (!rows.length) throw new Error('This CSV has no data rows.');
-  if (rows.length > MAX_CSV_ROWS)
-    throw new Error(`Use at most ${MAX_CSV_ROWS} CSV rows per batch; split larger reports.`);
+  if (rows.length > (options.maxRows || MAX_CSV_ROWS))
+    throw new Error(
+      `Use at most ${options.maxRows || MAX_CSV_ROWS} CSV rows per batch; split larger reports.`,
+    );
   const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   const orderColumn = columns.find((c) =>
     ['orderid', 'ordernumber', 'transactionid'].includes(clean(c)),
@@ -62,7 +44,7 @@ export function prepareDocument(bytes: Uint8Array, kind: DocumentType): Document
   const groups = new Map<string, Record<string, string>[]>();
   rows.forEach((row, i) => {
     const external = orderColumn ? row[orderColumn]?.trim() : '';
-    const key = external ? `order:${external}` : `row:${i}`;
+    const key = external && options.groupOrders !== false ? `order:${external}` : `row:${i}`;
     groups.set(key, [...(groups.get(key) || []), row]);
   });
   const parts: DocumentPart[] = [];

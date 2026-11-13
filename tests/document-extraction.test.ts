@@ -11,6 +11,8 @@ import {
 import { prepareDocument, documentType } from '../src/lib/assistant/documents';
 import { POST } from '../src/app/api/assistant/extract/route';
 import { extractedLine, extractedSale } from './helpers/assistant';
+import { readDocumentCsv, decodeSpreadsheet } from '../src/lib/assistant/document-csv';
+import { documentContext, contextSaleDate } from '../src/lib/assistant/document-context';
 const pdf = new TextEncoder().encode('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n');
 const csv = new TextEncoder().encode(
   'Name,Amount,When,Charges\nExample garment,25,2026-10-01,1.50',
@@ -31,7 +33,15 @@ const result = (
               text: JSON.stringify({
                 complete: true,
                 rowsAccountedFor: 1,
-                records,
+                ignoredRows: [],
+                records: records.map((record, index) => ({
+                  ...record,
+                  lines: record.lines.map((line) => ({
+                    ...line,
+                    purchaseCost: line.purchaseCost ?? null,
+                  })),
+                  sourceRows: [index + 1],
+                })),
                 message: 'Review source records.',
                 ...extra,
               }),
@@ -57,7 +67,170 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
+it('finds an informal spreadsheet table after titles, keeps blank columns distinct, and handles UTF-16 exports', () => {
+  const text =
+    'My stock\n2026,,,,,,,\nItem,Purchased Price,Sold Price,,Total Spent,Total Made,,Profit\nJacket,$1.00,$25.00,,"$1,000.00","$2,000.00",,$999.00\nItem,Purchased Price,Sold Price,,Total Spent,Total Made,,Profit\nBoots,$0.00,$0.00,,,,,';
+  const parsed = readDocumentCsv(text);
+  expect(parsed.rows).toHaveLength(2);
+  expect(new Set(parsed.columns).size).toBe(8);
+  expect(parsed.rows[0]['Purchased Price']).toBe('$1.00');
+  expect(parsed.note).toContain('2 title/heading rows');
+  expect(parsed.note).toContain('1 repeated headings');
+  const utf16 = Buffer.concat([Buffer.from([255, 254]), Buffer.from(text, 'utf16le')]);
+  expect(readDocumentCsv(decodeSpreadsheet(utf16)).rows).toEqual(parsed.rows);
+  expect(() => readDocumentCsv('Name,Price\n"unterminated,5')).toThrow('CSV could not');
+});
+it('prepares all 133 informal spreadsheet items without AI, preserving missing fees/prices and timezone-aware user dates', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-11-13T02:00:00Z'));
+  const text =
+    'My spreadsheet\n2026,,,,,,,\nItem,Purchased Price,Sold Price,,Total Spent,Total Made,,Profit\n' +
+    Array.from(
+      { length: 133 },
+      (_, i) =>
+        `Garment ${i},${i === 0 ? '$0.00' : '$1.25'},${i === 1 ? '' : '$25.00'},,${i === 0 ? '$999.00' : ''},,,`,
+    ).join('\n');
+  const form = new FormData();
+  form.append('files', new File([text], 'thrifts.csv', { type: 'text/csv' }));
+  form.set('message', 'These were sold on Depop yesterday');
+  form.set('timeZone', 'America/New_York');
+  const fetcher = vi.fn();
+  vi.stubGlobal('fetch', fetcher);
+  const response = await POST(
+    new Request('https://app.test/api/assistant/extract', { method: 'POST', body: form }),
+  );
+  const data = await response.json();
+  expect(response.status, JSON.stringify(data)).toBe(200);
+  const records = data.screenshots.flatMap(
+    (s: { extraction: { records: unknown[] } }) => s.extraction.records,
+  );
+  expect(records).toHaveLength(133);
+  expect(records[0]).toMatchObject({
+    marketplace: 'Depop',
+    date: '2026-11-11',
+    fees: null,
+    lines: [{ title: 'Garment 0', price: 2500, purchaseCost: 0 }],
+  });
+  expect(records[1].lines[0].price).toBe(null);
+  expect(records.every((r: { fees: number | null }) => r.fees === null)).toBe(true);
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it('preserves explicit source dates and marketplaces over user defaults and keeps invalid amounts unresolved', async () => {
+  const text =
+    'Item,Sold Price,Purchased Price,Date,Fees,Marketplace\nJacket,not-money,12,2026-10-01,0,eBay';
+  const response = await POST(
+    request([new File([text], 'history.csv')], 'Sold on Depop yesterday'),
+  );
+  const data = await response.json();
+  expect(response.status).toBe(200);
+  expect(data.screenshots[0].extraction.records[0]).toMatchObject({
+    marketplace: 'eBay',
+    date: '2026-10-01',
+    fees: 0,
+    lines: [{ price: null, purchaseCost: 1200 }],
+  });
+});
+it('resolves relative dates in the workspace timezone without guessing conflicting context', () => {
+  const clock = documentContext('America/New_York', new Date('2026-11-13T02:00:00Z'));
+  expect(contextSaleDate('Sold yesterday', clock)).toBe('2026-11-11');
+  expect(contextSaleDate('Sold today', clock)).toBe('2026-11-12');
+  expect(contextSaleDate('not yesterday', clock)).toBeNull();
+  expect(contextSaleDate('today or yesterday', clock)).toBeNull();
+  expect(contextSaleDate('2026-10-01 and 2026-10-02', clock)).toBeNull();
+});
+it('accounts for every repeated CSV section even when identical parts share a cached AI result', async () => {
+  const text =
+    'Garment,Amount,When,Charges\n' +
+    Array.from({ length: 60 }, () => 'Jacket,25,2026-10-01,1').join('\n');
+  const fetcher = vi.fn().mockImplementation(async (_url, init) => {
+    const body = JSON.parse(init.body);
+    const count = JSON.parse(body.input[0].content[0].text).expectedDataRows;
+    return result(
+      Array.from({ length: count }, () =>
+        extractedSale({ lines: [extractedLine({ purchaseCost: null })] }),
+      ),
+      { rowsAccountedFor: count },
+    );
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const response = await POST(request([new File([text], 'unfamiliar.csv')]));
+  const data = await response.json();
+  expect(response.status, JSON.stringify(data)).toBe(200);
+  expect(data.screenshots).toHaveLength(2);
+  expect(new Set(data.screenshots.map((s: { hash: string }) => s.hash)).size).toBe(2);
+  expect(
+    data.screenshots.flatMap((s: { extraction: { records: unknown[] } }) => s.extraction.records),
+  ).toHaveLength(60);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('does not accept an AI claim that an incomplete physical item is a summary row', async () => {
+  await expect(
+    extractDocument(
+      'owner',
+      { kind: 'csv', bytes: csv, rows: 1 },
+      '',
+      vi.fn().mockResolvedValue(result([], { ignoredRows: [{ row: 1, reason: 'summary' }] })),
+    ),
+  ).rejects.toThrow('mistaken for a heading');
+});
+it('excludes clearly labeled footer totals without manufacturing an extra physical item', () => {
+  const table = readDocumentCsv('Item,Purchased Price,Sold Price\nJacket,1,25\nGrand Total,1,25');
+  expect(table.rows).toHaveLength(1);
+  expect(table.note).toContain('1 summary-total rows');
+});
+it('retains refund reconciliation checks when preparing incomplete spreadsheets', async () => {
+  const response = await POST(
+    request(
+      [new File(['Item,Sold Price,Refund\nJacket,25,not-an-amount'], 'history.csv')],
+      'These sold on Depop yesterday',
+    ),
+  );
+  expect(response.status).toBe(400);
+  expect((await response.json()).error).not.toContain('File analysis failed');
+});
+it('rejects repeated or skipped AI source-row references even when a model claims complete coverage', async () => {
+  const records = [
+    extractedSale({ lines: [extractedLine({ purchaseCost: null })] }),
+    extractedSale({ lines: [extractedLine({ purchaseCost: null })] }),
+  ];
+  const reply = result(records, {
+    rowsAccountedFor: 2,
+    records: records.map((r) => ({ ...r, sourceRows: [1] })),
+  });
+  await expect(
+    extractDocument(
+      'owner',
+      { kind: 'csv', bytes: csv, rows: 2 },
+      '',
+      vi.fn().mockResolvedValue(reply),
+    ),
+  ).rejects.toThrow('skipped or repeated');
+});
+it.skipIf(!process.env.THRIFT_CSV_ACCEPTANCE_FILE)(
+  'accepts the actual user-supplied spreadsheet without changing or uploading business records',
+  async () => {
+    const text = await readFile(process.env.THRIFT_CSV_ACCEPTANCE_FILE!, 'utf8');
+    const response = await POST(
+      request([new File([text], 'thrifts.csv')], 'They were sold on Depop yesterday'),
+    );
+    const data = await response.json();
+    expect(response.status, JSON.stringify(data)).toBe(200);
+    const records = data.screenshots.flatMap(
+      (s: { extraction: { records: unknown[] } }) => s.extraction.records,
+    );
+    expect(records).toHaveLength(133);
+    expect(records[0]).toMatchObject({
+      marketplace: 'Depop',
+      fees: null,
+      lines: [{ purchaseCost: 100, price: 0 }],
+    });
+    expect(
+      records.filter((r: { lines: { price: number | null }[] }) => r.lines[0].price === null),
+    ).toHaveLength(1);
+  },
+);
 it('accepts bounded PDFs/UTF-8 CSVs but rejects forged, truncated, encrypted and binary documents', () => {
   expect(documentType({ name: 'report.CSV', type: '' })).toBe('csv');
   expect(prepareDocument(pdf, 'pdf')).toHaveLength(1);

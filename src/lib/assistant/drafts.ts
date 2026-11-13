@@ -36,6 +36,8 @@ export const draftRowSchema = z.object({
   id: z.string().uuid(),
   sourceHash: z.union([z.string().regex(/^[a-f0-9]{64}$/), z.literal('conversation')]),
   intent: z.string().max(500).optional(),
+  inventoryStage: z.enum(['unlisted', 'archived']).optional(),
+  confirmStatusImpact: z.boolean().optional(),
   recordIndex: z.number().int().min(0),
   included: z.boolean(),
   facts: extractedRecordSchema,

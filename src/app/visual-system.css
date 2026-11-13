@@ -993,6 +993,77 @@ input[type='checkbox']:disabled {
 }
 
 /* Historical CSV/PDF review shares the app's forms and semantic colors. */
+.assistant-message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.assistant-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assistant-choices .btn {
+  min-height: 44px;
+  white-space: normal;
+  text-align: left;
+}
+.conversation-card {
+  padding: 16px;
+  min-width: 0;
+}
+.conversation-item-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.conversation-item-heading > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.conversation-item-heading small {
+  display: block;
+  color: var(--muted);
+}
+.conversation-sale-fields {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.conversation-sale-fields input,
+.conversation-sale-fields select {
+  min-width: 0;
+  min-height: 44px;
+  font-size: 16px;
+}
+.conversation-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-cost);
+}
+.conversation-zero-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-neutral-soft);
+}
+@media (max-width: 700px) {
+  .conversation-sale-fields .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .conversation-item-heading {
+    flex-wrap: wrap;
+  }
+  .assistant-choices .btn {
+    flex: 1 1 180px;
+  }
+}
 .history-review,
 .csv-sales-review {
   display: grid;
@@ -1006,6 +1077,19 @@ input[type='checkbox']:disabled {
 .history-card {
   padding: 16px;
   min-width: 0;
+}
+.history-batch-fields {
+  padding: 16px;
+  min-width: 0;
+  border-color: var(--border);
+}
+.history-batch-fields legend {
+  padding-inline: 6px;
+  font-weight: 600;
+}
+.history-batch-fields p {
+  color: var(--muted);
+  margin-bottom: 12px;
 }
 .history-card .card-heading {
   padding: 0 0 12px;

@@ -221,6 +221,14 @@ const server = createServer(async (request, response) => {
       if (bearer !== 'test-server-key') return send({ message: 'Denied' }, 403);
       const name = url.pathname.split('/').at(-1);
       const actor = users.get(body.p_user_id || body.p_actor_id);
+      if (name === 'assistant_chat' && body.p_action === 'load')
+        return send(
+          {
+            code: 'PGRST202',
+            message: 'Optional assistant conversation migration is not installed',
+          },
+          404,
+        );
       // Existing browser suites model the optional integration as not migrated.
       // Only its status lookup is read-only; unexpected mutations remain guarded below.
       if (name === 'whatnot_admin' && body.p_action === 'status')

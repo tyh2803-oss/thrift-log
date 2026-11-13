@@ -2,6 +2,7 @@
 import { createPortal } from 'react-dom';
 import { BatchTools } from './assistant-batch-tools';
 import { CompactListing } from './assistant-compact-listing';
+import { ConversationCard } from './assistant-conversation-card';
 import { updateReviewRow } from '@/lib/assistant/review-bulk';
 import { Trash2 } from 'lucide-react';
 import { LifecycleFields, eventNames } from './assistant-lifecycle-fields';
@@ -101,7 +102,14 @@ export function AssistantReview({
             ? `${asking.size} physical items · ${ready.length} listings ready`
             : `${ready.length} ${ready.length === 1 ? 'item' : 'items'} ready`}
         </strong>
-        <span> · {money([...asking.values()].reduce((a, b) => a + b, 0))} asking value</span>
+        {batch.rows.every((r) => r.facts.kind === 'listing') ? (
+          <span> · {money([...asking.values()].reduce((a, b) => a + b, 0))} asking value</span>
+        ) : ready.some((p) => p.row.facts.kind === 'sale') ? (
+          <span>
+            {' '}
+            · {money(ready.reduce((sum, p) => sum + (p.totals?.revenue || 0), 0))} sale value
+          </span>
+        ) : null}
         {!!unresolved.length && <small>{unresolved.length} unresolved · stay pending</small>}
       </div>
       <Button disabled={busy || stale || !ready.length} onClick={approve}>
@@ -167,7 +175,10 @@ export function AssistantReview({
           busy,
           onView,
         };
-        return p.row.facts.kind === 'listing' ? (
+        return p.row.sourceHash === 'conversation' &&
+          (p.row.facts.kind === 'sale' || p.row.inventoryStage) ? (
+          <ConversationCard {...props} key={p.row.id} />
+        ) : p.row.facts.kind === 'listing' ? (
           <CompactListing {...props} w={w} pendingItems={pendingItems} key={p.row.id} />
         ) : (
           <ReviewRow {...props} key={p.row.id} />

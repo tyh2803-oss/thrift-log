@@ -1,4 +1,5 @@
 import { confirmedFreeInventory } from './assistant/listing-review';
+import { unsoldStageCommands } from './unsold-stage';
 import { z } from 'zod';
 import { applyCommand } from './commands';
 import { inventoryPipeline, inventoryStages } from './pipeline';
@@ -224,26 +225,12 @@ export async function applyPipelineMove(w: Workspace, input: PipelineMove): Prom
         const original = byItem.get(id);
         if (['unlisted', 'for-sale', 'archived'].includes(request.destination)) {
           if (request.destination === 'unlisted' || request.destination === 'archived') {
-            for (const listing of trial.listings.filter(
-              (l) => l.itemId === id && l.status === 'Active',
-            ))
-              add({ type: 'listing', value: { ...listing, status: 'Ended' } });
-            add({
-              type: 'item',
-              value: {
-                ...physical,
-                status:
-                  request.destination === 'archived'
-                    ? 'Archived'
-                    : trial.shows.some(
-                          (show) =>
-                            show.status !== 'Ended' &&
-                            show.lineup.some((line) => line.itemId === id),
-                        )
-                      ? 'Reserved'
-                      : 'Ready to List',
-              },
-            });
+            unsoldStageCommands(
+              trial,
+              id,
+              request.destination,
+              request.confirmConsequences,
+            ).forEach(add);
           } else {
             if (physical.status === 'Archived') {
               physical = { ...physical, status: 'Ready to List' };

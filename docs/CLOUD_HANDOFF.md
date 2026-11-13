@@ -1,6 +1,8 @@
 # Codex Cloud continuation
 
-Use branch **`feat/codex-cloud-handoff`**. This integrates the existing assistant, inventory pipeline, authentication and local HTTPS work. Do not restart those features. Read `PROJECT_STATUS.md`, `AGENTS.md` and the relevant installed Next.js guides before editing. The November 10 handoff authorization permits this feature-branch commit/push; earlier status entries prohibiting commits describe previous sessions. Main has not been merged or changed.
+**Current checkpoint — November 13:** the business assistant phase described below is now implemented on `feat/business-assistant`, preserving the flexible-document and earlier application work. See [current setup, privacy and verification](BUSINESS_ASSISTANT.md) and [PROJECT_STATUS.md](../PROJECT_STATUS.md). Sol inference/tool/PDF/image tests now pass with synthetic data. Following release approval, the conversation/file migration was applied and verified as `202611130001`; do not replay it. The remaining text preserves the earlier November 10 handoff and its still-relevant hosted-fixture warning; it is not a request to switch branches or replay migrations.
+
+The November 10 handoff used branch **`feat/codex-cloud-handoff`**. This integrates the existing assistant, inventory pipeline, authentication and local HTTPS work. Do not restart those features. Read `PROJECT_STATUS.md`, `AGENTS.md` and the relevant installed Next.js guides before editing. The November 10 handoff authorization permits this feature-branch commit/push; earlier status entries prohibiting commits describe previous sessions. Main has not been merged or changed.
 
 ## Environment and checks
 
@@ -15,11 +17,11 @@ Use branch **`feat/codex-cloud-handoff`**. This integrates the existing assistan
 
 The assistant supports clothing/marketplace extraction, inline cost/price/platform review, exact-cent previews, inventory matching, lifecycle proposals, batch approval, draft removal/clearing and post-sale fulfillment. Mutations require explicit approval and authoritative validation. Unknown costs remain different from zero; existing physical inventory identity and immutable financial history are preserved. The Home pipeline has Cost / Sale Value / Profit and filtered stage navigation. Authentication retains secure production cookies; local HTTPS enables native browser cryptography.
 
-Pending drafts are stored in scoped session storage and survive closing/reopening the panel. General conversation history, generalized business questions and model-driven read tools are not yet implemented. Do not describe the larger business-aware assistant mission as complete.
+At that earlier checkpoint pending drafts used scoped session storage; general conversation history, business questions and model-driven read tools had not yet been implemented. The current business assistant guide supersedes those gaps.
 
-## Next implementation phase: business-aware assistant
+## Original next-phase audit (historical; now superseded)
 
-This phase stopped at a read-only audit when the user requested the Cloud handoff. No runtime model, environment, business records or schema was changed for that phase.
+The November 10 phase stopped at a read-only audit when the user requested the Cloud handoff. No runtime model, environment, business records or schema was changed at that earlier checkpoint. The list below records its original follow-up work, rather than the current implementation status.
 
 1. Finish the gap audit of existing assistant components/routes, command layer, matching, ledger, authorization, draft persistence and tests. Reuse the completed workflows.
 2. Recheck official API model documentation and project access before upgrading. During the local audit, official documentation identified `gpt-6.1-sol` and an authenticated model-metadata GET returned HTTP 200 with that exact ID. **No inference request with that model was performed, and it is not enabled in the app.** The runtime remains `gpt-4.1-2025-04-14`, configured by `OPENAI_SCREENSHOT_MODEL`; `OPENAI_ASSISTANT_MODEL` and usage/cost logging are not implemented yet. Verify a real structured multimodal Responses request before claiming support. Do not silently fall back or conflate the development agent's identity with the runtime model.

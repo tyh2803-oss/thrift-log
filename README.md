@@ -1,5 +1,9 @@
 # Thrift Log
 
+**Private business assistant:** natural conversation and iPhone dictation, owned-workspace read tools, persistent context, native PDF/photo reading and flexible CSV analysis, with business changes prepared for explicit approval. GPT-6.1 Sol is the default. See [setup, privacy, limits and verification](docs/BUSINESS_ASSISTANT.md); the optional migration was applied and verified on November 13 after release approval.
+
+**Personal spreadsheet imports:** the assistant recognizes table headings below title/year rows, preserves purchase costs, ignores side totals, and prepares incomplete rows for review. Fill missing dates and seller fees in bulk. Unfamiliar CSV/PDF analysis retains row-coverage and accounting safeguards. See [the import guide](docs/SALE_HISTORY_IMPORTS.md#personal-spreadsheets-and-missing-information).
+
 **Faster navigation:** [Performance changes and verification](docs/PERFORMANCE.md) cover persistent, isolated workspace loading, local inventory filters, quieter idle rendering and indexed financial views. Protected pages and APIs still verify access; no migration or new configuration is required.
 
 **Whatnot Seller API:** [Connect your own read-only account](docs/WHATNOT_INTEGRATION.md) for resumable order/history synchronization, verified report fees, fulfillment and show analytics. Requires one additive, unapplied migration; no OAuth app or SMTP setup. Bank payouts are not exposed by the documented API; net refunds require reconciliation. No production database changes were made.
@@ -111,7 +115,7 @@ Open **Assistant** from the floating button or **Quick add → AI assistant**. A
 
 The footer stays visible outside the scrolling cards, shows ready records and asking value (one conservative price per physical item), and approves all valid records in one Supabase transaction. Unresolved drafts survive partial approval and failed saves. Confirmed sales retain their existing financial and lifecycle review, and saved sales offer **Mark Shipped / Mark Fulfilled**.
 
-Configure optional server-only `OPENAI_API_KEY`, `OPENAI_SCREENSHOT_MODEL` and `ASSISTANT_BATCH_LIMIT` from `.env.example`, then restart. Never prefix the key with `NEXT_PUBLIC_`. Without a key, manual/CSV workflows keep working and the assistant explains setup. `/demo` does not invoke private AI analysis.
+Configure server-only `OPENAI_API_KEY` and optional model/batch settings from `.env.example`, then restart. Natural business chat additionally needs the [optional private conversation migration](docs/BUSINESS_ASSISTANT.md#minimum-setup-and-release-procedure). GPT-6.1 Sol is the default chat and extraction model; `OPENAI_SCREENSHOT_MODEL` can override extraction only. Never prefix the key with `NEXT_PUBLIC_`. Without a key, manual/CSV workflows keep working and the assistant explains setup. `/demo` does not invoke private AI analysis.
 
 See [assistant usage, privacy, architecture and verification](docs/ASSISTANT.md) and [current test/checkpoint results](PROJECT_STATUS.md). Clothing review now includes descriptive garment attributes, visual/text evidence, conservative vintage assessment, per-screenshot marketplace confidence and private card crops. Use **Scan Listing for This Item** in an existing inventory editor to preserve the known physical item. OpenAI Responses/vision requests use strict structured extraction and `store: false`; the existing command and financial layers control calculations and approved writes. Source screenshots are preserved in private Storage when available at approval. Live OpenAI vision has been verified with rendered test receipt images and in-memory inventory; genuine marketplace screenshot/real-inventory acceptance remains pending.
 

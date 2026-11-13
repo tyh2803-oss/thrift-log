@@ -11,6 +11,7 @@ import { itemIsSold } from '../ledger';
 import { orderSchema, itemSchema, listingSchema, type Command, type Workspace } from '../model';
 import { orderTotals, lineProfits } from '../money';
 import { batchSchema, type DraftBatch, type DraftRow } from './drafts';
+import { unsoldStageCommands } from '../unsold-stage';
 
 export const saleAmounts = [
   'fees',
@@ -81,6 +82,46 @@ export function previewRow(
     date = importDate(r.date, w.settings.timezone);
   let duplicateId: string | null = null,
     duplicateKind: Preview['duplicateKind'] = null;
+  if (row.inventoryStage) {
+    try {
+      if (
+        row.sourceHash !== 'conversation' ||
+        !row.intent?.trim() ||
+        row.matches.length !== 1 ||
+        !row.matches[0].itemId ||
+        row.matches[0].newItem
+      )
+        throw new Error(
+          'A status proposal must identify one existing physical item and its request.',
+        );
+      commands.push(
+        ...unsoldStageCommands(
+          w,
+          row.matches[0].itemId,
+          row.inventoryStage,
+          !!row.confirmStatusImpact,
+        ),
+      );
+      commands.reduce(applyCommand, w);
+    } catch (error) {
+      issues.push(error instanceof Error ? error.message : 'Review the status change.');
+    }
+    return {
+      row,
+      ready: !issues.length && !!commands.length,
+      issues,
+      duplicateId,
+      duplicateKind,
+      costs: [],
+      totals: null,
+      profits: [],
+      commands: issues.length ? [] : commands,
+    };
+  }
+  if (row.sourceHash === 'conversation' && row.matches.some((match) => match.newItem))
+    issues.push(
+      'Text commands must match existing inventory. Use inventory or file import to create a new physical item.',
+    );
   if (isLifecycle(r.kind)) {
     const event = lifecyclePreview(w, row, date);
     if (importedSource(w, row))
@@ -560,7 +601,13 @@ export function approvalCommands(
     const screenshot = batch.screenshots.find((s) => s.hash === row.sourceHash);
     if (
       row.sourceHash === 'conversation'
-        ? !isLifecycle(row.facts.kind)
+        ? !(
+            isLifecycle(row.facts.kind) ||
+            row.inventoryStage ||
+            (['sale', 'listing'].includes(row.facts.kind) &&
+              !!row.intent?.trim() &&
+              row.matches.every((m) => m.itemId && !m.newItem))
+          )
         : !screenshot || !screenshot.extraction.records[row.recordIndex]
     )
       throw new Error('The original screenshot extraction is missing.');
@@ -569,7 +616,11 @@ export function approvalCommands(
       value: {
         id: row.id,
         filename: `${row.sourceHash === 'conversation' ? 'assistant-action' : 'screenshots'}-${batch.id}.json`,
-        kind: row.facts.kind === 'listing' ? 'Listings' : 'Sales',
+        kind: row.inventoryStage
+          ? 'Inventory'
+          : row.facts.kind === 'listing'
+            ? 'Listings'
+            : 'Sales',
         importedAt: at,
         rawCsv: JSON.stringify({
           version: 1,
@@ -579,12 +630,15 @@ export function approvalCommands(
             hash: screenshot?.hash,
             name: screenshot?.name,
             reference: screenshot?.reference,
+            chatFileId: screenshot?.chatFileId,
             identification: screenshot?.extraction.identification,
             processing: screenshot?.processing,
           },
           extracted: screenshot?.extraction.records[row.recordIndex] || null,
           origin: row.sourceHash === 'conversation' ? 'conversation' : 'screenshot',
           intent: row.intent,
+          inventoryStage: row.inventoryStage,
+          confirmStatusImpact: row.confirmStatusImpact,
           corrected: row.facts,
           listingDateInferred:
             row.facts.kind === 'listing' &&

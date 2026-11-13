@@ -11,6 +11,9 @@ import {
 import { normalizeVision } from './vision';
 import { visionImages } from './vision-images';
 import type { DocumentPart } from './documents';
+import { documentContext, type DocumentContext } from './document-context';
+import { readCsv } from '../csv';
+import { businessAssistantConfig } from './config';
 
 export class AssistantError extends Error {
   constructor(
@@ -24,7 +27,7 @@ export function assistantConfig() {
   const limit = Number(process.env.ASSISTANT_BATCH_LIMIT || DEFAULT_BATCH_LIMIT);
   return {
     enabled: !!process.env.OPENAI_API_KEY?.trim(),
-    model: process.env.OPENAI_SCREENSHOT_MODEL?.trim() || 'gpt-4.1-2025-04-14',
+    model: process.env.OPENAI_SCREENSHOT_MODEL?.trim() || businessAssistantConfig().model,
     batchLimit: Number.isInteger(limit) ? Math.min(10, Math.max(1, limit)) : DEFAULT_BATCH_LIMIT,
   };
 }
@@ -205,6 +208,7 @@ export async function extractDocument(
   part: DocumentPart,
   context = '',
   fetcher: typeof fetch = fetch,
+  clock: DocumentContext = documentContext(),
 ) {
   const config = assistantConfig();
   if (!config.enabled)
@@ -214,14 +218,14 @@ export async function extractDocument(
     );
   const hash = createHash('sha256').update(part.bytes).digest('hex');
   const contextHash = createHash('sha256').update(context).digest('hex');
-  const key = `${owner}:${config.model}:${part.kind}:${hash}:${contextHash}:document-v1`;
+  const key = `${owner}:${config.model}:${part.kind}:${hash}:${contextHash}:${clock.currentDate}:${clock.timeZone}:document-v2`;
   const now = Date.now();
   for (const [k, value] of documentCache) if (value.until < now) documentCache.delete(k);
   let cached = documentCache.get(key);
   if (!cached) {
     consumeAttempt(owner, now);
     if (documentCache.size >= 100) documentCache.delete(documentCache.keys().next().value!);
-    const value = requestDocument(config.model, part, context, fetcher);
+    const value = requestDocument(config.model, part, context, fetcher, clock);
     cached = { until: now + 10 * 60_000, value };
     documentCache.set(key, cached);
     value.catch(() => {
@@ -235,6 +239,7 @@ async function requestDocument(
   part: DocumentPart,
   context: string,
   fetcher: typeof fetch,
+  clock: DocumentContext,
 ) {
   let response: Response;
   try {
@@ -250,7 +255,9 @@ async function requestDocument(
         model,
         store: false,
         max_output_tokens: 24000,
-        instructions: documentInstructions,
+        instructions:
+          documentInstructions +
+          `\n\nSPREADSHEET UNDERSTANDING: Tables may be informal personal spreadsheets, with title/year preambles, blank/duplicate headings, repeated headers, side-by-side summary/profit columns and totals. Identify the actual item table. Do not turn Total Spent, Total Made, Profit, balance or summary amounts into item prices/fees or new items. Purchased Price is acquisition cost, not sale proceeds. Preserve unknown required fields as null for inline review; a missing date, fee, marketplace or cost does not make an otherwise readable document fail. User statements such as "these sold on Depop yesterday" may supply a missing marketplace and date; resolve today/yesterday using the supplied server currentDate and timeZone, explain the default in message, and never replace an explicit source date/status. Do not infer that $0 or blank Sold Price means a completed sale when the sheet could contain unsold inventory. An explicit confirmed zero sale remains valid. Do not guess whether an amount means gross proceeds or net payout; warn if ambiguous. Return readable unsold/unclear rows as other rather than inventing sales.\n\nROW COVERAGE: For CSV each record must include sourceRows: the 1-based data row numbers that belong to that record, header excluded. Every data row must occur exactly once across records.sourceRows and ignoredRows. Only headings, blank rows and summary totals may go in ignoredRows, with their row number and reason. Do not skip an unreadable or incomplete physical item; prepare it with null fields. rowsAccountedFor includes all accounted rows, including ignoredRows. For PDF use sourceRows=null and ignoredRows=[].`,
         input: [
           {
             role: 'user',
@@ -261,6 +268,7 @@ async function requestDocument(
                   userContext: context,
                   sourceType: part.kind,
                   expectedDataRows: part.rows ?? null,
+                  ...clock,
                 }),
               },
               part.kind === 'pdf'
@@ -318,13 +326,56 @@ async function requestDocument(
         'The entire report could not be accounted for. Split or clarify the file and retry; no records changed.',
         422,
       );
-    if (part.rows && !parsed.records.length)
+    if (part.rows !== undefined) {
+      const expected = part.rows;
+      const coverage = [
+        ...parsed.records.flatMap((record) => record.sourceRows || []),
+        ...parsed.ignoredRows.map((row) => row.row),
+      ];
+      if (
+        coverage.length !== expected ||
+        new Set(coverage).size !== expected ||
+        coverage.some((row) => row < 1 || row > expected) ||
+        parsed.records.some((record) => !record.sourceRows?.length)
+      )
+        throw new AssistantError(
+          'Some spreadsheet rows were skipped or repeated during analysis. Retry this file; no records changed.',
+          422,
+        );
+      const input = readCsv(new TextDecoder().decode(part.bytes));
+      for (const ignored of parsed.ignoredRows) {
+        const values = Object.values(input.rows[ignored.row - 1] || {}).filter((v) => v.trim());
+        const summary = /^(?:grand\s+total|sub\s*total|totals?|balance|net\s+profit|profit)$/i.test(
+          values[0] || '',
+        );
+        const heading = values.length > 0 && values.every((value) => input.columns.includes(value));
+        if (!(
+          (ignored.reason === 'summary' && summary) ||
+          (ignored.reason === 'heading' && heading) ||
+          (ignored.reason === 'blank' && !values.length)
+        ))
+          throw new AssistantError(
+            'An item row was mistaken for a heading or total. Retry this file; no records changed.',
+            422,
+          );
+      }
+    }
+    if (part.rows && !parsed.records.length && !parsed.ignoredRows.length)
       throw new AssistantError(
         'No report rows could be identified. Check the column headers and try again.',
         422,
       );
     return {
-      extraction: extractionSchema.parse({ records: parsed.records, message: parsed.message }),
+      extraction: extractionSchema.parse({
+        records: parsed.records.map((record) =>
+          Object.fromEntries(Object.entries(record).filter(([field]) => field !== 'sourceRows')),
+        ),
+        message:
+          `${parsed.message}${parsed.ignoredRows.length ? ` ${parsed.ignoredRows.length} heading/summary rows excluded from proposed records.` : ''}`.slice(
+            0,
+            1000,
+          ),
+      }),
       analysisModel: model,
     };
   } catch (e) {

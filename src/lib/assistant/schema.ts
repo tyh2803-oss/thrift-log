@@ -111,11 +111,20 @@ export const visionExtractionSchema = z.strictObject({
 export const documentExtractionSchema = z.strictObject({
   complete: z.boolean(),
   rowsAccountedFor: z.number().int().nonnegative().nullable(),
+  ignoredRows: z
+    .array(
+      z.strictObject({
+        row: z.number().int().positive(),
+        reason: z.enum(['summary', 'heading', 'blank']),
+      }),
+    )
+    .max(30),
   records: z
     .array(
       extractedRecordSchema
         .omit({ marketplaceIdentification: true, event: true, packaging: true, showId: true })
         .extend({
+          sourceRows: z.array(z.number().int().positive()).max(30).nullable(),
           lines: z
             .array(extractedLineSchema.omit({ clothing: true }).extend({ purchaseCost: amount }))
             .max(30),
@@ -146,6 +155,7 @@ export const screenshotSchema = z.object({
   hash: z.string().regex(/^[a-f0-9]{64}$/),
   name: z.string().max(200),
   reference: z.string().max(500).optional(),
+  chatFileId: z.string().uuid().optional(),
   sourceType: z.enum(['image', 'pdf', 'csv']).optional(),
   originalHash: z
     .string()
