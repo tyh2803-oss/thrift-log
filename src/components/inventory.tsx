@@ -172,6 +172,8 @@ export function Inventory({
         <label className="field">
           <span>Marketplace</span>
           <select
+            className="marketplace-select"
+            data-marketplace={marketplace}
             aria-label="Filter marketplace"
             value={marketplace}
             onChange={(e) => setMarketplace(e.target.value)}

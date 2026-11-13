@@ -107,7 +107,12 @@ export function Sales({
           <div className="actions pipeline-market-filter">
             <label className="field">
               <span>Marketplace</span>
-              <select value={market} onChange={(e) => setMarket(e.target.value)}>
+              <select
+                className="marketplace-select"
+                data-marketplace={market}
+                value={market}
+                onChange={(e) => setMarket(e.target.value)}
+              >
                 <option>All marketplaces</option>
                 {marketplaces.map((m) => (
                   <option key={m}>{m}</option>
@@ -128,6 +133,8 @@ export function Sales({
           <div className="table-controls">
             <div className="actions">
               <select
+                className="marketplace-select"
+                data-marketplace={market}
                 aria-label="Filter marketplace"
                 value={market}
                 onChange={(e) => setMarket(e.target.value)}

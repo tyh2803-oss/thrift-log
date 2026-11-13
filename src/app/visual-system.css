@@ -14,6 +14,16 @@
   --color-complete: #176b70;
   --color-complete-soft: #eaf5f4;
   --color-neutral-soft: #f0f3f0;
+  --marketplace-depop: var(--color-error);
+  --marketplace-depop-soft: var(--color-error-soft);
+  --marketplace-vinted: var(--color-complete);
+  --marketplace-vinted-soft: var(--color-complete-soft);
+  --marketplace-ebay: var(--color-revenue);
+  --marketplace-ebay-soft: var(--color-revenue-soft);
+  --marketplace-whatnot: #70520b;
+  --marketplace-whatnot-soft: #fff6bd;
+  --marketplace-in-person: var(--color-purple);
+  --marketplace-in-person-soft: var(--color-purple-soft);
   --color-purple: #72519a;
   --color-purple-soft: #f2edf8;
   --action: #3c5940;
@@ -47,6 +57,8 @@
   --color-complete: #8cd1ce;
   --color-complete-soft: #223b3b;
   --color-neutral-soft: #29352e;
+  --marketplace-whatnot: #ffe07d;
+  --marketplace-whatnot-soft: #3a341c;
   --color-purple: #cdb0ed;
   --color-purple-soft: #332b41;
   --action: #c2d9b7;
@@ -1060,5 +1072,55 @@ input[type='checkbox']:disabled {
   }
   .history-approval-bar .btn {
     flex: 1 1 130px;
+  }
+}
+
+/* Marketplace identity belongs to the selected filter, independently of financial metrics. */
+select.marketplace-select {
+  --marketplace-color: var(--text);
+  --marketplace-background: var(--card);
+  --marketplace-border: var(--border);
+  color: var(--marketplace-color);
+  background-color: var(--marketplace-background);
+  border-color: var(--marketplace-border);
+  box-shadow: inset 3px 0 0 var(--marketplace-border);
+  font-weight: 600;
+}
+.marketplace-select[data-marketplace='Depop'] {
+  --marketplace-color: var(--marketplace-depop);
+  --marketplace-background: var(--marketplace-depop-soft);
+  --marketplace-border: var(--marketplace-depop);
+}
+.marketplace-select[data-marketplace='Whatnot'] {
+  --marketplace-color: var(--marketplace-whatnot);
+  --marketplace-background: var(--marketplace-whatnot-soft);
+  --marketplace-border: var(--marketplace-whatnot);
+}
+.marketplace-select[data-marketplace='Vinted'] {
+  --marketplace-color: var(--marketplace-vinted);
+  --marketplace-background: var(--marketplace-vinted-soft);
+  --marketplace-border: var(--marketplace-vinted);
+}
+.marketplace-select[data-marketplace='eBay'] {
+  --marketplace-color: var(--marketplace-ebay);
+  --marketplace-background: var(--marketplace-ebay-soft);
+  --marketplace-border: var(--marketplace-ebay);
+}
+.marketplace-select[data-marketplace='In person'] {
+  --marketplace-color: var(--marketplace-in-person);
+  --marketplace-background: var(--marketplace-in-person-soft);
+  --marketplace-border: var(--marketplace-in-person);
+}
+select.marketplace-select:hover {
+  border-color: var(--marketplace-border);
+}
+select.marketplace-select option {
+  color: var(--text);
+  background: var(--card);
+}
+@media (forced-colors: active) {
+  select.marketplace-select {
+    border-color: ButtonText;
+    box-shadow: none;
   }
 }

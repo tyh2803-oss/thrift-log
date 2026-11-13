@@ -170,3 +170,61 @@ test('losses remain red and the empty workspace works on narrow phones without t
   }
   await page.screenshot({ path: test.info().outputPath('empty-phone.png'), fullPage: true });
 });
+
+test('marketplace filters use distinct accessible colors on mobile and desktop in both themes', async ({
+  page,
+}) => {
+  await page.goto('/demo/inventory');
+  const select = page.getByRole('combobox', { name: 'Filter marketplace', exact: true });
+  for (const theme of ['light', 'dark']) {
+    if (theme === 'dark') {
+      await page.goto('/demo/settings');
+      await page.getByRole('button', { name: 'Toggle theme', exact: true }).click();
+      await page.goto('/demo/inventory');
+    }
+    for (const [marketplace, tone] of [
+      ['Depop', 'depop'],
+      ['Whatnot', 'whatnot'],
+      ['Vinted', 'vinted'],
+      ['eBay', 'ebay'],
+      ['In person', 'in-person'],
+    ]) {
+      await select.selectOption(marketplace);
+      await expect(select).toHaveValue(marketplace);
+      const style = await select.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          color: s.color,
+          background: s.backgroundColor,
+          height: el.getBoundingClientRect().height,
+        };
+      });
+      expect(style.color).toBe(await token(page, `--marketplace-${tone}`));
+      expect(style.background).toBe(await token(page, `--marketplace-${tone}-soft`, true));
+      expect(
+        contrast(style.color, style.background),
+        `${theme} ${marketplace}`,
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(style.height).toBeGreaterThanOrEqual(44);
+    }
+    await select.selectOption('All marketplaces');
+    expect(await select.evaluate((el) => getComputedStyle(el).color)).toBe(
+      await token(page, '--text'),
+    );
+    await select.selectOption('Depop');
+    await select.focus();
+    expect(await select.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: test.info().outputPath(`marketplace-${theme}.png`),
+      fullPage: true,
+    });
+  }
+  await page.goto('/demo/sales');
+  await select.selectOption('Whatnot');
+  expect(await select.evaluate((el) => getComputedStyle(el).color)).toBe(
+    await token(page, '--marketplace-whatnot'),
+  );
+});
