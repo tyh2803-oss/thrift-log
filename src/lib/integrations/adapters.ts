@@ -5,11 +5,13 @@ export type Capability =
   | 'csvListings'
   | 'readOrders'
   | 'readShows'
+  | 'readReports'
+  | 'readShipments'
   | 'webhooks'
   | 'writeInventory';
 export interface MarketplaceAdapter {
   name: string;
-  status: 'Manual / CSV' | 'Awaiting verification';
+  status: 'Manual / CSV' | 'Awaiting verification' | 'Read-only API';
   capabilities: Capability[];
   documentation: string;
   note: string;
@@ -17,10 +19,20 @@ export interface MarketplaceAdapter {
 export const adapters: MarketplaceAdapter[] = [
   {
     name: 'Whatnot',
-    status: 'Awaiting verification',
-    capabilities: ['manualListings', 'csvInventory', 'csvSales', 'csvListings'],
+    status: 'Read-only API',
+    capabilities: [
+      'manualListings',
+      'csvInventory',
+      'csvSales',
+      'csvListings',
+      'readOrders',
+      'readShows',
+      'readReports',
+      'readShipments',
+      'webhooks',
+    ],
     documentation: 'https://developers.whatnot.com/',
-    note: 'Use mapped CSV imports now. The official documentation returned HTTP 403 in this environment. API endpoints, pagination, scopes, and PAT compatibility have not been verified. No API requests or webhooks are enabled.',
+    note: 'Official Seller API v2 read-only integration. Each private user connects a personal token after the additive migration. Orders, shipping, shows and existing financial reports synchronize with durable checkpoints. Payout transfers are not exposed by the API; unsupported financial breakdowns need reconciliation.',
   },
   {
     name: 'eBay',

@@ -1,7 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Plus, Radio, ArrowUpRight, Download, Printer, CheckCircle2 } from 'lucide-react';
-import { historyInventoryCostUnknown } from '@/lib/cost-knowledge';
+import {
+  historyInventoryCostUnknown,
+  historyCostUnknown,
+  whatnotFinancialPending,
+} from '@/lib/cost-knowledge';
 import { currentOrderTotals, payoutStatus } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { money, metrics, duration } from '@/lib/finance';
@@ -13,6 +17,7 @@ import { PipelineSales } from './pipeline-sales';
 import { OrderFulfillment } from './order-fulfillment';
 import type { PipelineStage } from '@/lib/pipeline';
 import { OrderLedger } from './order-ledger';
+import { WhatnotShowAnalytics } from './whatnot-show-analytics';
 import { Fulfillment } from './fulfillment';
 import { Dialog } from './ui/dialog';
 import type { EditorTarget } from './editor';
@@ -65,8 +70,11 @@ export function Sales({
           date: o.date,
           merchandise_gross: t.gross / 100,
           lifetime_revenue: t.revenue / 100,
-          lifetime_cogs: t.profitKnown ? t.cogs / 100 : '',
-          purchase_cost_status: t.profitKnown ? 'Recorded' : 'Unknown',
+          lifetime_cogs: historyCostUnknown(w, o.id) ? '' : t.cogs / 100,
+          purchase_cost_status: historyCostUnknown(w, o.id) ? 'Unknown' : 'Recorded',
+          seller_financials_status: whatnotFinancialPending(w, o.id)
+            ? 'Pending Whatnot report'
+            : 'Recorded',
           lifetime_fees: t.fees / 100,
           lifetime_direct_costs: t.direct / 100,
           lifetime_profit: t.profitKnown ? t.profit / 100 : '',
@@ -318,6 +326,9 @@ export function Sales({
           wide
         >
           <div className="show-detail">
+            {show.type === 'Whatnot' && show.externalId && (
+              <WhatnotShowAnalytics showId={show.id} />
+            )}
             <div className="metric-grid compact">
               <Metric label="Revenue" value={money(sm.revenue)} note={`${sm.sold} items sold`} />
               <Metric
@@ -326,7 +337,9 @@ export function Sales({
                 note={
                   sm.profitKnown
                     ? 'After direct & event costs'
-                    : `${sm.unknownCosts} purchase costs unknown`
+                    : sm.unknownFinancials
+                      ? 'Whatnot seller fees pending'
+                      : `${sm.unknownCosts} purchase costs unknown`
                 }
                 positive={sm.profitKnown && sm.profit > 0}
               />
@@ -428,7 +441,7 @@ export function Sales({
               <dl>
                 <div>
                   <dt>Cost of goods sold</dt>
-                  <dd>{sm.profitKnown ? money(sm.cogs) : 'Unknown purchase costs'}</dd>
+                  <dd>{sm.unknownCosts ? 'Unknown purchase costs' : money(sm.cogs)}</dd>
                 </div>
                 <div>
                   <dt>Direct selling costs</dt>

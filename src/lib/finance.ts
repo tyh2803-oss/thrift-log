@@ -1,4 +1,8 @@
-import { historyUnknownCosts, historyInventoryCostUnknown } from './cost-knowledge';
+import {
+  historyUnknownCosts,
+  historyInventoryCostUnknown,
+  whatnotFinancialPending,
+} from './cost-knowledge';
 import type { Session, Workspace } from './model';
 import { orderPostings, payoutOutstanding, payoutReceived } from './ledger';
 export * from './money';
@@ -48,6 +52,9 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
       netUnknown.set(key, (netUnknown.get(key) || 0) + p.units);
     }
   const unknownCosts = [...netUnknown.values()].filter((n) => n !== 0).length;
+  const unknownFinancials = new Set(
+    postings.filter((p) => whatnotFinancialPending(w, p.orderId)).map((p) => p.orderId),
+  ).size;
   const profit = sum('revenue') - sum('cogs') - sum('direct') - expenses;
   const hours =
     laborMs(
@@ -63,7 +70,8 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
   return {
     revenue: sum('revenue'),
     profit,
-    profitKnown: unknownCosts === 0,
+    profitKnown: unknownCosts === 0 && unknownFinancials === 0,
+    unknownFinancials,
     unknownCosts,
     gross: sum('gross'),
     cogs: sum('cogs'),
@@ -71,7 +79,7 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
     direct: sum('direct'),
     expenses,
     hours,
-    hourly: hours > 0 && !unknownCosts ? profit / hours : null,
+    hourly: hours > 0 && !unknownCosts && !unknownFinancials ? profit / hours : null,
     sold,
     returned,
     netSold: sold - returned,

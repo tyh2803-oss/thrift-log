@@ -611,3 +611,37 @@ it('stores optional-cost sale history through the real SQL transaction while pre
   expect(metrics(reloaded).unknownCosts).toBe(2);
   expect(await load(owner)).toEqual(ownerBefore);
 });
+
+it('adds optional Whatnot support to schema 6 while preserving existing owner and tester records and keeping schema 7 optional', async () => {
+  const load = async (id: string) =>
+    (
+      await db.query<{ w: ReturnType<typeof emptyWorkspace> }>(
+        'select public.load_workspace($1) as w',
+        [id],
+      )
+    ).rows[0].w;
+  const beforeOwner = await load(owner),
+    beforeTester = await load(tester);
+  await db.exec('reset role');
+  await db.exec(
+    await readFile(
+      new URL('../supabase/migrations/202611120001_whatnot_read_only.sql', import.meta.url),
+      'utf8',
+    ),
+  );
+  await db.exec('set role service_role');
+  expect(
+    (await db.query<{ v: { schemaVersion: number } }>('select public.verify_thrift_log() as v'))
+      .rows[0].v.schemaVersion,
+  ).toBe(6);
+  expect(
+    (
+      await db.query<{ v: { ready: boolean; connected: boolean } }>(
+        "select public.whatnot_admin('status',$1) as v",
+        [owner],
+      )
+    ).rows[0].v,
+  ).toEqual({ ready: true, connected: false });
+  expect(await load(owner)).toEqual(beforeOwner);
+  expect(await load(tester)).toEqual(beforeTester);
+});

@@ -25,7 +25,11 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
     return cached.value;
   const result = new Map<string, Set<string>>();
   for (const receipt of w.imports) {
-    if (receipt.mapping.format !== 'assistant-v1' || receipt.mapping.history !== 'true') continue;
+    if (
+      !['assistant-v1', 'whatnot-v1'].includes(receipt.mapping.format) ||
+      receipt.mapping.history !== 'true'
+    )
+      continue;
     try {
       const audit = JSON.parse(receipt.rawCsv);
       const order = w.orders.find((o) => o.id === receipt.id);
@@ -76,4 +80,23 @@ export function historyInventoryCostUnknown(w: Workspace, itemId: string) {
     !confirmedFreeInventory(w, itemId) &&
     [...historyUnknownCosts(w).values()].some((ids) => ids.has(itemId))
   );
+}
+
+const whatnotPendingCache = new WeakMap<Workspace, Set<string>>();
+/** Only managed API receipts mark missing seller fees; legacy/manual records are unchanged. */
+export function whatnotFinancialPending(w: Workspace, orderId: string) {
+  let ids = whatnotPendingCache.get(w);
+  if (!ids) {
+    ids = new Set<string>();
+    for (const receipt of w.imports) {
+      if (receipt.mapping.whatnot !== 'true') continue;
+      try {
+        if (JSON.parse(receipt.rawCsv).whatnotFinancialsPending === true) ids.add(receipt.id);
+      } catch {
+        ids.add(receipt.id);
+      }
+    }
+    whatnotPendingCache.set(w, ids);
+  }
+  return ids.has(orderId);
 }

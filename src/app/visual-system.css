@@ -1124,3 +1124,67 @@ select.marketplace-select option {
     box-shadow: none;
   }
 }
+
+.whatnot-connection .card-heading strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.whatnot-connection details {
+  margin-block: 12px;
+}
+.whatnot-connection p {
+  line-height: 1.6;
+}
+.whatnot-sync-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.whatnot-sync-status > div {
+  display: block;
+  min-width: 0;
+}
+.whatnot-sync-status dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.whatnot-sync-status dd {
+  margin: 4px 0 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.whatnot-review-card,
+.whatnot-review-unit {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 12px;
+  margin-block: 10px;
+  min-width: 0;
+}
+.whatnot-review-unit > strong,
+.whatnot-review-unit > small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.whatnot-connection input,
+.whatnot-connection select {
+  width: 100%;
+  min-width: 0;
+}
+.whatnot-connection .actions {
+  flex-wrap: wrap;
+}
+.whatnot-notice {
+  padding: 10px 12px;
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.whatnot-notice a {
+  text-decoration: underline;
+  font-weight: 600;
+}

@@ -1,6 +1,6 @@
 import type { FinancialEvent, Order, Workspace } from './model';
 import { allocate, orderTotals } from './money';
-import { historyCostUnknown } from './cost-knowledge';
+import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
 export type Posting = {
   id: string;
   date: string;
@@ -116,11 +116,13 @@ export function currentOrderTotals(w: Workspace, order: Order) {
     direct: sum('direct'),
     profit: sum('revenue') - sum('cogs') - sum('direct'),
     profitKnown:
-      order.status !== 'Completed' ||
-      !order.lines.some(
-        (l) =>
-          !returnedItemIds(w, order.id).has(l.itemId) && historyCostUnknown(w, order.id, l.itemId),
-      ),
+      !whatnotFinancialPending(w, order.id) &&
+      (order.status !== 'Completed' ||
+        !order.lines.some(
+          (l) =>
+            !returnedItemIds(w, order.id).has(l.itemId) &&
+            historyCostUnknown(w, order.id, l.itemId),
+        )),
     netProceeds: sum('revenue') - sum('direct'),
   };
 }
@@ -129,7 +131,8 @@ export function currentLineProfits(w: Workspace, order: Order) {
     const p = orderPostings(w).filter((p) => p.orderId === order.id && p.itemId === l.itemId);
     return {
       itemId: l.itemId,
-      profitKnown: !historyCostUnknown(w, order.id, l.itemId),
+      profitKnown:
+        !historyCostUnknown(w, order.id, l.itemId) && !whatnotFinancialPending(w, order.id),
       profit: p.reduce((n, p) => n + p.revenue - p.cogs - p.direct, 0),
       revenue: p.reduce((n, p) => n + p.revenue, 0),
       cogs: p.reduce((n, p) => n + p.cogs, 0),
@@ -176,9 +179,13 @@ export function ledgerExportRows(
     purchase_cost_status: historyCostUnknown(w, p.orderId, p.itemId) ? 'Unknown' : 'Recorded',
     direct_costs: p.direct / 100,
     operating_expense: 0,
-    operating_profit: historyCostUnknown(w, p.orderId, p.itemId)
-      ? ''
-      : (p.revenue - p.cogs - p.direct) / 100,
+    seller_financials_status: whatnotFinancialPending(w, p.orderId)
+      ? 'Pending Whatnot report'
+      : 'Recorded',
+    operating_profit:
+      historyCostUnknown(w, p.orderId, p.itemId) || whatnotFinancialPending(w, p.orderId)
+        ? ''
+        : (p.revenue - p.cogs - p.direct) / 100,
     cash_receipt: 0,
   }));
   for (const e of w.expenses.filter((e) => Date.parse(e.date) >= from && Date.parse(e.date) <= to))

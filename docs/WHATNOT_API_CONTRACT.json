@@ -1,0 +1,80 @@
+{
+  "source": "https://developers.whatnot.com/whatnot-seller-api/openapi.json",
+  "version": "2.0.0",
+  "sha256": "db0dee06b7b4c65e1401b27134b0dbc005152e5609d85c034cd856c1f3592159",
+  "base": "https://api.whatnot.com/seller-api/rest/v2",
+  "readOperations": {
+    "/users/me": {
+      "operationId": "get_me_users_me_get",
+      "queryParameters": []
+    },
+    "/orders": {
+      "operationId": "list_orders_orders_get",
+      "queryParameters": ["limit", "cursor", "reverse"]
+    },
+    "/orders/{order_id}": {
+      "operationId": "get_order_orders__order_id__get",
+      "queryParameters": []
+    },
+    "/orders/{order_id}/items": {
+      "operationId": "list_order_items_orders__order_id__items_get",
+      "queryParameters": ["limit", "cursor", "reverse"]
+    },
+    "/shipments": {
+      "operationId": "list_shipments_shipments_get",
+      "queryParameters": ["limit", "cursor", "reverse"]
+    },
+    "/shipments/{shipment_id}": {
+      "operationId": "get_shipment_shipments__shipment_id__get",
+      "queryParameters": []
+    },
+    "/shows": {
+      "operationId": "list_shows_shows_get",
+      "queryParameters": ["status", "limit", "cursor", "reverse"]
+    },
+    "/analytics/shows/{show_id}": {
+      "operationId": "get_show_analytics_analytics_shows__show_id__get",
+      "queryParameters": []
+    },
+    "/reports": {
+      "operationId": "list_reports_reports_get",
+      "queryParameters": ["status", "limit", "cursor", "reverse"]
+    },
+    "/reports/{report_id}": {
+      "operationId": "seller_api_v2_get_report_reports__report_id__get",
+      "queryParameters": []
+    }
+  },
+  "scopes": {
+    "read:inventory": "Read your product inventory",
+    "read:merchandising": "Read how and where your products are sold",
+    "read:orders": "Read your orders",
+    "read:shipments": "Retrieve your shipment details",
+    "read:customers": "Read your customer's information such as address, email, and phone number",
+    "read:reports": "Read your financial reports",
+    "read:shows": "Read your shows"
+  },
+  "enums": {
+    "OrderStatus": ["pending", "pending_fulfillment", "completed", "cancelled", "failed"],
+    "OrderTransactionType": ["buy_it_now", "auction", "giveaway", "other"],
+    "ShipmentStatus": [
+      "created",
+      "label_generated",
+      "dropped_off",
+      "in_transit",
+      "delivered",
+      "failed",
+      "cancelled",
+      "cancelled_not_shipped",
+      "cancelled_not_shipped_with_dropoff",
+      "cancelled_tracking_stuck"
+    ],
+    "ShowStatus": ["scheduled", "live", "stopped", "ended", "cancelled"],
+    "FulfillmentMethod": ["shipping", "pickup"]
+  },
+  "pagination": ["data", "next_cursor"],
+  "unsupported": [
+    "No payout-transfer resource appears in the verified OpenAPI specification.",
+    "Generating reports is POST /reports and requires write:reports; this read-only integration never calls it."
+  ]
+}

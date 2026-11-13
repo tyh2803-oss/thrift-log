@@ -37,6 +37,7 @@ import { Inventory } from './inventory';
 import { Sales } from './sales';
 import { Activity } from './activity';
 import { Insights } from './insights';
+import { WhatnotAutoSync } from './whatnot-auto-sync';
 import { Settings } from './settings';
 import { Editor, type EditorTarget } from './editor';
 import { Importer } from './importer';
@@ -354,6 +355,7 @@ function Shell({
               </>
             )}
           </div>
+          <WhatnotAutoSync />
           <div className="page-heading">
             <div>
               <div className="eyebrow">

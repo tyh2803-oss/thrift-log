@@ -2,7 +2,11 @@
 import { useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { orderPostings, ledgerExportRows } from '@/lib/ledger';
-import { historyCostUnknown, assumedHistoryAcquisition } from '@/lib/cost-knowledge';
+import {
+  historyCostUnknown,
+  assumedHistoryAcquisition,
+  whatnotFinancialPending,
+} from '@/lib/cost-knowledge';
 import { useWorkspace } from '@/lib/use-workspace';
 import { metrics, money, laborMs, allocate } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
@@ -64,7 +68,11 @@ export function Insights({
     };
     r.revenue += line.revenue;
     r.profit += line.revenue - line.cogs - line.direct;
-    if (historyCostUnknown(w, line.orderId, line.itemId) && line.units !== 0) r.profitKnown = false;
+    if (
+      (historyCostUnknown(w, line.orderId, line.itemId) && line.units !== 0) ||
+      whatnotFinancialPending(w, line.orderId)
+    )
+      r.profitKnown = false;
     r.cogs += line.cogs;
     r.units += line.units;
     r.fees += line.fees;
@@ -125,8 +133,9 @@ export function Insights({
                           from: new Date(range[0]).toISOString(),
                           to: new Date(range[1]).toISOString(),
                           revenue: m.revenue / 100,
-                          cogs: m.profitKnown ? m.cogs / 100 : '',
+                          cogs: m.unknownCosts ? '' : m.cogs / 100,
                           unknown_purchase_costs: m.unknownCosts,
+                          unknown_seller_financials: m.unknownFinancials,
                           direct_costs: m.direct / 100,
                           operating_expenses: m.expenses / 100,
                           net_operating_profit: m.profitKnown ? m.profit / 100 : '',
@@ -148,8 +157,10 @@ export function Insights({
       </div>
       {!m.profitKnown && (
         <p className="error-box">
-          {m.unknownCosts} purchase costs are unknown. Profit, margin, ROI and profit charts are
-          incomplete; revenue and recorded fees remain available.
+          {m.unknownFinancials > 0 &&
+            `${m.unknownFinancials} Whatnot orders await seller financial reports. `}
+          {m.unknownCosts > 0 && `${m.unknownCosts} purchase costs are unknown. `} Profit, margin,
+          ROI and profit charts are incomplete; revenue and recorded fees remain available.
         </p>
       )}
       {tab === 'Overview' ? (
@@ -162,7 +173,9 @@ export function Insights({
               note={
                 m.profitKnown
                   ? `${m.margin.toFixed(1)}% margin`
-                  : `${m.unknownCosts} purchase costs unknown`
+                  : m.unknownFinancials
+                    ? 'Whatnot seller fees pending'
+                    : `${m.unknownCosts} purchase costs unknown`
               }
               positive={m.profitKnown && m.profit > 0}
             />
@@ -238,7 +251,7 @@ export function Insights({
                           </td>
                           <td>{money(r.revenue)}</td>
                           <td className={r.profit >= 0 ? 'positive' : 'negative'}>
-                            {r.profitKnown ? money(r.profit) : 'Unknown cost'}
+                            {r.profitKnown ? money(r.profit) : 'Profit incomplete'}
                           </td>
                           <td>{r.units}</td>
                           <td>{r.salesUnits ? money(r.merchandise / r.salesUnits) : '—'}</td>
@@ -317,7 +330,7 @@ export function Insights({
               <div data-metric="cost">
                 <dt>Cost of goods sold</dt>
                 <dd>
-                  {m.profitKnown
+                  {!m.unknownCosts
                     ? `− ${money(m.cogs)}`
                     : `${money(m.cogs)} known · ${m.unknownCosts} unknown`}
                 </dd>

@@ -1,5 +1,18 @@
 # Thrift Log project status
 
+## Read-only Whatnot Seller API integration
+
+Implemented on `feat/whatnot-read-only-integration` from main `108008781461bda6a4aed4e1faafb317c1e3eece`. See [minimum setup, official sources and limitations](docs/WHATNOT_INTEGRATION.md).
+
+- Verified the official OpenAPI v2.0.0 and authentication, pagination/rate, report and webhook documentation. The contract snapshot records used GET operations and the source specification hash. No guessed OAuth, payout or report-generation endpoint is used.
+- Added per-user Settings connection/replacement/disconnect, encrypted PATs, optional signed webhooks, a durable/revision-safe backfill and ongoing reconciliation worker, authenticated scheduled refresh, status/progress/errors and a compact exception-review queue. Automatic synchronization is idempotent and distinct from intentional CSV/PDF reimports.
+- Exact inventory matching and per-source physical-unit IDs prevent duplicate sales; ambiguous/sold/conflicting matches require review. Existing costs and posted financial history are preserved. Orders feed the current canonical workspace, dashboards, pipeline and show views; unknown COGS and seller fees are distinguished from confirmed zero and suppress unverified profit without hiding known costs or revenue. Buyer tax/platform shipping never become seller income. Shipment-label creation never implies handover.
+- Completed financial reports provide fees and seller shipping; net refunds require an exact explicit gross/credit/shipping reconciliation. Viewer metrics/platform estimated earnings remain separate from business profit. The API has no bank-payout endpoint. Unsupported financial activity remains visible for manual reconciliation. Already-posted unknown COGS is not silently backfilled.
+- Saved additive migration **`supabase/migrations/202611120001_whatnot_read_only.sql`** adds three private RLS tables and one service-role-only RPC, compatible with schema 6 and 7. Local PostgreSQL tests verify owner/Auth/business preservation, revoked access, private grants, cross-tenant FK rollback, atomic commits, stale revisions, token rotation/disconnect races and webhook deduplication. No existing Auth, beta, photo or financial policies are weakened.
+- No production Supabase migration, settings change, account connection or business-data write was performed. Deployment before SQL is supported: Whatnot displays **Setup needed** and the existing app continues. Live seller token/report/webhook verification and physical iPhone acceptance remain pending account authorization. Tests use synthetic provider fixtures, local PGlite and explicit loopback Auth doubles.
+- Verification: typecheck, lint, **331 unit/database/API tests passed** (two opt-in cases skipped), and the final production build passed. **110 desktop/mobile Chromium checks passed**: 92 core regressions, 10 authenticated history/Whatnot checks (including live status polling with a controlled clock), four registration checks and four tester-setup/isolation checks. All hosted writes, live seller connections and billable AI calls were excluded.
+
+
 ## Nonblocking sale-history imports — November 12, 2026
 
 Prepared on `fix/history-import-nonblocking-matches` from main `4daf91912a9666a76d735cf0f62f6854606b54b0` in response to the requested all-row import behavior.

@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Whatnot Seller API:** [Connect your own read-only account](docs/WHATNOT_INTEGRATION.md) for resumable order/history synchronization, verified report fees, fulfillment and show analytics. Requires one additive, unapplied migration; no OAuth app or SMTP setup. Bank payouts are not exposed by the documented API; net refunds require reconciliation. No production database changes were made.
+
 **Sale history imports:** [CSV and PDF guide](docs/SALE_HISTORY_IMPORTS.md). Sales CSVs require only item name, actual price, sale date and seller fees; select the marketplace and optionally include purchase cost. Native Depop bundles and assistant PDF/CSV review use the existing atomic approval flow. Unknown costs remain visibly incomplete, distinct from confirmed zero.
 
 A private reselling workspace built with Next.js App Router, TypeScript, Tailwind, shadcn-style Radix components, Lucide, Recharts, and Supabase/PostgreSQL.
@@ -14,7 +16,7 @@ The [visual system](docs/VISUAL_SYSTEM.md) uses functional financial/status colo
 
 **Invite-only beta rollout:** [BETA_ACCESS.md](docs/BETA_ACCESS.md) contains the current deployment steps for the existing Supabase and Vercel projects. This branch adds owner-managed tester access, separate private workspaces and revocation. It requires schema 6 and authorization of the existing owner before deployment; the older setup notes below describe the previous schema-4 checkpoint. Production SQL and merging main require explicit approval. No production migrations have been applied as part of this change.
 
-**Working core application, with a separate fictional demo.** Hosted Supabase configuration, real Auth sessions, inventory persistence and private photo upload/download are verified. Owner password entry, remaining financial UI checks and deployment are documented in [PROJECT_STATUS.md](PROJECT_STATUS.md). Live marketplace synchronization is outstanding. See [the original product specification](docs/PRODUCT_SPEC.md) for the long-term scope.
+**Working core application, with a separate fictional demo.** Hosted Supabase configuration, real Auth sessions, inventory persistence and private photo upload/download are verified. Owner password entry, remaining financial UI checks and deployment are documented in [PROJECT_STATUS.md](PROJECT_STATUS.md). The Whatnot read-only integration is implemented; live seller authorization and its additive migration remain setup steps. Other marketplace synchronization is outstanding. See [the original product specification](docs/PRODUCT_SPEC.md) for the long-term scope.
 
 ## Run locally
 
@@ -69,7 +71,7 @@ Use the CSV templates in the import dialog. Pick Inventory, Sales, Listings, or 
 - Listings require stable marketplace/listing IDs and a known SKU. Expenses require a stable UUID `expense_id`.
 - Sales dates use the workspace reporting timezone for date-only values; ambiguous slash dates require a format choice. Other legacy import types interpret date-only strings as UTC. Monetary values are decimal dollars with up to two decimal places, stored as integer cents.
 - Sales retain safe extracted facts, source hashes and approval decisions in private receipts; buyer/contact columns and original binaries are not retained. Other CSV import types retain their original content and mappings. No import updates an external marketplace.
-- Official Whatnot show/weekly/ledger formats have not been verified. Automatic official-report detection and ledger-specific reconciliation remain pending.
+- The Whatnot API adapter reads documented completed financial reports with seller-ID and exact-net validation. Other manual report formats still require explicit mapping; see [Whatnot limitations](docs/WHATNOT_INTEGRATION.md).
 
 Exports are on the relevant section. Financial and order-level amounts are not a bank ledger. See [calculation definitions](docs/CALCULATIONS.md) and [integration limitations](docs/INTEGRATIONS.md).
 

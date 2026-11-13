@@ -15,6 +15,7 @@ import { adapters } from '@/lib/integrations/adapters';
 import { parseMoney } from '@/lib/finance';
 import { Button } from './ui/button';
 import { Badge } from './shared';
+import { WhatnotConnection } from './whatnot-connection';
 import { BetaAccess } from './beta-access';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
 export function Settings({ onImport }: { onImport: () => void }) {
@@ -198,28 +199,32 @@ export function Settings({ onImport }: { onImport: () => void }) {
             <ShieldCheck size={20} />
           </div>
           <p className="subtitle">
-            Manual and CSV workflows are available. No account is connected.
+            Connect Whatnot for read-only synchronization. Other marketplaces support manual and CSV
+            records.
           </p>
-          {adapters.map((a) => (
-            <div className="connection" key={a.name}>
-              <div className="card-heading">
-                <strong>{a.name}</strong>
-                <Badge tone={a.status === 'Manual / CSV' ? 'green' : 'amber'}>{a.status}</Badge>
+          <WhatnotConnection />
+          {adapters
+            .filter((a) => a.name !== 'Whatnot')
+            .map((a) => (
+              <div className="connection" key={a.name}>
+                <div className="card-heading">
+                  <strong>{a.name}</strong>
+                  <Badge tone={a.status === 'Manual / CSV' ? 'green' : 'amber'}>{a.status}</Badge>
+                </div>
+                <p>{a.note}</p>
+                <a
+                  href={a.documentation}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-link"
+                >
+                  Official documentation <ExternalLink size={12} />
+                </a>
               </div>
-              <p>{a.note}</p>
-              <a
-                href={a.documentation}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-link"
-              >
-                Official documentation <ExternalLink size={12} />
-              </a>
-            </div>
-          ))}
+            ))}
           <p className="hint">
-            API tokens are never entered into the browser or demo storage. API connection controls
-            will be added only after the official authentication requirements are verified.
+            Marketplace tokens are sent over HTTPS and encrypted on the server. They are never saved
+            in browser storage or shared between accounts.
           </p>
         </section>
         <section className="card padded">

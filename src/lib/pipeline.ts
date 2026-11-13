@@ -1,4 +1,4 @@
-import { historyCostUnknown } from './cost-knowledge';
+import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
 import { orderPostings, returnedItemIds } from './ledger';
 import { allocate } from './money';
 import { lineFulfillment, type FulfillmentState } from './fulfillment-state';
@@ -125,7 +125,7 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
     freeCosts = new Set<string>();
   // Historical assistant receipts prove explicit zeros without changing legacy records.
   for (const receipt of w.imports) {
-    if (!['assistant-v1', 'pipeline-v1'].includes(receipt.mapping.format)) continue;
+    if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1'].includes(receipt.mapping.format)) continue;
     try {
       const audit = JSON.parse(receipt.rawCsv);
       if (receipt.mapping.format === 'pipeline-v1') {
@@ -209,7 +209,8 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
         saleValue: ambiguousMerch.has(order.id)
           ? null
           : f.revenue - (originalNonMerch.get(`${order.id}:${item.id}`) || 0),
-        profit: knownCost ? f.revenue - f.cogs - f.direct : null,
+        profit:
+          knownCost && !whatnotFinancialPending(w, order.id) ? f.revenue - f.cogs - f.direct : null,
         provisional: !confirmed.has(order.id),
         fulfillment: fulfillment.status,
         fulfilledAt: fulfillment.date,

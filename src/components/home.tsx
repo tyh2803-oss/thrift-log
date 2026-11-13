@@ -90,7 +90,9 @@ export function Home({
           note={
             m.profitKnown
               ? `${m.margin.toFixed(1)}% profit margin`
-              : `${m.unknownCosts} purchase costs unknown · profit incomplete`
+              : m.unknownFinancials
+                ? `${m.unknownFinancials} Whatnot orders awaiting seller fees`
+                : `${m.unknownCosts} purchase costs unknown · profit incomplete`
           }
           positive={m.profitKnown && m.profit > 0}
           icon={<TrendingUp size={17} />}

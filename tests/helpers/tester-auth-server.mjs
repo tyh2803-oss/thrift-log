@@ -200,6 +200,13 @@ const server = createServer(async (request, response) => {
       if (bearer !== 'test-server-key') return send({ message: 'Denied' }, 403);
       const name = url.pathname.split('/').at(-1);
       const actor = users.get(body.p_user_id || body.p_actor_id);
+      // Existing browser suites model the optional integration as not migrated.
+      // Only its status lookup is read-only; unexpected mutations remain guarded below.
+      if (name === 'whatnot_admin' && body.p_action === 'status')
+        return send(
+          { code: 'PGRST202', message: 'Optional Whatnot migration is not installed' },
+          404,
+        );
       if (name === 'beta_check_access')
         return send(
           actor?.active && actor.email_confirmed_at
