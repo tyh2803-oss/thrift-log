@@ -9,7 +9,23 @@ export const dynamic = 'force-dynamic';
 const options = { headers: { 'Cache-Control': 'no-store' } };
 export async function GET(request: Request) {
   try {
-    return NextResponse.json(await loadWorkspace((await requireUser(request)).id), options);
+    const user = await requireUser(request);
+    const known = new URL(request.url).searchParams.get('revision');
+    if (known !== null) {
+      const revision = z.coerce.number().int().min(0).parse(known);
+      // Metadata only; fresh Auth/beta checks above still run on every request.
+      // A different revision uses the existing readiness-checked full loader.
+      const { data, error } = await adminClient()
+        .from('workspaces')
+        .select('revision')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (error)
+        throw new Error('Unable to check your workspace. Your saved records are preserved.');
+      if ((data?.revision ?? 0) === revision)
+        return new NextResponse(null, { status: 304, ...options });
+    }
+    return NextResponse.json(await loadWorkspace(user.id), options);
   } catch (e) {
     return failure(e);
   }

@@ -1188,3 +1188,24 @@ select.marketplace-select option {
   text-decoration: underline;
   font-weight: 600;
 }
+
+.nav-link,
+.mobile-nav a {
+  position: relative;
+}
+.navigation-progress {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.navigation-progress.is-pending {
+  opacity: 1;
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--light-green);
+}

@@ -1,13 +1,15 @@
 'use client';
-import { useState } from 'react';
+import { memo } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, Radio, ArrowUpRight, Download, Printer, CheckCircle2 } from 'lucide-react';
 import {
   historyInventoryCostUnknown,
   historyCostUnknown,
   whatnotFinancialPending,
 } from '@/lib/cost-knowledge';
-import { currentOrderTotals, payoutStatus } from '@/lib/ledger';
+import { orderTotalsById, payoutStatus } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
+import { useNow } from '@/lib/use-now';
 import { money, metrics, duration } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import { marketplaces } from '@/lib/model';
@@ -21,7 +23,7 @@ import { WhatnotShowAnalytics } from './whatnot-show-analytics';
 import { Fulfillment } from './fulfillment';
 import { Dialog } from './ui/dialog';
 import type { EditorTarget } from './editor';
-export function Sales({
+function SalesView({
   search,
   range,
   onEdit,
@@ -34,7 +36,10 @@ export function Sales({
   onEdit: (t: EditorTarget) => void;
   onImport: () => void;
 }) {
-  const { now, w, dispatch } = useWorkspace();
+  const { w, dispatch } = useWorkspace();
+  const now = useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
+  const totals = useMemo(() => orderTotalsById(w), [w]);
+  const itemsById = useMemo(() => new Map(w.items.map((i) => [i.id, i])), [w.items]);
   const [tab, setTab] = useState('Orders');
   const [market, setMarket] = useState('All marketplaces');
   const [status, setStatus] = useState('All orders');
@@ -45,10 +50,12 @@ export function Sales({
     .filter(
       (o) =>
         (market === 'All marketplaces' || o.marketplace === market) &&
-        (status === 'All orders' || o.fulfillment === status || payoutStatus(w, o) === status) &&
+        (status === 'All orders' ||
+          o.fulfillment === status ||
+          payoutStatus(w, o, totals.get(o.id)) === status) &&
         +new Date(o.date) >= range[0] &&
         +new Date(o.date) <= range[1] &&
-        `${o.externalId} ${o.marketplace} ${o.lines.map((l) => w.items.find((i) => i.id === l.itemId)?.title).join(' ')}`
+        `${o.externalId} ${o.marketplace} ${o.lines.map((l) => itemsById.get(l.itemId)?.title).join(' ')}`
           .toLowerCase()
           .includes(search.toLowerCase()),
     )
@@ -62,10 +69,10 @@ export function Sales({
     downloadCsv(
       'sales',
       orders.map((o) => {
-        const t = currentOrderTotals(w, o);
+        const t = totals.get(o.id)!;
         return {
           order_id: o.externalId || o.id,
-          physical_skus: o.lines.map((l) => w.items.find((i) => i.id === l.itemId)?.sku).join('|'),
+          physical_skus: o.lines.map((l) => itemsById.get(l.itemId)?.sku).join('|'),
           marketplace: o.marketplace,
           date: o.date,
           merchandise_gross: t.gross / 100,
@@ -80,7 +87,7 @@ export function Sales({
           lifetime_profit: t.profitKnown ? t.profit / 100 : '',
           status: o.status,
           fulfillment: o.fulfillment,
-          payout: payoutStatus(w, o),
+          payout: payoutStatus(w, o, totals.get(o.id)),
         };
       }),
     );
@@ -188,9 +195,7 @@ export function Sales({
                           onClick={() => onEdit({ kind: 'order', value: o })}
                         >
                           <strong>
-                            {o.lines
-                              .map((l) => w.items.find((i) => i.id === l.itemId)?.title)
-                              .join(', ') || 'Tip'}
+                            {o.lines.map((l) => itemsById.get(l.itemId)?.title).join(', ') || 'Tip'}
                           </strong>
                           <small>
                             {o.externalId || o.id.slice(0, 8)} ·{' '}
@@ -218,23 +223,21 @@ export function Sales({
                         {o.marketplace}
                         {o.type !== 'Sale' && <Badge>{o.type}</Badge>}
                       </td>
-                      <td className="number">{money(currentOrderTotals(w, o).revenue)}</td>
+                      <td className="number">{money(totals.get(o.id)!.revenue)}</td>
                       <td
                         className={
-                          currentOrderTotals(w, o).profit >= 0
-                            ? 'positive number'
-                            : 'negative number'
+                          totals.get(o.id)!.profit >= 0 ? 'positive number' : 'negative number'
                         }
                       >
-                        {currentOrderTotals(w, o).profitKnown
-                          ? money(currentOrderTotals(w, o).profit)
+                        {totals.get(o.id)!.profitKnown
+                          ? money(totals.get(o.id)!.profit)
                           : 'Unknown cost'}
                       </td>
                       <td>
                         <Status value={o.fulfillment} />
                       </td>
                       <td>
-                        <Status value={payoutStatus(w, o)} />
+                        <Status value={payoutStatus(w, o, totals.get(o.id))} />
                       </td>
                     </tr>
                   ))}
@@ -285,8 +288,7 @@ export function Sales({
                             s.status === 'Ended'
                               ? m.profit
                               : s.lineup.reduce(
-                                  (n, l) =>
-                                    n + (w.items.find((i) => i.id === l.itemId)?.asking || 0),
+                                  (n, l) => n + (itemsById.get(l.itemId)?.asking || 0),
                                   0,
                                 ),
                           )}
@@ -417,7 +419,7 @@ export function Sales({
             <h3>Lineup</h3>
             {show.lineup.length ? (
               show.lineup.map((line) => {
-                const i = w.items.find((i) => i.id === line.itemId)!;
+                const i = itemsById.get(line.itemId)!;
                 return (
                   <div className="detail-row" key={i.id}>
                     <ItemPhoto item={i} />
@@ -471,11 +473,7 @@ export function Sales({
                 <div>
                   <dt>Unsold planned pieces</dt>
                   <dd>
-                    {
-                      show.lineup.filter(
-                        (l) => w.items.find((i) => i.id === l.itemId)?.status !== 'Sold',
-                      ).length
-                    }
+                    {show.lineup.filter((l) => itemsById.get(l.itemId)?.status !== 'Sold').length}
                   </dd>
                 </div>
               </dl>
@@ -490,3 +488,5 @@ export function Sales({
     </>
   );
 }
+
+export const Sales = memo(SalesView);

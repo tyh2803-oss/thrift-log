@@ -24,7 +24,10 @@ export async function proxy(request: NextRequest) {
     },
   });
   try {
-    await supabase.auth.getUser();
+    // Refresh expiring cookies only. getSession() is NEVER an authorization source:
+    // its user data is ignored. Pages/APIs still verify getUser() and live beta
+    // membership, avoiding a second identical Auth network call on every request.
+    await supabase.auth.getSession();
   } catch {
     /* The page/API will report the unavailable session without exposing credentials. */
   }

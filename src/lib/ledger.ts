@@ -33,10 +33,14 @@ export function itemIsSold(w: Workspace, itemId: string, exceptOrderId?: string)
       !returnedItemIds(w, o.id).has(itemId),
   );
 }
-function eventPostings(w: Workspace, event: FinancialEvent): Posting[] {
-  const base = event.reversesId ? w.financialEvents.find((e) => e.id === event.reversesId) : event;
+function eventPostings(
+  event: FinancialEvent,
+  orders: ReadonlyMap<string, Order>,
+  events: ReadonlyMap<string, FinancialEvent>,
+): Posting[] {
+  const base = event.reversesId ? events.get(event.reversesId) : event;
   if (!base) return [];
-  const order = w.orders.find((o) => o.id === event.orderId);
+  const order = orders.get(event.orderId);
   if (!order) return [];
   const sign = event.reversesId ? -1 : 1;
   const lines = order.lines.length ? order.lines : [{ itemId: null, price: 0, costBasis: 0 }];
@@ -74,6 +78,8 @@ function eventPostings(w: Workspace, event: FinancialEvent): Posting[] {
 /** Each order contributes its original result on its sale date; later events post on their own dates. */
 export function orderPostings(w: Workspace, from = 0, to = Infinity): Posting[] {
   const result: Posting[] = [];
+  const orders = new Map(w.orders.map((o) => [o.id, o]));
+  const events = new Map(w.financialEvents.map((e) => [e.id, e]));
   for (const o of w.orders) {
     if (Date.parse(o.date) < from || Date.parse(o.date) > to) continue;
     const totals = orderTotals(o);
@@ -101,11 +107,32 @@ export function orderPostings(w: Workspace, from = 0, to = Infinity): Posting[] 
   }
   for (const event of w.financialEvents)
     if (Date.parse(event.date) >= from && Date.parse(event.date) <= to)
-      result.push(...eventPostings(w, event));
+      result.push(...eventPostings(event, orders, events));
   return result;
 }
-export function currentOrderTotals(w: Workspace, order: Order) {
-  const postings = orderPostings(w).filter((p) => p.orderId === order.id);
+/** Build the ledger once when rendering a list, rather than once per cell/order. */
+export function orderPostingGroups(w: Workspace) {
+  const groups = new Map<string, Posting[]>();
+  for (const posting of orderPostings(w)) {
+    const group = groups.get(posting.orderId) || [];
+    group.push(posting);
+    groups.set(posting.orderId, group);
+  }
+  return groups;
+}
+export function orderTotalsById(w: Workspace) {
+  const groups = orderPostingGroups(w);
+  return new Map(
+    w.orders.map((order) => [order.id, currentOrderTotals(w, order, groups.get(order.id) || [])]),
+  );
+}
+export function currentOrderTotals(
+  w: Workspace,
+  order: Order,
+  sourcePostings?: readonly Posting[],
+) {
+  const postings = sourcePostings || orderPostings(w).filter((p) => p.orderId === order.id);
+  const returned = returnedItemIds(w, order.id);
   const sum = (key: 'revenue' | 'cogs' | 'fees' | 'direct' | 'gross') =>
     postings.reduce((n, p) => n + p[key], 0);
   return {
@@ -119,16 +146,19 @@ export function currentOrderTotals(w: Workspace, order: Order) {
       !whatnotFinancialPending(w, order.id) &&
       (order.status !== 'Completed' ||
         !order.lines.some(
-          (l) =>
-            !returnedItemIds(w, order.id).has(l.itemId) &&
-            historyCostUnknown(w, order.id, l.itemId),
+          (l) => !returned.has(l.itemId) && historyCostUnknown(w, order.id, l.itemId),
         )),
     netProceeds: sum('revenue') - sum('direct'),
   };
 }
-export function currentLineProfits(w: Workspace, order: Order) {
+export function currentLineProfits(
+  w: Workspace,
+  order: Order,
+  sourcePostings?: readonly Posting[],
+) {
+  const postings = sourcePostings || orderPostings(w).filter((p) => p.orderId === order.id);
   return order.lines.map((l) => {
-    const p = orderPostings(w).filter((p) => p.orderId === order.id && p.itemId === l.itemId);
+    const p = postings.filter((p) => p.itemId === l.itemId);
     return {
       itemId: l.itemId,
       profitKnown:
@@ -148,13 +178,24 @@ export function paidForOrder(w: Workspace, orderId: string) {
     0,
   );
 }
-export function payoutOutstanding(w: Workspace, order: Order) {
+export function payoutOutstanding(
+  w: Workspace,
+  order: Order,
+  totals?: ReturnType<typeof currentOrderTotals>,
+) {
   const tracked = w.payouts.some((p) => p.allocations.some((a) => a.orderId === order.id));
   if (!tracked && order.payout === 'Paid') return 0;
-  return Math.max(0, currentOrderTotals(w, order).netProceeds - paidForOrder(w, order.id));
+  return Math.max(
+    0,
+    (totals || currentOrderTotals(w, order)).netProceeds - paidForOrder(w, order.id),
+  );
 }
-export function payoutStatus(w: Workspace, order: Order) {
-  return payoutOutstanding(w, order) === 0 ? 'Paid' : 'Pending';
+export function payoutStatus(
+  w: Workspace,
+  order: Order,
+  totals?: ReturnType<typeof currentOrderTotals>,
+) {
+  return payoutOutstanding(w, order, totals) === 0 ? 'Paid' : 'Pending';
 }
 export function payoutReceived(w: Workspace, from = 0, to = Infinity) {
   return w.payouts

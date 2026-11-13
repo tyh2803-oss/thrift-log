@@ -370,3 +370,47 @@ it('keeps manual order fulfillment consistent with its grouped package', () => {
     applyCommand(w, { type: 'order', value: { ...w.orders[0], fulfillment: 'Unfulfilled' } }),
   ).toThrow('linked package');
 });
+
+it('reuses one posting index across bundles, refunds, fee credits, reversals and resales without changing financial results', async () => {
+  const { orderPostingGroups, orderTotalsById, currentLineProfits } =
+    await import('../src/lib/ledger');
+  let w = post(fixture(), event());
+  w = post(w, event({ id: id(21), kind: 'Fee adjustment', amount: -600, itemIds: [] }));
+  w = applyCommand(w, {
+    type: 'order',
+    value: {
+      ...w.orders[0],
+      id: id(11),
+      externalId: 'INDEX-RESALE',
+      date: '2026-10-04T12:00:00Z',
+      lines: [{ itemId: id(1), price: 3500, costBasis: 1000 }],
+      fees: 300,
+    },
+  });
+  for (const snapshot of [
+    fixture(),
+    w,
+    post(
+      w,
+      event({
+        id: id(22),
+        kind: 'Reversal',
+        amount: 0,
+        itemIds: [],
+        reversesId: id(21),
+        date: '2026-10-05T12:00:00Z',
+      }),
+    ),
+  ]) {
+    const before = structuredClone(snapshot);
+    const groups = orderPostingGroups(snapshot),
+      totals = orderTotalsById(snapshot);
+    for (const order of snapshot.orders) {
+      expect(totals.get(order.id)).toEqual(currentOrderTotals(snapshot, order));
+      expect(currentLineProfits(snapshot, order, groups.get(order.id) || [])).toEqual(
+        currentLineProfits(snapshot, order),
+      );
+    }
+    expect(snapshot).toEqual(before);
+  }
+});

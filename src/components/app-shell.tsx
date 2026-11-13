@@ -1,8 +1,8 @@
 'use client';
-import { clearPrivateBrowserState } from '@/lib/browser-scope';
-import { useEffect, useState } from 'react';
+import { browserScope, clearPrivateBrowserState } from '@/lib/browser-scope';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   LayoutDashboard,
   Package,
@@ -25,8 +25,9 @@ import {
   X,
   CircleHelp,
 } from 'lucide-react';
-import { WorkspaceProvider, useWorkspace } from '@/lib/use-workspace';
-import { SecureWorkspace } from './secure-workspace';
+import { useWorkspace } from '@/lib/use-workspace';
+import { useNow } from '@/lib/use-now';
+import { NavigationProgress } from './navigation-progress';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
 import { lineFulfillment } from '@/lib/fulfillment-state';
@@ -56,7 +57,6 @@ export function ThriftApp({
   section,
   demo,
   email,
-  pipeline,
   userId,
   isOwner = false,
 }: {
@@ -67,27 +67,31 @@ export function ThriftApp({
   demo: boolean;
   email?: string;
 }) {
-  return (
-    <SecureWorkspace>
-      <WorkspaceProvider key={userId || 'demo'} demo={demo} userId={userId} isOwner={isOwner}>
-        <Shell section={section} email={email} pipeline={pipeline} />
-      </WorkspaceProvider>
-    </SecureWorkspace>
-  );
+  const workspace = useWorkspace();
+  const matches = workspace.scope === browserScope(demo, userId) && workspace.isOwner === isOwner;
+  useEffect(() => {
+    if (!matches) {
+      // A session changed in another tab. Never render a different account's cached
+      // workspace; remount the layout using the freshly authorized server identity.
+      clearPrivateBrowserState();
+      window.location.reload();
+    }
+  }, [matches]);
+  if (!matches)
+    return (
+      <p className="loading" role="status">
+        Rechecking your workspace…
+      </p>
+    );
+  return <Shell section={section} email={email} />;
 }
-function Shell({
-  section,
-  email,
-  pipeline,
-}: {
-  section: string;
-  email?: string;
-  pipeline?: string;
-}) {
-  const pipelineStage = readPipelineStage(pipeline || null);
+function Shell({ section, email }: { section: string; email?: string }) {
+  const params = useSearchParams();
+  const pipelineStage = readPipelineStage(params.get('pipeline'));
   const inventoryStage = pipelineStage;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
-  const { now, w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
+  const { w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
+  const now = useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [search, setSearch] = useState('');
   const [period, setPeriod] = useState<Period>('Last 30 days');
@@ -113,7 +117,9 @@ function Shell({
     window.addEventListener('keydown', shortcut);
     return () => window.removeEventListener('keydown', shortcut);
   }, []);
-  const range = periodRange(period, w.settings.timezone, customStart, customEnd);
+  const [from, to] = periodRange(period, w.settings.timezone, customStart, customEnd);
+  const range = useMemo<[number, number]>(() => [from, to], [from, to]);
+  const openImporter = useCallback(() => setImporting(true), []);
   const active = w.sessions.find((s) => ['Running', 'Paused'].includes(s.state));
   useEffect(() => {
     const connection = () => setOnline(navigator.onLine);
@@ -127,46 +133,52 @@ function Shell({
       window.removeEventListener('offline', connection);
     };
   }, []);
-  async function start(category: Session['category'], links: Partial<Session> = {}) {
-    const showId = association.startsWith('show:') ? association.slice(5) : null;
-    const tripId = association.startsWith('trip:') ? association.slice(5) : null;
-    if (
+  const start = useCallback(
+    async (category: Session['category'], links: Partial<Session> = {}) => {
+      const showId = association.startsWith('show:') ? association.slice(5) : null;
+      const tripId = association.startsWith('trip:') ? association.slice(5) : null;
+      if (
+        await dispatch({
+          type: 'session',
+          value: {
+            id: crypto.randomUUID(),
+            category,
+            subcategory: '',
+            notes: '',
+            showId,
+            tripId,
+            locationId: null,
+            ...links,
+            segments: [{ start: new Date().toISOString(), end: null }],
+            state: 'Running',
+          },
+        })
+      ) {
+        setTimerMenu(false);
+        notify(`${category} timer started.`);
+      }
+    },
+    [association, dispatch, notify],
+  );
+  const control = useCallback(
+    async (action: 'pause' | 'resume' | 'end') => {
+      if (!active) return;
+      const at = new Date().toISOString();
+      const segments =
+        action === 'resume'
+          ? [...active.segments, { start: at, end: null }]
+          : active.segments.map((s) => (s.end ? s : { ...s, end: at }));
       await dispatch({
         type: 'session',
         value: {
-          id: crypto.randomUUID(),
-          category,
-          subcategory: '',
-          notes: '',
-          showId,
-          tripId,
-          locationId: null,
-          ...links,
-          segments: [{ start: new Date().toISOString(), end: null }],
-          state: 'Running',
+          ...active,
+          segments,
+          state: action === 'end' ? 'Ended' : action === 'pause' ? 'Paused' : 'Running',
         },
-      })
-    ) {
-      setTimerMenu(false);
-      notify(`${category} timer started.`);
-    }
-  }
-  async function control(action: 'pause' | 'resume' | 'end') {
-    if (!active) return;
-    const at = new Date().toISOString();
-    const segments =
-      action === 'resume'
-        ? [...active.segments, { start: at, end: null }]
-        : active.segments.map((s) => (s.end ? s : { ...s, end: at }));
-    await dispatch({
-      type: 'session',
-      value: {
-        ...active,
-        segments,
-        state: action === 'end' ? 'Ended' : action === 'pause' ? 'Paused' : 'Running',
-      },
-    });
-  }
+      });
+    },
+    [active, dispatch],
+  );
   const title =
     section === 'home'
       ? 'A good day for good finds.'
@@ -202,10 +214,10 @@ function Shell({
     (l) => l.status === 'Active' && now - +new Date(l.listedAt) > 90 * 86400000,
   );
   const alerts = delist.length + fulfill.length + missing.length + stale.length;
-  function edit(t: EditorTarget) {
+  const edit = useCallback((t: EditorTarget) => {
     setEditor(t);
     setQuick(false);
-  }
+  }, []);
   return (
     <div className="app-layout">
       <aside className="sidebar">
@@ -229,6 +241,7 @@ function Shell({
             >
               <n.icon size={19} />
               <span>{n.label}</span>
+              <NavigationProgress />
               {n.label === 'Inventory' && (
                 <small>
                   {w.items.filter((i) => i.status !== 'Sold' && i.status !== 'Archived').length}
@@ -256,6 +269,7 @@ function Shell({
           >
             <Settings2 size={18} />
             Settings
+            <NavigationProgress />
           </Link>
           <button className="nav-link" onClick={() => setHelp(true)}>
             <CircleHelp size={18} />A little help
@@ -553,7 +567,7 @@ function Shell({
                   pipelineStage={inventoryStage}
                   search={search}
                   onEdit={edit}
-                  onImport={() => setImporting(true)}
+                  onImport={openImporter}
                 />
               )}{' '}
               {section === 'sales' && (
@@ -563,20 +577,20 @@ function Shell({
                   search={search}
                   range={range}
                   onEdit={edit}
-                  onImport={() => setImporting(true)}
+                  onImport={openImporter}
                 />
               )}{' '}
               {section === 'activity' && (
                 <Activity
                   range={range}
                   activeSession={active}
-                  onControl={(action) => void control(action)}
+                  onControl={control}
                   onEdit={edit}
-                  onStart={(category, links) => void start(category, links)}
+                  onStart={start}
                 />
               )}{' '}
               {section === 'insights' && <Insights range={range} onEdit={edit} />}{' '}
-              {section === 'settings' && <Settings onImport={() => setImporting(true)} />}
+              {section === 'settings' && <Settings onImport={openImporter} />}
             </>
           )}
         </main>
@@ -589,6 +603,7 @@ function Shell({
             >
               <n.icon size={20} />
               <span>{n.label}</span>
+              <NavigationProgress />
             </Link>
           ))}
         </nav>

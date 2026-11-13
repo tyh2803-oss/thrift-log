@@ -1,15 +1,17 @@
 'use client';
-import { useState } from 'react';
+import { memo } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, MapPin, Clock3, Download, Navigation, Pause, Play, Square } from 'lucide-react';
-import { currentLineProfits } from '@/lib/ledger';
+import { currentLineProfits, orderPostingGroups } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
+import { useNow } from '@/lib/use-now';
 import { laborMs, duration, money } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import type { Session } from '@/lib/model';
 import { Button } from './ui/button';
 import { Empty, Badge, Status } from './shared';
 import type { EditorTarget } from './editor';
-export function Activity({
+function ActivityView({
   range,
   onEdit,
   onStart,
@@ -23,6 +25,11 @@ export function Activity({
   onControl: (action: 'pause' | 'resume' | 'end') => void;
 }) {
   const { w, dispatch, notify } = useWorkspace();
+  useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
+  const lineProfits = useMemo(() => {
+    const groups = orderPostingGroups(w);
+    return w.orders.flatMap((o) => currentLineProfits(w, o, groups.get(o.id) || []));
+  }, [w]);
   const [tab, setTab] = useState('Time');
   const [nearby, setNearby] = useState<string[]>([]);
   const sessions = w.sessions
@@ -254,13 +261,11 @@ export function Activity({
         <div className="show-grid">
           {w.trips.map((trip) => {
             const items = w.items.filter((i) => i.tripId === trip.id);
-            const profitKnown = w.orders
-              .flatMap((o) => currentLineProfits(w, o))
+            const profitKnown = lineProfits
               .filter((l) => items.some((i) => i.id === l.itemId))
               .every((l) => l.profitKnown);
             const profit =
-              w.orders
-                .flatMap((o) => currentLineProfits(w, o))
+              lineProfits
                 .filter((l) => items.some((i) => i.id === l.itemId))
                 .reduce((n, l) => n + l.profit, 0) -
               w.expenses.filter((e) => e.tripId === trip.id).reduce((n, e) => n + e.amount, 0);
@@ -422,3 +427,5 @@ export function Activity({
     </>
   );
 }
+
+export const Activity = memo(ActivityView);

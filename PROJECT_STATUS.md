@@ -1,5 +1,16 @@
 # Thrift Log project status
 
+## Navigation and interaction performance
+
+Prepared on `perf/persistent-workspace-navigation` from main `16c34af361fc51d8a30852d7a5ba6e060678586d`. See [performance architecture, security and controlled measurements](docs/PERFORMANCE.md).
+
+- Moved the authenticated workspace into a shared layout and kept a separate public-demo layout. Records and the Whatnot sync controller persist between tabs; page/API authorization remains fresh. A request-scoped identity helper deduplicates only the initial layout/page check. The proxy refreshes cookies without trusting session user data; every protected page/API verifies the actual user and live beta access.
+- Local stage filtering avoids server navigation. Pending links give immediate feedback. View-local clocks eliminate the idle global one-second rerender; active timers still count seconds and survive pause/background/resume. Financial posting/item/order indexes reuse the existing calculations without changing stored amounts, dates, unknown/zero costs, refunds or payouts.
+- Added coalesced actor-scoped revision checks on foreground/focus/reconnection, no-payload unchanged responses, and full refresh on changes. Save errors survive background checks; stale reads cannot replace newer saves. Account changes and unauthorized responses clear or rebind private memory safely, including in-flight responses.
+- Controlled navigation comparison with 150 ms artificial backend latency: **12 → 2 backend requests**, **1 → 0 workspace downloads**, roughly **2.1 → 0.6–1.0 seconds**. These are local production-build measurements with synthetic data, not physical iPhone timings.
+- No production data/schema changes, migrations, new dependencies or environment settings are required. **Typecheck, lint, all 336 unit/database/API tests (two optional skips), and production build passed. All 128 desktop/mobile browser checks passed:** 96 core regressions, 24 authenticated history/Whatnot/performance checks, four registration checks and four tester-setup checks. These include account changes, revocation, save failure/retry and in-flight invalidation, public-demo separation, idle rendering and live timer/background accuracy. Tests used isolated doubles/PGlite and synthetic records; no hosted writes or live seller/AI calls were made.
+
+
 ## Sold/shipped marketplace filter correction
 
 - Fixed inventory marketplace filtering to use the canonical completed sale's marketplace for sold/shipped physical items. Imported sale history needs no linked listing to appear, and historical cross-listings cannot attribute a completed sale to the wrong marketplace. Unsold listing filters retain their existing behavior.

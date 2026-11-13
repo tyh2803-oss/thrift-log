@@ -1,4 +1,5 @@
 'use client';
+import { memo } from 'react';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -13,8 +14,9 @@ import {
   Package,
   ListChecks,
 } from 'lucide-react';
-import { currentOrderTotals, orderPostings } from '@/lib/ledger';
+import { orderTotalsById, orderPostings } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
+import { useNow } from '@/lib/use-now';
 import { metrics, money, duration } from '@/lib/finance';
 import { periodRange } from '@/lib/dates';
 import { Metric, Badge, ItemPhoto, Empty } from './shared';
@@ -24,15 +26,18 @@ import { InventoryPipeline } from './inventory-pipeline';
 import { Button } from './ui/button';
 import { FinancialMetricToggle } from './financial-metric';
 import type { EditorTarget } from './editor';
-export function Home({
+function HomeView({
   range,
   onEdit,
 }: {
   range: [number, number];
   onEdit: (t: EditorTarget) => void;
 }) {
-  const { now, w } = useWorkspace();
+  const { w } = useWorkspace();
+  const now = useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
   const pipeline = useMemo(() => inventoryPipeline(w), [w]);
+  const totals = useMemo(() => orderTotalsById(w), [w]);
+  const postings = useMemo(() => orderPostings(w, ...range), [w, range]);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [metric, setMetric] = useState<'profit' | 'revenue'>('profit');
   const m = metrics(w, ...range);
@@ -68,9 +73,7 @@ export function Home({
   const needing = pipeline.groups.unlisted.entries;
   const revenueByMarket = ['Depop', 'eBay', 'Whatnot', 'Vinted'].map((name) => ({
     name,
-    revenue: orderPostings(w, ...range)
-      .filter((p) => p.marketplace === name)
-      .reduce((n, p) => n + p.revenue, 0),
+    revenue: postings.filter((p) => p.marketplace === name).reduce((n, p) => n + p.revenue, 0),
   }));
   const max = Math.max(1, ...revenueByMarket.map((r) => r.revenue));
   return (
@@ -262,14 +265,12 @@ export function Home({
                             </span>
                           </span>
                           <span className="sale-value">
-                            <strong>{money(currentOrderTotals(w, o).revenue)}</strong>
+                            <strong>{money(totals.get(o.id)!.revenue)}</strong>
                             <span
-                              className={
-                                currentOrderTotals(w, o).profit >= 0 ? 'positive' : 'negative'
-                              }
+                              className={totals.get(o.id)!.profit >= 0 ? 'positive' : 'negative'}
                             >
-                              {currentOrderTotals(w, o).profitKnown
-                                ? `${money(currentOrderTotals(w, o).profit)} profit`
+                              {totals.get(o.id)!.profitKnown
+                                ? `${money(totals.get(o.id)!.profit)} profit`
                                 : 'Purchase cost unknown · profit incomplete'}
                             </span>
                           </span>
@@ -371,3 +372,5 @@ export function Home({
     </>
   );
 }
+
+export const Home = memo(HomeView);

@@ -7,7 +7,7 @@ import {
   type InventoryStage,
 } from '@/lib/pipeline';
 import { type PipelineMove, type MoveFailure } from '@/lib/pipeline-moves';
-import { currentOrderTotals, returnedItemIds } from '@/lib/ledger';
+import { orderTotalsById, returnedItemIds } from '@/lib/ledger';
 import { listingAmount, confirmedFreeInventory } from '@/lib/assistant/listing-review';
 import { money } from '@/lib/money';
 import { marketplaces } from '@/lib/model';
@@ -56,6 +56,7 @@ export function PipelineMoveDialog({
   onSaved: (successIds: string[], failures: MoveFailure[]) => void;
 }) {
   const { w, movePipeline, saving, error, notify, refresh } = useWorkspace();
+  const totals = useMemo(() => orderTotalsById(w), [w]);
   const marketplace = 'All marketplaces' as string;
   const snapshot = useMemo(() => inventoryPipeline(w), [w]);
   const [destination, setDestination] = useState<InventoryStage>(initialDestination || 'unlisted');
@@ -103,8 +104,8 @@ export function PipelineMoveDialog({
     (['unlisted', 'archived'].includes(destination) &&
       entries.some((e) => e.listings.length > 0)) ||
     (destination === 'sold' && entries.some((e) => e.stage === 'shipped'));
-  const impact = orders.reduce((n, o) => n + currentOrderTotals(w, o).revenue, 0);
-  const profitImpact = orders.reduce((n, o) => n - currentOrderTotals(w, o).profit, 0);
+  const impact = orders.reduce((n, o) => n + totals.get(o.id)!.revenue, 0);
+  const profitImpact = orders.reduce((n, o) => n - totals.get(o.id)!.profit, 0);
   const relatedOrders = new Set(orders.map((order) => order.id));
   for (const pkg of w.shipments)
     if (pkg.orderIds.some((id) => relatedOrders.has(id)))
@@ -336,7 +337,7 @@ export function PipelineMoveDialog({
           <p className="error-box">
             Undo accidental sale entries for {orders.length} complete orders: net recognized revenue
             decreases by {money(impact)} and recognized profit changes by{' '}
-            {orders.every((o) => currentOrderTotals(w, o).profitKnown)
+            {orders.every((o) => totals.get(o.id)!.profitKnown)
               ? money(profitImpact)
               : 'an unknown amount (purchase costs incomplete)'}
             ; their remaining purchase cost and recorded selling costs are reversed with dated

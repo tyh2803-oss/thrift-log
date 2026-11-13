@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useWorkspace } from '@/lib/use-workspace';
 import type { ConnectionStatus } from '@/lib/integrations/whatnot/schema';
-export function WhatnotAutoSync() {
+const StatusContext = createContext<ConnectionStatus | null>(null);
+export function WhatnotSyncProvider({ children }: { children: React.ReactNode }) {
   const { demo, ready, requestHeaders, refresh } = useWorkspace(),
     [status, setStatus] = useState<ConnectionStatus | null>(null);
   useEffect(() => {
@@ -61,6 +62,11 @@ export function WhatnotAutoSync() {
       document.removeEventListener('visibilitychange', wake);
     };
   }, [demo, ready, requestHeaders, refresh]);
+  return <StatusContext.Provider value={status}>{children}</StatusContext.Provider>;
+}
+export function WhatnotAutoSync() {
+  const { demo } = useWorkspace();
+  const status = useContext(StatusContext);
   if (demo || !status?.connected) return null;
   if (status.status === 'auth_error' || status.error)
     return (

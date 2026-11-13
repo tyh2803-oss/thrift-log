@@ -1,4 +1,5 @@
 'use client';
+import { memo } from 'react';
 import { useState } from 'react';
 import { Plus, Download } from 'lucide-react';
 import { orderPostings, ledgerExportRows } from '@/lib/ledger';
@@ -8,20 +9,22 @@ import {
   whatnotFinancialPending,
 } from '@/lib/cost-knowledge';
 import { useWorkspace } from '@/lib/use-workspace';
+import { useNow } from '@/lib/use-now';
 import { metrics, money, laborMs, allocate } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import { Metric, Empty } from './shared';
 import { BreakdownChart } from './charts';
 import { Button } from './ui/button';
 import type { EditorTarget } from './editor';
-export function Insights({
+function InsightsView({
   range,
   onEdit,
 }: {
   range: [number, number];
   onEdit: (t: EditorTarget) => void;
 }) {
-  const { now, w } = useWorkspace();
+  const { w } = useWorkspace();
+  const now = useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
   const [tab, setTab] = useState('Overview');
   const [dimension, setDimension] = useState<'brand' | 'category' | 'marketplace' | 'source'>(
     'marketplace',
@@ -520,3 +523,5 @@ export function Insights({
     </>
   );
 }
+
+export const Insights = memo(InsightsView);

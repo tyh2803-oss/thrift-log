@@ -4,7 +4,7 @@ import {
   whatnotFinancialPending,
 } from './cost-knowledge';
 import type { Session, Workspace } from './model';
-import { orderPostings, payoutOutstanding, payoutReceived } from './ledger';
+import { orderPostings, orderTotalsById, payoutOutstanding, payoutReceived } from './ledger';
 export * from './money';
 /** Union of timestamp ranges, clipped to the reporting period. Paused time is excluded. */
 export function laborMs(sessions: Session[], from = 0, to = Date.now()) {
@@ -67,6 +67,7 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
     .reduce((n, p) => n + Math.max(0, p.units), 0);
   const returned = postings.filter((p) => p.id !== p.orderId).reduce((n, p) => n - p.units, 0);
   const unsold = w.items.filter((i) => i.status !== 'Sold' && i.status !== 'Archived');
+  const lifetimeTotals = orders.length ? orderTotalsById(w) : null;
   return {
     revenue: sum('revenue'),
     profit,
@@ -88,7 +89,10 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
     inventoryCost: unsold.reduce((n, i) => n + i.cost, 0),
     inventoryUnknownCosts: unsold.filter((i) => historyInventoryCostUnknown(w, i.id)).length,
     inventoryAsking: unsold.reduce((n, i) => n + i.asking, 0),
-    pendingPayout: orders.reduce((n, o) => n + payoutOutstanding(w, o), 0),
+    pendingPayout: orders.reduce(
+      (n, o) => n + payoutOutstanding(w, o, lifetimeTotals!.get(o.id)),
+      0,
+    ),
   };
 }
 export const duration = (ms: number) => {

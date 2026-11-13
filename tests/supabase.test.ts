@@ -7,6 +7,7 @@ import {
 } from '../src/lib/supabase/config';
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  getSession: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
   createServer: vi.fn(),
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
   invite: vi.fn(),
   verifyOtp: vi.fn(),
   updateUser: vi.fn(),
+  from: vi.fn(),
+  select: vi.fn(),
+  eq: vi.fn(),
+  maybeSingle: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
 vi.mock('next/headers', () => ({
@@ -59,11 +64,13 @@ beforeEach(() => {
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
   mocks.getAll.mockReturnValue([]);
   mocks.getUser.mockResolvedValue({ data: { user: owner }, error: null });
+  mocks.getSession.mockResolvedValue({ data: { session: null }, error: null });
   mocks.signIn.mockResolvedValue({ data: { user: owner }, error: null });
   mocks.signOut.mockResolvedValue({ error: null });
   mocks.createServer.mockReturnValue({
     auth: {
       getUser: mocks.getUser,
+      getSession: mocks.getSession,
       signInWithPassword: mocks.signIn,
       signOut: mocks.signOut,
       verifyOtp: mocks.verifyOtp,
@@ -72,6 +79,7 @@ beforeEach(() => {
   });
   mocks.createAdmin.mockReturnValue({
     rpc: mocks.rpc,
+    from: mocks.from,
     auth: { admin: { inviteUserByEmail: mocks.invite } },
     storage: {
       from: () => ({
@@ -81,6 +89,10 @@ beforeEach(() => {
       }),
     },
   });
+  mocks.from.mockReturnValue({ select: mocks.select });
+  mocks.select.mockReturnValue({ eq: mocks.eq });
+  mocks.eq.mockReturnValue({ maybeSingle: mocks.maybeSingle });
+  mocks.maybeSingle.mockResolvedValue({ data: { revision: 0 }, error: null });
   mocks.rpc.mockImplementation(async (name: string) => ({
     data:
       name === 'beta_check_access'
@@ -212,7 +224,7 @@ describe('private authentication and session lifecycle', () => {
     expect(mocks.set).toHaveBeenCalledWith('session', 'test-session', { httpOnly: true });
   });
   it('refreshes both request and response cookies before page rendering', async () => {
-    mocks.getUser.mockImplementation(async () => {
+    mocks.getSession.mockImplementation(async () => {
       const options = mocks.createServer.mock.calls.at(-1)![2];
       options.cookies.setAll([
         {
@@ -221,7 +233,7 @@ describe('private authentication and session lifecycle', () => {
           options: { httpOnly: true, sameSite: 'lax', path: '/' },
         },
       ]);
-      return { data: { user: owner }, error: null };
+      return { data: { session: null }, error: null };
     });
     const request = new NextRequest('https://thrift.example/inventory');
     const response = await proxy(request);
@@ -857,4 +869,72 @@ describe('invite-only beta authorization', () => {
       'unrelated',
     ]);
   });
+});
+
+it('refreshes cookies in the proxy without trusting a session user or repeating the verified API authorization', async () => {
+  mocks.getSession.mockResolvedValue({ data: { session: { user: owner } }, error: null });
+  mocks.getUser.mockResolvedValue({ data: { user: null }, error: null });
+  await proxy(new NextRequest('https://thrift.example/api/workspace'));
+  expect(mocks.getSession).toHaveBeenCalledTimes(1);
+  expect(mocks.getUser).not.toHaveBeenCalled();
+  expect((await workspace()).status).toBe(401);
+  expect(mocks.getUser).toHaveBeenCalledTimes(1);
+  expect(mocks.rpc).not.toHaveBeenCalled();
+});
+it('keeps refreshed Auth cookies on the response and request for downstream fresh verification', async () => {
+  mocks.getSession.mockImplementationOnce(async () => {
+    const options = mocks.createServer.mock.calls.at(-1)![2];
+    options.cookies.setAll([
+      {
+        name: 'sb-test-auth-token',
+        value: 'synthetic-refreshed-session',
+        options: { httpOnly: true, secure: true, sameSite: 'lax', path: '/' },
+      },
+    ]);
+    return { data: { session: null }, error: null };
+  });
+  const request = new NextRequest('https://thrift.example/inventory');
+  const response = await proxy(request);
+  expect(response.cookies.get('sb-test-auth-token')?.value).toBe('synthetic-refreshed-session');
+  expect(request.cookies.get('sb-test-auth-token')?.value).toBe('synthetic-refreshed-session');
+  expect(response.headers.get('cache-control')).toBe('private, no-store');
+});
+it('uses an actor-scoped revision check without loading the whole workspace when unchanged', async () => {
+  mocks.maybeSingle.mockResolvedValue({ data: { revision: 12 }, error: null });
+  const result = await workspaceGet(
+    new Request('https://thrift.example/api/workspace?revision=12&user_id=someone-else'),
+  );
+  expect(result.status).toBe(304);
+  expect(await result.text()).toBe('');
+  expect(result.headers.get('cache-control')).toBe('no-store');
+  expect(mocks.getUser).toHaveBeenCalledTimes(1);
+  expect(mocks.rpc).toHaveBeenCalledWith('beta_check_access', { p_user_id: owner.id });
+  expect(mocks.from).toHaveBeenCalledWith('workspaces');
+  expect(mocks.select).toHaveBeenCalledWith('revision');
+  expect(mocks.eq).toHaveBeenCalledWith('user_id', owner.id);
+  expect(mocks.rpc.mock.calls.some(([name]) => name === 'load_workspace')).toBe(false);
+});
+it('loads a changed revision through the full readiness checks and denies revoked or mismatched sessions before metadata reads', async () => {
+  mocks.maybeSingle.mockResolvedValue({ data: { revision: 2 }, error: null });
+  expect(
+    (await workspaceGet(new Request('https://thrift.example/api/workspace?revision=1'))).status,
+  ).toBe(200);
+  expect(mocks.rpc.mock.calls.some(([name]) => name === 'verify_thrift_log')).toBe(true);
+  expect(mocks.rpc.mock.calls.some(([name]) => name === 'load_workspace')).toBe(true);
+  mocks.from.mockClear();
+  mocks.rpc.mockResolvedValueOnce({ data: null, error: null });
+  expect(
+    (await workspaceGet(new Request('https://thrift.example/api/workspace?revision=1'))).status,
+  ).toBe(401);
+  expect(mocks.from).not.toHaveBeenCalled();
+  expect(
+    (
+      await workspaceGet(
+        new Request('https://thrift.example/api/workspace?revision=1', {
+          headers: { 'x-thrift-user': 'other-account' },
+        }),
+      )
+    ).status,
+  ).toBe(401);
+  expect(mocks.from).not.toHaveBeenCalled();
 });

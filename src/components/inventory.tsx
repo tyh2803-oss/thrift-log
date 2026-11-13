@@ -1,6 +1,8 @@
 'use client';
+import { memo } from 'react';
 import { useMemo, useState } from 'react';
-import { usePathname, useSearchParams, useRouter } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useNow } from '@/lib/use-now';
 import {
   inventoryPipeline,
   inventoryStages,
@@ -23,7 +25,7 @@ import { PhotoGallery } from './photo-gallery';
 import { PipelineMoveDialog } from './pipeline-move-dialog';
 import { OrderFulfillment } from './order-fulfillment';
 import type { EditorTarget } from './editor';
-export function Inventory({
+function InventoryView({
   search,
   onEdit,
   onImport,
@@ -34,9 +36,9 @@ export function Inventory({
   onEdit: (t: EditorTarget) => void;
   onImport: () => void;
 }) {
-  const { now, w, dispatch, notify } = useWorkspace();
+  const { w, dispatch, notify } = useWorkspace();
+  const now = useNow(60_000, w);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
-  const router = useRouter();
   const params = useSearchParams();
   const requested = params.get('pipeline') || pipelineStage || 'all';
   const status = inventoryStages.includes(requested as InventoryStage)
@@ -51,7 +53,8 @@ export function Inventory({
     const query = new URLSearchParams(params.toString());
     if (value === 'all') query.delete('pipeline');
     else query.set('pipeline', value);
-    router.replace(`${base}/inventory${query.size ? `?${query}` : ''}`, { scroll: false });
+    // Filtering already-authorized, loaded records needs no server navigation.
+    window.history.replaceState(null, '', `${base}/inventory${query.size ? `?${query}` : ''}`);
   }
   const [moving, setMoving] = useState<string[] | null>(null);
   const [destination, setDestination] = useState<InventoryStage>('unlisted');
@@ -761,3 +764,5 @@ export function Inventory({
     </>
   );
 }
+
+export const Inventory = memo(InventoryView);

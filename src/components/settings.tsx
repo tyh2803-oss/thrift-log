@@ -1,4 +1,5 @@
 'use client';
+import { memo } from 'react';
 import { useState } from 'react';
 import {
   CheckCircle2,
@@ -18,7 +19,7 @@ import { Badge } from './shared';
 import { WhatnotConnection } from './whatnot-connection';
 import { BetaAccess } from './beta-access';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
-export function Settings({ onImport }: { onImport: () => void }) {
+function SettingsView({ onImport }: { onImport: () => void }) {
   const { w, dispatch, demo, resetDemo, notify } = useWorkspace();
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
@@ -284,3 +285,5 @@ export function Settings({ onImport }: { onImport: () => void }) {
     </div>
   );
 }
+
+export const Settings = memo(SettingsView);

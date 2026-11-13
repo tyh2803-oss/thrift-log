@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Faster navigation:** [Performance changes and verification](docs/PERFORMANCE.md) cover persistent, isolated workspace loading, local inventory filters, quieter idle rendering and indexed financial views. Protected pages and APIs still verify access; no migration or new configuration is required.
+
 **Whatnot Seller API:** [Connect your own read-only account](docs/WHATNOT_INTEGRATION.md) for resumable order/history synchronization, verified report fees, fulfillment and show analytics. Requires one additive, unapplied migration; no OAuth app or SMTP setup. Bank payouts are not exposed by the documented API; net refunds require reconciliation. No production database changes were made.
 
 **Sale history imports:** [CSV and PDF guide](docs/SALE_HISTORY_IMPORTS.md). Sales CSVs require only item name, actual price, sale date and seller fees; select the marketplace and optionally include purchase cost. Native Depop bundles and assistant PDF/CSV review use the existing atomic approval flow. Unknown costs remain visibly incomplete, distinct from confirmed zero.

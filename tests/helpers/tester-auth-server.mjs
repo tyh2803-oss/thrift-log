@@ -78,7 +78,16 @@ function reset() {
   ]);
   sessions = new Map();
   links = new Map();
-  metrics = { generatedFor: [], passwordUpdates: [], businessWrites: 0, unexpectedWrites: 0 };
+  metrics = {
+    generatedFor: [],
+    passwordUpdates: [],
+    businessWrites: 0,
+    unexpectedWrites: 0,
+    authReads: 0,
+    accessChecks: 0,
+    workspaceReads: 0,
+    versionReads: 0,
+  };
 }
 reset();
 function safeUser(user) {
@@ -145,8 +154,20 @@ const server = createServer(async (request, response) => {
         ? send(token(user))
         : send({ msg: 'Invalid login credentials', code: 'invalid_credentials' }, 400);
     }
-    if (url.pathname === '/auth/v1/user' && request.method === 'GET')
+    if (url.pathname === '/auth/v1/user' && request.method === 'GET') {
+      metrics.authReads++;
       return current ? send(safeUser(current)) : send({ msg: 'Unauthorized' }, 401);
+    }
+    if (url.pathname === '/rest/v1/workspaces' && request.method === 'GET') {
+      metrics.versionReads++;
+      if (bearer !== 'test-server-key' || url.searchParams.get('select') !== 'revision')
+        return send({ message: 'Denied' }, 403);
+      const id = url.searchParams.get('user_id')?.replace(/^eq\./, '');
+      const user = users.get(id);
+      return user?.active
+        ? send([{ revision: workspaces.get(id)?.revision ?? 0 }])
+        : send({ message: 'Denied' }, 403);
+    }
     if (url.pathname === '/auth/v1/user' && request.method === 'PUT') {
       if (!current || !current.email_confirmed_at) return send({ msg: 'Unauthorized' }, 401);
       if (typeof body.password !== 'string' || body.password.length < 8)
@@ -207,7 +228,8 @@ const server = createServer(async (request, response) => {
           { code: 'PGRST202', message: 'Optional Whatnot migration is not installed' },
           404,
         );
-      if (name === 'beta_check_access')
+      if (name === 'beta_check_access') {
+        metrics.accessChecks++;
         return send(
           actor?.active && actor.email_confirmed_at
             ? actor.id === ids.owner
@@ -215,6 +237,7 @@ const server = createServer(async (request, response) => {
               : 'tester'
             : null,
         );
+      }
       if (name === 'beta_manage_access') {
         if (!actor || actor.id !== ids.owner || !actor.active)
           return send({ message: 'Denied' }, 403);
@@ -247,10 +270,12 @@ const server = createServer(async (request, response) => {
           shipmentStorage: true,
           itemFulfillment: true,
         });
-      if (name === 'load_workspace')
+      if (name === 'load_workspace') {
+        metrics.workspaceReads++;
         return actor?.active && actor.email_confirmed_at
           ? send(workspaces.get(actor.id))
           : send({ message: 'Denied' }, 403);
+      }
       if (name === 'commit_workspace') {
         metrics.businessWrites++;
         // Explicit, loopback-only history test mode. The account-setup suite still rejects all writes.
