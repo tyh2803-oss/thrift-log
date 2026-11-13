@@ -323,3 +323,99 @@ test('widget visibility and selling estimates are optional settings', async ({ p
   await expect(pipeline(page)).toBeVisible();
   await expect(card(page, 'For Sale')).toContainText('$28.00');
 });
+
+test('marketplace filters find imported sold and shipped pieces without listings and use the actual sale instead of old cross-listings', async ({
+  page,
+}) => {
+  let w = emptyWorkspace();
+  for (const sku of [
+    'DEPOP-SHIPPED',
+    'DEPOP-DELIVERED',
+    'DEPOP-SOLD',
+    'VINTED-SHIPPED',
+    'CROSS-LISTED',
+    'UNASSIGNED',
+  ])
+    w = addItem(w, sku, 500, 2500);
+  for (const marketplace of ['Depop', 'Vinted'] as const) {
+    for (const sku of ['CROSS-LISTED', 'VINTED-SHIPPED']) {
+      w = applyCommand(w, {
+        type: 'listing',
+        value: listingSchema.parse({
+          id: crypto.randomUUID(),
+          itemId: w.items.find((i) => i.sku === sku)!.id,
+          marketplace,
+          price: 2500,
+          originalPrice: 2500,
+          listedAt: purchased,
+          status: 'Active',
+        }),
+      });
+    }
+  }
+  for (const [sku, marketplace, fulfillment] of [
+    ['DEPOP-SHIPPED', 'Depop', 'Shipped'],
+    ['DEPOP-DELIVERED', 'Depop', 'Delivered'],
+    ['DEPOP-SOLD', 'Depop', 'Unfulfilled'],
+    ['VINTED-SHIPPED', 'Vinted', 'Shipped'],
+  ] as const)
+    w = sale(w, [w.items.find((i) => i.sku === sku)!.id], [2500], sku, {
+      marketplace,
+      fulfillment,
+    });
+  expect(
+    w.listings.some((l) => w.items.find((i) => i.id === l.itemId)!.sku.startsWith('DEPOP-')),
+  ).toBe(false);
+  await seed(page, w);
+  await card(page, 'Shipped').click();
+  const rows = page.locator('table tbody tr');
+  const market = page.getByRole('combobox', { name: 'Filter marketplace', exact: true });
+  const stage = page.getByRole('combobox', { name: 'Filter inventory status', exact: true });
+  await expect(rows).toHaveCount(3);
+  await market.selectOption('Depop');
+  await expect(rows).toHaveCount(2);
+  await expect(
+    page.getByRole('button', { name: 'Select all matching (2)', exact: true }),
+  ).toBeVisible();
+  await expect(rows.filter({ hasText: 'DEPOP-SHIPPED' })).toHaveCount(1);
+  await expect(rows.filter({ hasText: 'DEPOP-DELIVERED' })).toHaveCount(1);
+  await expect(rows.filter({ hasText: 'VINTED-SHIPPED' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Select all matching (2)', exact: true }).click();
+  await expect(
+    page.getByRole('checkbox', { name: 'Select DEPOP-SHIPPED', exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole('checkbox', { name: 'Select DEPOP-DELIVERED', exact: true }),
+  ).toBeChecked();
+  await page.getByRole('button', { name: 'Grid view', exact: true }).click();
+  await expect(page.locator('.product-card')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Table view', exact: true }).click();
+  await market.selectOption('Vinted');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('VINTED-SHIPPED');
+  await market.selectOption('Depop');
+  await stage.selectOption('sold');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('DEPOP-SOLD');
+  await stage.selectOption('for-sale');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('CROSS-LISTED');
+  await market.selectOption('Vinted');
+  await expect(rows).toHaveCount(1);
+  await market.selectOption('All marketplaces');
+  await expect(rows).toHaveCount(1);
+  await stage.selectOption('unlisted');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('UNASSIGNED');
+  await stage.selectOption('shipped');
+  await expect(page).toHaveURL(/pipeline=shipped/);
+  await expect(rows).toHaveCount(3);
+  await page.reload();
+  await market.selectOption('Depop');
+  await expect(rows).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
+  expect(saved.orders).toEqual(w.orders);
+  expect(saved.items).toEqual(w.items);
+  expect(saved.listings).toEqual(w.listings);
+});

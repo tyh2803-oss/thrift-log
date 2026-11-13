@@ -77,12 +77,16 @@ export function Inventory({
     );
     setMoving([i.id]);
   }
+  // Sold/shipped pieces belong to the actual sale's marketplace. Imported history may
+  // have no listing, and an old cross-listing must not override where the sale happened.
   const items = w.items
     .filter(
       (i) =>
         (status === 'all' || stageOf(i) === status) &&
         (marketplace === 'All marketplaces' ||
-          w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace)) &&
+          (entriesById.get(i.id)?.order
+            ? entriesById.get(i.id)!.order!.marketplace === marketplace
+            : w.listings.some((l) => l.itemId === i.id && l.marketplace === marketplace))) &&
         `${i.sku} ${i.title} ${i.brand} ${i.category} ${i.source} ${i.storage}`
           .toLowerCase()
           .includes(search.toLowerCase()),

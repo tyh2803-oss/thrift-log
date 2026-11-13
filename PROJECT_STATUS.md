@@ -1,5 +1,12 @@
 # Thrift Log project status
 
+## Sold/shipped marketplace filter correction
+
+- Fixed inventory marketplace filtering to use the canonical completed sale's marketplace for sold/shipped physical items. Imported sale history needs no linked listing to appear, and historical cross-listings cannot attribute a completed sale to the wrong marketplace. Unsold listing filters retain their existing behavior.
+- No business records, fulfillment statuses, financial calculations or schemas are changed. Historical CSV imports still start Sold/Unfulfilled until shipping is recorded.
+- Typecheck, lint, all **331 unit/database/API tests** (two optional skips), production build and **22 desktop/mobile pipeline/browser checks** passed. The new regression covers shipped/delivered imports without listings, cross-listing attribution, Sold/For Sale/Unlisted filters, bulk selection, grid/list views, reload and unchanged business data.
+
+
 ## Read-only Whatnot Seller API integration
 
 Implemented on `feat/whatnot-read-only-integration` from main `108008781461bda6a4aed4e1faafb317c1e3eece`. See [minimum setup, official sources and limitations](docs/WHATNOT_INTEGRATION.md).
