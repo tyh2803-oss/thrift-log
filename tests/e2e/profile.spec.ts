@@ -57,8 +57,12 @@ test('narrow profile menu has comfortable touch targets and never extends beyond
     await page.setViewportSize({ width, height: 844 });
     const trigger = page.getByRole('button', { name: 'Open profile menu' });
     await trigger.click();
-    const menu = page.getByRole('menu', { name: 'Your account' }),
-      bounds = await menu.boundingBox();
+    const menu = page.getByRole('menu', { name: 'Your account' });
+    // Measure settled geometry rather than compositor rounding during its 3px entrance.
+    await menu.evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => {}))),
+    );
+    const bounds = await menu.boundingBox();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
     expect((await trigger.boundingBox())!.height).toBeGreaterThanOrEqual(44);

@@ -71,7 +71,11 @@ export function replayPipelineMove(w: Workspace, request: PipelineMove): MoveRes
   return { workspace: w, ...audit.result, replayed: true };
 }
 /** Canonical commands only. Valid item/order groups commit together; failed groups never leak commands. */
-export async function applyPipelineMove(w: Workspace, input: PipelineMove): Promise<MoveResult> {
+export async function applyPipelineMove(
+  w: Workspace,
+  input: PipelineMove,
+  commandTrace?: Command[],
+): Promise<MoveResult> {
   const request = pipelineMoveSchema.parse(input);
   if (new Set(request.items.map((r) => r.itemId)).size !== request.items.length)
     throw new Error('Select each physical item once.');
@@ -91,6 +95,7 @@ export async function applyPipelineMove(w: Workspace, input: PipelineMove): Prom
   const processed = new Set<string>();
   const push = (commands: Command[]) => {
     next = commands.reduce(applyCommand, next);
+    commandTrace?.push(...commands);
   };
   for (const row of request.items) {
     if (processed.has(row.itemId)) continue;
@@ -352,39 +357,41 @@ export async function applyPipelineMove(w: Workspace, input: PipelineMove): Prom
     }
   }
   const result = { successIds, failures, unchangedIds };
-  next = applyCommand(next, {
-    type: 'import',
-    value: {
-      id: request.id,
-      filename: `pipeline-${request.id}.json`,
-      kind: 'Inventory',
-      importedAt: new Date().toISOString(),
-      rawCsv: JSON.stringify({
-        fingerprint: fingerprint(request),
-        request,
-        result,
-        before: {
-          items: w.items
-            .filter((item) => selected.has(item.id))
-            .map(({ id, status, cost, asking, purchasedAt }) => ({
-              id,
-              status,
-              cost,
-              asking,
-              purchasedAt,
-            })),
-          listings: w.listings.filter((listing) => selected.has(listing.itemId)),
-          orders: w.orders.filter((o) => o.lines.some((l) => selected.has(l.itemId))),
-          shipments: w.shipments.filter((s) =>
-            w.orders.some(
-              (o) => s.orderIds.includes(o.id) && o.lines.some((l) => selected.has(l.itemId)),
+  push([
+    {
+      type: 'import',
+      value: {
+        id: request.id,
+        filename: `pipeline-${request.id}.json`,
+        kind: 'Inventory',
+        importedAt: new Date().toISOString(),
+        rawCsv: JSON.stringify({
+          fingerprint: fingerprint(request),
+          request,
+          result,
+          before: {
+            items: w.items
+              .filter((item) => selected.has(item.id))
+              .map(({ id, status, cost, asking, purchasedAt }) => ({
+                id,
+                status,
+                cost,
+                asking,
+                purchasedAt,
+              })),
+            listings: w.listings.filter((listing) => selected.has(listing.itemId)),
+            orders: w.orders.filter((o) => o.lines.some((l) => selected.has(l.itemId))),
+            shipments: w.shipments.filter((s) =>
+              w.orders.some(
+                (o) => s.orderIds.includes(o.id) && o.lines.some((l) => selected.has(l.itemId)),
+              ),
             ),
-          ),
-        },
-      }),
-      mapping: { format: 'pipeline-v1' },
-      recordIds: successIds,
+          },
+        }),
+        mapping: { format: 'pipeline-v1' },
+        recordIds: successIds,
+      },
     },
-  });
+  ]);
   return { workspace: next, ...result, replayed: false };
 }

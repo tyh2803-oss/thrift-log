@@ -1,0 +1,28 @@
+export function inventoryChange(patch: Record<string, unknown> = {}) {
+  return {
+    action: 'create',
+    proposalId: null,
+    itemIds: [],
+    evidence: 'I just got a Detroit denim Carhartt jacket worth about 500 from the bins I paid 3',
+    title: 'Carhartt Detroit denim jacket',
+    sku: null,
+    brand: 'Carhartt',
+    category: 'Jackets',
+    size: null,
+    color: null,
+    condition: null,
+    description: null,
+    source: 'Bins',
+    storage: null,
+    notes: null,
+    purchaseCost: 300,
+    askingPrice: 50000,
+    acquisitionDate: null,
+    acquisitionDateEvidence: null,
+    destination: null,
+    marketplace: null,
+    eventDate: null,
+    eventDateEvidence: null,
+    ...patch,
+  };
+}

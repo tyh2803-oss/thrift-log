@@ -13,7 +13,7 @@ import { applyCommand } from './commands';
 import { applyPipelineMove, type PipelineMove, type MoveResult } from './pipeline-moves';
 import { demoWorkspace } from './demo';
 import type { DraftBatch } from './assistant/drafts';
-import { approvalCommands, alreadyApproved } from './assistant/planner';
+import { approvalCommandsAsync, alreadyApproved } from './assistant/planner';
 import { historyCommands } from './assistant/history';
 import { emptyWorkspace, workspaceSchema, type Command, type Workspace } from './model';
 const KEY = 'thrift-log.demo.v1';
@@ -257,7 +257,7 @@ export function WorkspaceProvider({
       setError('');
       try {
         if (demo) {
-          const commit = () => {
+          const commit = async () => {
             const raw = localStorage.getItem(KEY);
             const current = raw ? workspaceSchema.parse(JSON.parse(raw)) : ref.current;
             if (alreadyApproved(current, batch, rowIds)) {
@@ -269,13 +269,13 @@ export function WorkspaceProvider({
             const next = (
               mode === 'history'
                 ? historyCommands(current, batch, rowIds)
-                : approvalCommands(current, batch, rowIds)
+                : await approvalCommandsAsync(current, batch, rowIds)
             ).reduce(applyCommand, current);
             localStorage.setItem(KEY, JSON.stringify(next));
             install(next);
           };
           if (navigator.locks) await navigator.locks.request(KEY, commit);
-          else commit();
+          else await commit();
         } else {
           const response = await fetch('/api/assistant/approve', {
             method: 'POST',

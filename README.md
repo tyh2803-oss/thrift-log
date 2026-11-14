@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Inventory through conversation:** the assistant can create items in any category, edit details and purchase costs, and prepare individual/bulk stage moves, including reversals. New inventory, an actual sale and shipment can share one approval. Estimated worth stays separate from revenue; required financial facts and consequential confirmations remain explicit. See [assistant capabilities](docs/BUSINESS_ASSISTANT.md#tools-and-boundaries). No new database setup is required.
+
 **Faster large workspaces:** imported cost/date checks reuse parsed receipts, long Inventory/Listings/Orders views render 50 rows at a time with **Show more**, and offscreen thumbnails load lazily. Search, totals, exports and bulk actions still include every matching record. See [large-workspace performance](docs/PERFORMANCE.md#large-imported-workspaces--november-14). No database change or setup is required.
 
 **Subtle app motion:** short page/tab fades, gentle menu/dialog entrances and restrained press feedback make navigation smoother without delaying actions. Reduced-motion preferences disable the effects. See [motion behavior](docs/VISUAL_SYSTEM.md#subtle-motion); no new setup is required.

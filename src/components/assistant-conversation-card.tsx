@@ -1,5 +1,5 @@
 'use client';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Package } from 'lucide-react';
 import { useWorkspace } from '@/lib/use-workspace';
 import { localDay } from '@/lib/dates';
 import { marketplaces } from '@/lib/model';
@@ -57,11 +57,11 @@ export function ConversationCard({
       data-review-incomplete={row.included && !p.ready}
     >
       <div className="conversation-item-heading">
-        {item && <ItemPhoto item={item} />}
+        {item ? <ItemPhoto item={item} /> : <Package size={24} />}
         <div>
-          <strong>{item?.title || 'Choose an inventory item'}</strong>
+          <strong>{item?.title || r.lines[0]?.title || 'Choose an inventory item'}</strong>
           <small>
-            {item?.sku} ·{' '}
+            {item?.sku || r.lines[0]?.sku} ·{' '}
             {row.inventoryStage
               ? row.inventoryStage === 'archived'
                 ? 'Archive unsold item'

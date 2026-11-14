@@ -2,6 +2,8 @@
 import { createPortal } from 'react-dom';
 import { BatchTools } from './assistant-batch-tools';
 import { CompactListing } from './assistant-compact-listing';
+import { InventoryProposalCard } from './assistant-inventory-card';
+import { useReviewPreviews } from '@/lib/assistant/use-review-previews';
 import { ConversationCard } from './assistant-conversation-card';
 import { updateReviewRow } from '@/lib/assistant/review-bulk';
 import { Trash2 } from 'lucide-react';
@@ -13,7 +15,7 @@ import { useRef, useState } from 'react';
 import { ListingFields } from './assistant-listing-fields';
 import { ClothingPreview, ClothingEditor } from './assistant-clothing';
 import { correctedMarketplace } from '@/lib/assistant/vision';
-import { previewBatch, saleAmounts, amountLabels, type Preview } from '@/lib/assistant/planner';
+import { saleAmounts, amountLabels, type Preview } from '@/lib/assistant/planner';
 import { matchInventory } from '@/lib/assistant/matching';
 import type { DraftBatch, DraftRow } from '@/lib/assistant/drafts';
 import { useWorkspace } from '@/lib/use-workspace';
@@ -42,7 +44,7 @@ export function AssistantReview({
   onView: (kind: 'order' | 'listing', id: string) => void;
 }) {
   const { w, refresh } = useWorkspace();
-  const previews = previewBatch(w, batch);
+  const previews = useReviewPreviews(w, batch);
   const ready = previews.filter((p) => p.row.included && p.ready);
   const unresolved = previews.filter((p) => p.row.included && !p.ready);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -140,7 +142,30 @@ export function AssistantReview({
           <Button
             size="sm"
             disabled={busy}
-            onClick={() => onChange({ ...batch, revision: w.revision })}
+            onClick={() =>
+              onChange({
+                ...batch,
+                revision: w.revision,
+                rows: batch.rows.map((row) =>
+                  row.inventoryChange
+                    ? {
+                        ...row,
+                        inventoryChange: {
+                          ...row.inventoryChange,
+                          confirmCostCorrection: false,
+                          move: row.inventoryChange.move
+                            ? {
+                                ...row.inventoryChange.move,
+                                revision: w.revision,
+                                confirmConsequences: false,
+                              }
+                            : null,
+                        },
+                      }
+                    : row,
+                ),
+              })
+            }
           >
             Use updated preview
           </Button>
@@ -175,7 +200,19 @@ export function AssistantReview({
           busy,
           onView,
         };
-        return p.row.sourceHash === 'conversation' &&
+        return p.row.inventoryChange ? (
+          <InventoryProposalCard
+            {...props}
+            pendingTitle={
+              batch.rows.find(
+                (r) =>
+                  r.inventoryChange?.action === 'create' &&
+                  r.inventoryChange.itemId === p.row.inventoryChange?.itemId,
+              )?.inventoryChange?.patch.title
+            }
+            key={p.row.id}
+          />
+        ) : p.row.sourceHash === 'conversation' &&
           (p.row.facts.kind === 'sale' || p.row.inventoryStage) ? (
           <ConversationCard {...props} key={p.row.id} />
         ) : p.row.facts.kind === 'listing' ? (
@@ -184,7 +221,7 @@ export function AssistantReview({
           <ReviewRow {...props} key={p.row.id} />
         );
       })}
-      {previews.some((p) => p.row.facts.kind !== 'listing') && (
+      {previews.some((p) => !p.row.inventoryChange && p.row.facts.kind !== 'listing') && (
         <details>
           <summary>Batch financial summary</summary>
           <p>

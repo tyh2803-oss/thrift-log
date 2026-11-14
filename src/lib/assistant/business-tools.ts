@@ -10,7 +10,7 @@ import {
 } from '../cost-knowledge';
 import { inventoryPipeline, inventoryStages } from '../pipeline';
 import { periods, periodRange, localDay } from '../dates';
-import { previewBatch, importDate } from './planner';
+import { previewBatchAsync, importDate } from './planner';
 import { previewHistory } from './history';
 import { confirmedFreeInventory } from './listing-review';
 import { appendConversationRow } from './conversation';
@@ -19,6 +19,8 @@ import { createHistoryBatch } from './history';
 import { applyBatchCost, eligiblePhysicalDrafts } from './review-bulk';
 import type { Screenshot } from './schema';
 import type { ChatDrafts } from './chat-schema';
+
+import { inventoryToolSchema, prepareInventoryChanges } from './inventory-tools';
 
 const amount = z.number().int().min(0).max(100_000_000).nullable();
 const market = z.enum(marketplaces).nullable();
@@ -43,6 +45,7 @@ const rangeFields = {
   marketplace: market,
 };
 const schemas = {
+  prepare_inventory_changes: inventoryToolSchema,
   search_inventory: z.strictObject({
     query: z.string().max(300),
     marketplace: market,
@@ -167,6 +170,8 @@ const schemas = {
   }),
 };
 const descriptions: Record<keyof typeof schemas, string> = {
+  prepare_inventory_changes:
+    'PREPARE ONLY inventory creation (any item category, not just clothing), editing title/brand/category/size/color/condition/SKU/description/source/storage/notes/asking value/acquisition date, purchase-cost corrections, and forward/backward pipeline moves. Integer cents. Create uses itemIds:[] and a server-generated unique ID. Evidence must quote the user. Optional metadata stays null. Acquisition date defaults to today as a labeled assumption for final approval. Purchase cost is required for a new item; zero is confirmed free. An estimated worth is asking value, never actual proceeds or automatically a marketplace listing. For edit/cost/stage first search/read every item. stage uses itemIds for a bulk move and destination, with marketplace/askingPrice for For Sale; new actual sales use prepare_changes action sale. Missing sale facts must not be invented. Consequential reversals and recorded-cost corrections require explicit confirmation in review, never set it yourself. Read pending proposals and supply proposalId for follow-up edits, preserving the same item and operation IDs. Never claim saved until final approval. Do not pass detail fields on a stage/cost action.',
   search_inventory:
     'Read inventory and linked listings. Use short semantic queries; tee/t-shirt variants are normalized. Results include exact IDs, costs with unknown distinct from zero, listing dates, canonical stages, and ambiguity. Paginate rather than assuming a sample is the whole workspace.',
   search_sales:
@@ -186,7 +191,7 @@ const descriptions: Record<keyof typeof schemas, string> = {
   edit_drafts:
     'Prepare the same explicitly shared per-sale values for selected draft rows, or all included rows when rowIds is null. Never apply a batch total to each row. Missing fields remain unknown. A purchase cost needs a verbatim user quote; known existing inventory costs cannot be overwritten. Use allocate_batch_cost for a shared purchase total.',
   allocate_batch_cost:
-    'Prepare same-per-item or exact-cent split purchase costs using existing allocation rules, over unique new physical listing drafts only. Existing inventory costs are protected. Quote the user-provided amount; no business writes. For bundles/history with different costs, use per-item review.',
+    'Prepare same-per-item or exact-cent split purchase costs using existing allocation rules, over unique new physical drafts from inventory creation or listing imports. Existing inventory costs are protected and use explicit inventory cost corrections. Quote the user-provided amount; no business writes. For bundles/history with different costs, use per-item review.',
   list_attachments:
     'List retained private attachments in this account. Metadata only; files are not business records.',
   read_attachment:
@@ -198,7 +203,7 @@ const descriptions: Record<keyof typeof schemas, string> = {
   prepare_file_import:
     'PREPARE ONLY a supported sale-history CSV/PDF or listing/sale screenshot through the existing extraction and approval pipeline. Quote the user import request. Analyze file questions with read_attachment instead; do not force every file into an import. Existing pending imports are reused. Unsold inventory spreadsheets use the established Inventory CSV screen. This never saves inventory or financial records.',
   prepare_changes:
-    'PREPARE ONLY existing-item sales, listings, status or ledger events for explicit approval. Never invent amounts, costs or dates. All nullable fields stay unknown. Read the item/order first. Ambiguous matches require a user choice; never guess. No new physical inventory can be created by this tool. Repeated proposals update the same draft. Actual sale prices must come from the user, never the asking price. Date evidence must refer to the event, not when the item was listed.',
+    'PREPARE ONLY sales, listings, status or ledger events for saved items or a pending-new item that get_record has read, for explicit approval. Never invent amounts, costs or dates. All nullable fields stay unknown. Read the item/order first. Ambiguous matches require a user choice; never guess. This tool never creates physical inventory; use prepare_inventory_changes create first, then get_record on that returned pending item ID before preparing its sale. Repeated proposals update the same draft. Actual sale prices must come from the user, never the asking price. Date evidence must refer to the event, not when the item was listed.',
   inspect_inventory_photo:
     'Read a private photo of an owned inventory item already found by another tool. No arbitrary URLs or storage paths. At most two photo inspections per turn.',
 };
@@ -286,17 +291,42 @@ export function createBusinessTools(
   const trace: string[] = [];
   let photos = 0;
   const snapshot = inventoryPipeline(w);
+  const proposedItems = new Map<string, Item>();
+  let hydratedBatch: typeof drafts.batch | undefined;
+  const hydratePending = async () => {
+    if (hydratedBatch === drafts.batch) return;
+    proposedItems.clear();
+    if (!drafts.batch?.rows.some((r) => r.inventoryChange?.action === 'create')) {
+      hydratedBatch = drafts.batch;
+      return;
+    }
+    if (drafts.batch)
+      for (const p of await previewBatchAsync(w, drafts.batch)) {
+        if (!p.row.included || !p.ready || p.row.inventoryChange?.action !== 'create') continue;
+        for (const command of p.commands)
+          if (command.type === 'item' && command.value.id === p.row.inventoryChange.itemId)
+            proposedItems.set(command.value.id, command.value);
+      }
+    hydratedBatch = drafts.batch;
+  };
   const ownedItem = (id: string) => {
-    const item = w.items.find((i) => i.id === id);
+    const item = w.items.find((i) => i.id === id) || proposedItems.get(id);
     if (!item) throw new Error('Record not available in this workspace.');
     return item;
   };
   const knownCost = (item: Item) =>
-    item.cost > 0 || confirmedFreeInventory(w, item.id) ? item.cost : null;
+    item.cost > 0 || confirmedFreeInventory(w, item.id) || proposedItems.has(item.id)
+      ? item.cost
+      : null;
   const itemResult = (item: Item) => {
     seenItems.add(item.id);
     return {
       id: item.id,
+      pending: proposedItems.has(item.id) && !w.items.some((i) => i.id === item.id),
+      acquisitionDateAssumed:
+        drafts.batch?.rows.some(
+          (r) => r.inventoryChange?.itemId === item.id && r.inventoryChange.assumedAcquisitionDate,
+        ) || false,
       sku: item.sku,
       title: item.title,
       brand: item.brand,
@@ -394,13 +424,14 @@ export function createBusinessTools(
     }
     return resolved;
   };
-  const previews = () => ({
+  const previews = async () => ({
     batch: drafts.batch
-      ? previewBatch(w, drafts.batch).map((p) => ({
+      ? (await previewBatchAsync(w, drafts.batch)).map((p) => ({
           id: p.row.id,
           ready: p.ready,
           issues: p.issues,
           kind: p.row.facts.kind,
+          inventoryChange: p.row.inventoryChange,
           itemIds: p.row.matches.map((m) => m.itemId),
           revenue: p.totals?.revenue ?? null,
           profit: p.ready ? (p.totals?.profit ?? null) : null,
@@ -513,7 +544,10 @@ export function createBusinessTools(
         }
         case 'get_record': {
           const a = schemas.get_record.parse(raw);
-          if (a.kind === 'item') return itemResult(ownedItem(a.id));
+          if (a.kind === 'item') {
+            if (!w.items.some((i) => i.id === a.id)) await hydratePending();
+            return itemResult(ownedItem(a.id));
+          }
           if (a.kind === 'order') {
             const record = w.orders.find((o) => o.id === a.id);
             if (record) return orderResult(record);
@@ -677,8 +711,9 @@ export function createBusinessTools(
               })),
               matchedIds: r.matches.map((m) => m.itemId),
               inventoryStage: r.inventoryStage,
+              inventoryChange: r.inventoryChange,
             })),
-            previews: previews(),
+            previews: await previews(),
           };
         }
         case 'edit_draft':
@@ -693,6 +728,10 @@ export function createBusinessTools(
           if (!ids.length || ids.some((id) => !all.some((r) => r.id === id)))
             throw new Error('Choose existing pending draft rows.');
           for (const row of all.filter((r) => ids.includes(r.id))) {
+            if (row.inventoryChange)
+              throw new Error(
+                'Use prepare_inventory_changes with this proposalId to edit inventory proposals.',
+              );
             const eventDate = date(a, row.facts.kind === 'sale');
             if ((a.price !== null || a.purchaseCost !== null) && row.facts.lines.length !== 1)
               throw new Error(
@@ -756,7 +795,7 @@ export function createBusinessTools(
               });
           drafts.batch = next.batch;
           drafts.historyBatch = next.historyBatch;
-          return { preparedOnly: true, ...previews() };
+          return { preparedOnly: true, ...(await previews()) };
         }
         case 'allocate_batch_cost': {
           const a = schemas.allocate_batch_cost.parse(raw);
@@ -777,7 +816,7 @@ export function createBusinessTools(
             (a.amount / 100).toFixed(2),
             a.physicalItemIds || undefined,
           );
-          return { preparedOnly: true, ...previews() };
+          return { preparedOnly: true, ...(await previews()) };
         }
         case 'list_attachments':
           return {
@@ -818,7 +857,7 @@ export function createBusinessTools(
             return {
               preparedOnly: true,
               message: 'Existing pending import reused.',
-              ...previews(),
+              ...(await previews()),
             };
           const sources = await attachments.prepare(ids, a.intentEvidence),
             normal: Screenshot[] = [],
@@ -876,10 +915,25 @@ export function createBusinessTools(
           return {
             preparedOnly: true,
             sourceMessages: sources.map((s) => s.extraction.message),
-            ...previews(),
+            ...(await previews()),
           };
         }
+        case 'prepare_inventory_changes': {
+          await hydratePending();
+          drafts.batch = await prepareInventoryChanges(
+            w,
+            drafts.batch,
+            raw,
+            transcript,
+            seenItems,
+            now,
+            (value, evidence) => date({ date: value, dateEvidence: evidence }),
+            new Set(proposedItems.keys()),
+          );
+          return { preparedOnly: true, ...(await previews()) };
+        }
         case 'prepare_changes': {
+          await hydratePending();
           const { changes } = schemas.prepare_changes.parse(raw);
           const next = structuredClone(drafts.batch);
           let batch = next;
@@ -973,7 +1027,7 @@ export function createBusinessTools(
                     {
                       itemId: item.id,
                       newItem: null,
-                      confirmZeroCost: confirmedFreeInventory(w, item.id),
+                      confirmZeroCost: knownCost(item) === 0,
                     },
                   ]
                 : [],
@@ -1058,7 +1112,7 @@ export function createBusinessTools(
             } else batch = appendConversationRow(batch, w, row);
           }
           drafts.batch = batch ? batchSchema.parse(batch) : null;
-          return { preparedOnly: true, ...previews() };
+          return { preparedOnly: true, ...(await previews()) };
         }
         case 'inspect_inventory_photo': {
           const a = schemas.inspect_inventory_photo.parse(raw),

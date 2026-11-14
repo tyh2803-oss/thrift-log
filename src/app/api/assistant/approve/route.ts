@@ -4,11 +4,12 @@ import { requireUser, checkOrigin, adminClient } from '@/lib/supabase/server';
 import { loadWorkspace } from '@/lib/supabase/workspace';
 import { ConfigurationError, DatabaseReadinessError } from '@/lib/supabase/config';
 import { batchSchema } from '@/lib/assistant/drafts';
-import { approvalCommands, alreadyApproved } from '@/lib/assistant/planner';
+import { approvalCommandsAsync, alreadyApproved } from '@/lib/assistant/planner';
 import { verifyScreenshotReferences } from '@/lib/assistant/provenance';
 import { historyCommands } from '@/lib/assistant/history';
 import { applyCommand } from '@/lib/commands';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 const options = { headers: { 'Cache-Control': 'no-store' } };
 export async function POST(request: Request) {
   try {
@@ -43,7 +44,20 @@ export async function POST(request: Request) {
     const commands =
       mode === 'history'
         ? historyCommands(current, batch, rowIds)
-        : approvalCommands(current, batch, rowIds);
+        : await approvalCommandsAsync(current, batch, rowIds);
+    if (
+      commands.some((c) => c.type === 'financialEvent' && c.value.kind === 'Cost basis adjustment')
+    ) {
+      const readiness = await adminClient().rpc('purchase_costs_ready');
+      if (readiness.error || readiness.data !== true)
+        return NextResponse.json(
+          {
+            error:
+              'Purchase-cost corrections need the existing purchase-cost setup. Your draft is retained.',
+          },
+          { status: 503, ...options },
+        );
+    }
     await verifyScreenshotReferences(user.id, batch, rowIds);
     const next = commands.reduce(applyCommand, current);
     const { data, error } = await adminClient().rpc('commit_workspace', {

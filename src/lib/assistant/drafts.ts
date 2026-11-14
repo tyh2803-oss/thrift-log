@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { inventoryChangeSchema } from './inventory-schema';
 import { extractedRecordSchema, screenshotSchema, type Screenshot } from './schema';
 import { listingEvidenceIssue } from './vision';
 import { matchInventory } from './matching';
@@ -37,6 +38,7 @@ export const draftRowSchema = z.object({
   id: z.string().uuid(),
   sourceHash: z.union([z.string().regex(/^[a-f0-9]{64}$/), z.literal('conversation')]),
   intent: z.string().max(500).optional(),
+  inventoryChange: inventoryChangeSchema.optional(),
   inventoryStage: z.enum(['unlisted', 'archived']).optional(),
   confirmStatusImpact: z.boolean().optional(),
   recordIndex: z.number().int().min(0),

@@ -710,7 +710,7 @@ export function Assistant({
           open
           onClose={onClose}
           title="Your Thrift Log assistant"
-          description="Attach screenshots, PDF or CSV files, review, then approve."
+          description="Add inventory, edit records, or attach files. Review and approve before saving."
           className="assistant-panel"
         >
           <div
@@ -740,9 +740,10 @@ export function Assistant({
                   <MessageCircle size={28} />
                   <h3>Less typing. More thrifting.</h3>
                   <p>
-                    Ask about your business, describe a sale, or attach spreadsheets, PDFs and
-                    photos. You can use your iPhone keyboard’s dictation. I’ll find records, ask
-                    about missing details, and prepare changes for review.
+                    Ask about your business, add any kind of inventory, edit details, move stages,
+                    describe a sale, or attach spreadsheets, PDFs and photos. You can use your
+                    iPhone keyboard’s dictation. I’ll find records, ask about missing details, and
+                    prepare changes for review.
                   </p>
                   <small>Your records change only after approval.</small>
                 </div>

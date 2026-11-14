@@ -38,13 +38,23 @@ export function BatchTools({
     [selected, setSelected] = useState<string[] | null>(null);
   const eligible = eligiblePhysicalDrafts(w, batch);
   const dates = new Set(
-    batch.rows.flatMap((row) =>
-      row.matches.flatMap((m) => (m.newItem ? [m.newItem.purchasedAt] : [])),
-    ),
+    batch.rows.flatMap((row) => [
+      ...row.matches.flatMap((m) => (m.newItem ? [m.newItem.purchasedAt] : [])),
+      ...(row.inventoryChange?.action === 'create'
+        ? [row.inventoryChange.patch.purchasedAt || '']
+        : []),
+    ]),
   );
-  const assumed = batch.rows.some((r) => r.matches.some((m) => m.newItem?.assumedAcquisitionDate));
+  const assumed = batch.rows.some(
+    (r) =>
+      r.matches.some((m) => m.newItem?.assumedAcquisitionDate) ||
+      (r.inventoryChange?.action === 'create' && r.inventoryChange.assumedAcquisitionDate),
+  );
   const newCount = new Set(
-    batch.rows.flatMap((r) => r.matches.flatMap((m) => (m.newItem ? [m.newItem.id] : []))),
+    batch.rows.flatMap((r) => [
+      ...r.matches.flatMap((m) => (m.newItem ? [m.newItem.id] : [])),
+      ...(r.inventoryChange?.action === 'create' ? [r.inventoryChange.itemId] : []),
+    ]),
   ).size;
   return (
     <div className="compact-batch-toolbar">

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { listingAmount, listingCost } from './listing-review';
 import { blockingWarnings } from './warnings';
 import { isLifecycle, lifecyclePreview } from './lifecycle';
@@ -10,6 +11,7 @@ import { orderSchema, itemSchema, listingSchema, type Command, type Workspace } 
 import { orderTotals, lineProfits } from '../money';
 import { batchSchema, type DraftBatch, type DraftRow } from './drafts';
 import { unsoldStageCommands } from '../unsold-stage';
+import { inventoryActionCommands } from './inventory-actions';
 
 export const saleAmounts = [
   'fees',
@@ -67,6 +69,18 @@ export function previewRow(
     date = importDate(r.date, w.settings.timezone);
   let duplicateId: string | null = null,
     duplicateKind: Preview['duplicateKind'] = null;
+  if (row.inventoryChange)
+    return {
+      row,
+      ready: false,
+      issues: ['Checking inventory change…'],
+      duplicateId: null,
+      duplicateKind: null,
+      costs: [],
+      totals: null,
+      profits: [],
+      commands: [],
+    };
   if (row.inventoryStage) {
     try {
       if (
@@ -391,7 +405,10 @@ export function previewRow(
     commands: issues.length ? [] : commands,
   };
 }
-export function previewBatch(w: Workspace, input: DraftBatch) {
+function* batchPlan(
+  w: Workspace,
+  input: DraftBatch,
+): Generator<{ workspace: Workspace; row: DraftRow }, Preview[], Preview | undefined> {
   const batch = batchSchema.parse(input);
   let next = w;
   const createdDraftIds = new Set<string>();
@@ -413,10 +430,17 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
       }
     }
   const rank = (row: DraftRow) =>
-    row.facts.kind === 'listing' ? 0 : row.facts.kind === 'sale' ? 1 : 2;
+    row.inventoryChange?.action === 'create'
+      ? -1
+      : row.facts.kind === 'listing'
+        ? 0
+        : row.facts.kind === 'sale'
+          ? 1
+          : 2;
   const planned = new Map<string, Preview>();
   for (const row of [...batch.rows].sort((a, b) => rank(a) - rank(b))) {
-    const preview = previewRow(next, row, { inventory: w, createdDraftIds });
+    const supplied = yield { workspace: next, row };
+    const preview = supplied || previewRow(next, row, { inventory: w, createdDraftIds });
     if (row.matches.some((m) => m.newItem && (draftValues.get(m.newItem.id)?.size || 0) > 1)) {
       preview.issues.push(
         'Cross-listings disagree on purchase cost, SKU or acquisition date. Use one value for this physical item.',
@@ -471,24 +495,103 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
   return batch.rows.map((row) => planned.get(row.id)!);
 }
 
+export function previewBatch(w: Workspace, input: DraftBatch): Preview[] {
+  const plan = batchPlan(w, input);
+  let step = plan.next();
+  while (!step.done) step = plan.next(undefined);
+  return step.value;
+}
+export async function previewBatchAsync(w: Workspace, input: DraftBatch): Promise<Preview[]> {
+  const plan = batchPlan(w, input);
+  let step = plan.next();
+  while (!step.done) {
+    const { workspace, row } = step.value;
+    let preview: Preview | undefined;
+    if (row.inventoryChange) {
+      preview = {
+        row,
+        ready: false,
+        issues: [],
+        duplicateId: null,
+        duplicateKind: null,
+        costs: [],
+        totals: null,
+        profits: [],
+        commands: [],
+      };
+      try {
+        preview.commands = await inventoryActionCommands(workspace, row, w.revision);
+        preview.ready = !!preview.commands.length;
+      } catch (error) {
+        preview.issues = [
+          error instanceof z.ZodError
+            ? 'Review the item name, dates, SKU and monetary amounts.'
+            : error instanceof Error
+              ? error.message
+              : 'Review the inventory change.',
+        ];
+      }
+    }
+    step = plan.next(preview);
+  }
+  return step.value;
+}
+export async function approvalCommandsAsync(
+  w: Workspace,
+  input: DraftBatch,
+  rowIds: string[],
+  at = new Date().toISOString(),
+) {
+  const batch = batchSchema.parse(input);
+  const operationIds = new Set(rowIds);
+  for (const row of batch.rows.filter((r) => rowIds.includes(r.id) && r.inventoryChange)) {
+    for (const id of [
+      row.inventoryChange!.costOperationId,
+      ...(row.inventoryChange!.move ? [row.inventoryChange!.move.id] : []),
+    ]) {
+      if (operationIds.has(id))
+        throw new Error('Pending operation IDs conflict. Recreate this proposal before approving.');
+      operationIds.add(id);
+    }
+  }
+  const selected = {
+    ...batch,
+    rows: batch.rows.map((row) => ({ ...row, included: row.included && rowIds.includes(row.id) })),
+  };
+  const prepared = await previewBatchAsync(w, selected);
+  return approvalCommands(w, batch, rowIds, at, prepared);
+}
+
 /** Only explicit row IDs may produce commands; a single invalid selected row rejects the batch. */
 export function approvalCommands(
   w: Workspace,
   input: DraftBatch,
   rowIds: string[],
   at = new Date().toISOString(),
+  prepared?: Preview[],
 ): Command[] {
   const batch = batchSchema.parse(input);
   if (!rowIds.length || new Set(rowIds).size !== rowIds.length)
     throw new Error('Select at least one ready record, without duplicates.');
-  const previews = previewBatch(w, {
-    ...batch,
-    rows: batch.rows.map((row) => ({ ...row, included: row.included && rowIds.includes(row.id) })),
-  });
+  const previews =
+    prepared ||
+    previewBatch(w, {
+      ...batch,
+      rows: batch.rows.map((row) => ({
+        ...row,
+        included: row.included && rowIds.includes(row.id),
+      })),
+    });
   const commands: Command[] = [];
   const rank = (id: string) => {
-    const kind = batch.rows.find((r) => r.id === id)?.facts.kind;
-    return kind === 'listing' ? 0 : kind === 'sale' ? 1 : 2;
+    const row = batch.rows.find((r) => r.id === id);
+    return row?.inventoryChange?.action === 'create'
+      ? -1
+      : row?.facts.kind === 'listing'
+        ? 0
+        : row?.facts.kind === 'sale'
+          ? 1
+          : 2;
   };
   for (const id of [...rowIds].sort(
     (a, b) =>
@@ -505,6 +608,7 @@ export function approvalCommands(
         ? !(
             isLifecycle(row.facts.kind) ||
             row.inventoryStage ||
+            (!!row.inventoryChange && !!row.intent?.trim()) ||
             (['sale', 'listing'].includes(row.facts.kind) &&
               !!row.intent?.trim() &&
               row.matches.every((m) => m.itemId && !m.newItem))
@@ -517,11 +621,12 @@ export function approvalCommands(
       value: {
         id: row.id,
         filename: `${row.sourceHash === 'conversation' ? 'assistant-action' : 'screenshots'}-${batch.id}.json`,
-        kind: row.inventoryStage
-          ? 'Inventory'
-          : row.facts.kind === 'listing'
-            ? 'Listings'
-            : 'Sales',
+        kind:
+          row.inventoryStage || row.inventoryChange
+            ? 'Inventory'
+            : row.facts.kind === 'listing'
+              ? 'Listings'
+              : 'Sales',
         importedAt: at,
         rawCsv: JSON.stringify({
           version: 1,
@@ -539,6 +644,7 @@ export function approvalCommands(
           origin: row.sourceHash === 'conversation' ? 'conversation' : 'screenshot',
           intent: row.intent,
           inventoryStage: row.inventoryStage,
+          inventoryChange: row.inventoryChange,
           confirmStatusImpact: row.confirmStatusImpact,
           corrected: row.facts,
           listingDateInferred:
@@ -556,7 +662,10 @@ export function approvalCommands(
           },
           authorization: {
             kind: 'final-approval',
-            newItemIds: row.matches.flatMap((m) => (m.newItem ? [m.newItem.id] : [])),
+            newItemIds: [
+              ...row.matches.flatMap((m) => (m.newItem ? [m.newItem.id] : [])),
+              ...(row.inventoryChange?.action === 'create' ? [row.inventoryChange.itemId] : []),
+            ],
           },
           matches: row.matches,
           context: batch.context,

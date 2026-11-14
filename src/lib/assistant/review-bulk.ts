@@ -6,6 +6,18 @@ import { listingAmount } from './listing-review';
 export function eligiblePhysicalDrafts(w: Workspace, batch: DraftBatch) {
   const groups = new Map<string, { id: string; title: string; eligible: boolean }>();
   for (const row of batch.rows) {
+    if (
+      row.included &&
+      row.inventoryChange?.action === 'create' &&
+      !w.items.some((i) => i.id === row.inventoryChange!.itemId)
+    ) {
+      const a = row.inventoryChange;
+      groups.set(a.itemId, {
+        id: a.itemId,
+        title: a.patch.title || 'New inventory item',
+        eligible: true,
+      });
+    }
     if (!row.included || row.facts.kind !== 'listing' || row.facts.status !== 'active') continue;
     row.matches.forEach((match, index) => {
       if (!match.newItem || match.itemId) return;
@@ -49,7 +61,13 @@ export function applyBatchCost(
       : groups.map(() => value);
   const costs = new Map(groups.map((group, i) => [group.id, values[i]]));
   const batch = structuredClone(input);
-  for (const row of batch.rows)
+  for (const row of batch.rows) {
+    if (row.inventoryChange?.action === 'create' && costs.has(row.inventoryChange.itemId)) {
+      row.inventoryChange.purchaseCost = costs.get(row.inventoryChange.itemId)!;
+      row.inventoryChange.invalidFields = row.inventoryChange.invalidFields.filter(
+        (f) => f !== 'purchaseCost',
+      );
+    }
     for (const match of row.matches)
       if (match.newItem && costs.has(match.newItem.id)) {
         const cost = costs.get(match.newItem.id)!;
@@ -58,18 +76,24 @@ export function applyBatchCost(
         match.costInput = (cost / 100).toFixed(2);
         match.costAllocation = { mode, total: value, count: groups.length };
       }
+  }
   return batch;
 }
 
 export function setBatchAcquisitionDate(input: DraftBatch, value: string) {
   const batch = structuredClone(input);
-  for (const row of batch.rows)
+  for (const row of batch.rows) {
+    if (row.inventoryChange?.action === 'create') {
+      row.inventoryChange.patch.purchasedAt = value;
+      row.inventoryChange.assumedAcquisitionDate = false;
+    }
     if (row.facts.kind === 'listing')
       for (const match of row.matches)
         if (match.newItem) {
           match.newItem.purchasedAt = value;
           match.newItem.assumedAcquisitionDate = false;
         }
+  }
   return batch;
 }
 
@@ -122,6 +146,18 @@ export function reconcileApprovedDrafts(input: DraftBatch, w: Workspace) {
     ...input,
     rows: input.rows.map((row) => ({
       ...row,
+      ...(row.inventoryChange?.move && row.inventoryChange.move.revision !== w.revision
+        ? {
+            inventoryChange: {
+              ...row.inventoryChange,
+              move: {
+                ...row.inventoryChange.move,
+                revision: w.revision,
+                confirmConsequences: false,
+              },
+            },
+          }
+        : {}),
       matches: row.matches.map((m) =>
         m.newItem &&
         createdIds.has(m.newItem.id) &&

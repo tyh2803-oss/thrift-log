@@ -12,7 +12,12 @@ import {
   extractScreenshot,
   clearExtractionCache,
 } from '../src/lib/assistant/openai';
-import { previewBatch, approvalCommands } from '../src/lib/assistant/planner';
+import {
+  previewBatchAsync,
+  approvalCommandsAsync,
+  previewBatch,
+  approvalCommands,
+} from '../src/lib/assistant/planner';
 import { applyCommand } from '../src/lib/commands';
 import { businessWorkspace, emptyDrafts } from './helpers/business-assistant';
 const enabled = process.env.RUN_LIVE_BUSINESS_ASSISTANT === '1';
@@ -208,4 +213,124 @@ it.skipIf(!enabled)(
     expect(result.drafts).toEqual(emptyDrafts);
   },
   240000,
+);
+
+it.skipIf(!enabled)(
+  'Sol prepares new inventory from the Carhartt dictation request rather than refusing creation',
+  async () => {
+    const { emptyWorkspace } = await import('../src/lib/model');
+    const w = emptyWorkspace(),
+      before = structuredClone(w);
+    const conversation = [
+      {
+        id: crypto.randomUUID(),
+        role: 'user' as const,
+        text: 'I just got a Detroit denim Carhartt jacket worth about 500 from the bins. I paid 3. Please add it to inventory.',
+      },
+      {
+        id: crypto.randomUUID(),
+        role: 'assistant' as const,
+        text: 'Use the Inventory item editor; I cannot create new inventory directly here. Nothing has been saved.',
+      },
+      {
+        id: crypto.randomUUID(),
+        role: 'user' as const,
+        text: 'Please add it now through the approval workflow.',
+      },
+    ];
+    const result = await runBusinessAssistant({
+      userId: '11111111-1111-4111-8111-111111111111',
+      workspace: w,
+      messages: conversation,
+      drafts: emptyDrafts,
+      selectedItemId: null,
+      authorize: async () => {},
+      fetcher: proxyFetch,
+    });
+    expect(result.tools).toContain('prepare_inventory_changes');
+    const batch = result.drafts.batch!;
+    expect(batch.rows).toHaveLength(1);
+    expect(batch.rows[0].inventoryChange).toMatchObject({
+      action: 'create',
+      purchaseCost: 300,
+      patch: { asking: 50000 },
+    });
+    expect((await previewBatchAsync(w, batch))[0].ready).toBe(true);
+    expect(w).toEqual(before);
+    const saved = (await approvalCommandsAsync(w, batch, [batch.rows[0].id])).reduce(
+      applyCommand,
+      w,
+    );
+    expect(saved.items).toHaveLength(1);
+    expect(saved.items[0].cost).toBe(300);
+    expect(saved.orders).toHaveLength(0);
+    expect(saved.listings).toHaveLength(0);
+    const followup = await runBusinessAssistant({
+      userId: '11111111-1111-4111-8111-111111111111',
+      workspace: w,
+      messages: [
+        ...conversation,
+        { id: crypto.randomUUID(), role: 'assistant', text: result.message },
+        { id: crypto.randomUUID(), role: 'user', text: 'Actually I paid $4. Put it on shelf B.' },
+      ],
+      drafts: result.drafts,
+      selectedItemId: null,
+      authorize: async () => {},
+      fetcher: proxyFetch,
+    });
+    expect(followup.drafts.batch!.rows).toHaveLength(1);
+    expect(followup.drafts.batch!.rows[0].inventoryChange).toMatchObject({
+      action: 'create',
+      itemId: batch.rows[0].inventoryChange!.itemId,
+      purchaseCost: 400,
+    });
+    expect(followup.drafts.batch!.rows[0].inventoryChange!.patch.storage?.toLowerCase()).toContain(
+      'shelf b',
+    );
+  },
+  180000,
+);
+it.skipIf(!enabled)(
+  'Sol prepares a new non-clothing item, its actual sale and shipment for one approval',
+  async () => {
+    const { emptyWorkspace } = await import('../src/lib/model');
+    const { metrics } = await import('../src/lib/finance');
+    const { inventoryPipeline } = await import('../src/lib/pipeline');
+    const w = emptyWorkspace();
+    const result = await runBusinessAssistant({
+      userId: '11111111-1111-4111-8111-111111111111',
+      workspace: w,
+      messages: [
+        {
+          id: crypto.randomUUID(),
+          role: 'user',
+          text: 'I bought a used bookshelf today for $3, sold it on Depop today for $35, paid $2 seller fees, received no shipping money, had no refunds or discounts, all other selling charges were $0, and shipped it today. Please prepare all of that together for approval.',
+        },
+      ],
+      drafts: emptyDrafts,
+      selectedItemId: null,
+      authorize: async () => {},
+      fetcher: proxyFetch,
+    });
+    const batch = result.drafts.batch!;
+    expect(batch.rows.some((r) => r.inventoryChange?.action === 'create')).toBe(true);
+    const previews = await previewBatchAsync(w, batch);
+    expect(
+      previews.every((p) => p.ready),
+      JSON.stringify(previews.map((p) => p.issues)),
+    ).toBe(true);
+    const saved = (
+      await approvalCommandsAsync(
+        w,
+        batch,
+        batch.rows.map((r) => r.id),
+      )
+    ).reduce(applyCommand, w);
+    expect(saved.items).toHaveLength(1);
+    expect(saved.orders).toHaveLength(1);
+    expect(inventoryPipeline(saved).entries[0].stage).toBe('shipped');
+    expect(metrics(saved).profit).toBe(3000);
+    expect(w.items).toHaveLength(0);
+  },
+  180000,
 );
