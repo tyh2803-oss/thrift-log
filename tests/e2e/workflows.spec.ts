@@ -168,7 +168,8 @@ test('empty workspace, photo entry, draft recovery, settings, and private bounda
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('button', { name: /Recovered photo item/ })).toBeVisible();
-  await page.getByRole('link', { name: 'Open settings' }).click();
+  await page.getByRole('button', { name: 'Open profile menu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Open settings' }).click();
   await page.getByRole('button', { name: 'Toggle theme' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   const r = await request.post('/api/workspace', {

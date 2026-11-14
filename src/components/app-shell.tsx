@@ -46,6 +46,8 @@ import { Assistant } from './assistant';
 import { Button } from './ui/button';
 import { Dialog } from './ui/dialog';
 import { Badge, Empty } from './shared';
+import { ProfileMenu, ProfileAvatar } from './profile-menu';
+import { DEMO_PROFILE_KEY, demoProfilePhoto } from '@/lib/profile';
 const nav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/inventory', label: 'Inventory', icon: Package },
@@ -59,6 +61,7 @@ export function ThriftApp({
   email,
   userId,
   isOwner = false,
+  avatarPath = null,
 }: {
   userId?: string;
   isOwner?: boolean;
@@ -66,6 +69,7 @@ export function ThriftApp({
   section: string;
   demo: boolean;
   email?: string;
+  avatarPath?: string | null;
 }) {
   const workspace = useWorkspace();
   const matches = workspace.scope === browserScope(demo, userId) && workspace.isOwner === isOwner;
@@ -83,9 +87,17 @@ export function ThriftApp({
         Rechecking your workspace…
       </p>
     );
-  return <Shell section={section} email={email} />;
+  return <Shell section={section} email={email} serverPhoto={avatarPath} />;
 }
-function Shell({ section: serverSection, email }: { section: string; email?: string }) {
+function Shell({
+  section: serverSection,
+  email,
+  serverPhoto,
+}: {
+  section: string;
+  email?: string;
+  serverPhoto: string | null;
+}) {
   const params = useSearchParams();
   const pathname = usePathname();
   const [opening, setOpening] = useState<{
@@ -103,7 +115,37 @@ function Shell({ section: serverSection, email }: { section: string; email?: str
   const pipelineStage = readPipelineStage(pending ? pending.pipeline : params.get('pipeline'));
   const inventoryStage = pipelineStage;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
-  const { w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
+  const { w, ready, demo, scope, saving, error, notice, dispatch, refresh, notify } =
+    useWorkspace();
+  const [photoOverride, setPhotoOverride] = useState<{
+    scope: string;
+    base: string | null;
+    path: string | null;
+  } | null>(null);
+  const photo =
+    photoOverride?.scope === scope && photoOverride.base === serverPhoto
+      ? photoOverride.path
+      : serverPhoto;
+  useEffect(() => {
+    if (!demo) return;
+    const load = () => {
+      try {
+        setPhotoOverride({
+          scope,
+          base: serverPhoto,
+          path: demoProfilePhoto(localStorage.getItem(DEMO_PROFILE_KEY)),
+        });
+      } catch {}
+    };
+    const timer = setTimeout(load, 0);
+    window.addEventListener('storage', load);
+    window.addEventListener('thrift-log.demo-profile', load);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('storage', load);
+      window.removeEventListener('thrift-log.demo-profile', load);
+    };
+  }, [demo, scope, serverPhoto]);
   const now = useNow(w.sessions.some((s) => s.state === 'Running') ? 1000 : 60_000, w);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [search, setSearch] = useState('');
@@ -313,7 +355,7 @@ function Shell({ section: serverSection, email }: { section: string; email?: str
             <CircleHelp size={18} />A little help
           </button>
           <div className="profile">
-            <span className="avatar">{email ? email[0].toUpperCase() : 'T'}</span>
+            <ProfileAvatar path={photo} email={email} />
             <div>
               <strong>{demo ? 'Your demo workspace' : 'Your private workspace'}</strong>
               <small>{demo ? 'A little room to explore' : email}</small>
@@ -369,13 +411,12 @@ function Shell({ section: serverSection, email }: { section: string; email?: str
               {alerts > 0 && <span />}
             </button>
             <span className="topbar-divider" />
-            <Link
-              href={`${base}/settings`}
-              aria-label="Open settings"
-              className="avatar avatar-small"
-            >
-              {demo ? 'T' : email?.[0].toUpperCase()}
-            </Link>
+            <ProfileMenu
+              email={email}
+              path={photo}
+              base={base}
+              onPhotoChange={(path) => setPhotoOverride({ scope, base: serverPhoto, path })}
+            />
           </div>
         </header>
         <main>

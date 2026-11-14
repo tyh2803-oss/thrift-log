@@ -9,6 +9,7 @@ export function Dialog({
   children,
   wide = false,
   className = '',
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onClose: () => void;
@@ -17,6 +18,7 @@ export function Dialog({
   children: React.ReactNode;
   wide?: boolean;
   className?: string;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   return (
     <Primitive.Root
@@ -29,6 +31,7 @@ export function Dialog({
         <Primitive.Overlay className="dialog-overlay" />
         <Primitive.Content
           className={`dialog-content ${wide ? 'dialog-wide' : ''} ${className}`}
+          onCloseAutoFocus={onCloseAutoFocus}
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             const el = e.currentTarget as HTMLElement;

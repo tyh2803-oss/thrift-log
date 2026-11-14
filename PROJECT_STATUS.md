@@ -1,5 +1,13 @@
 # Thrift Log project status
 
+## Profile dropdown and private photo — November 14, 2026
+
+Prepared on `feat/profile-menu-and-photo` from main `5acad5c`. The top-right avatar opens an accessible menu for photo controls, Settings and Sign out. Photos can be added, replaced and removed, with a square preview, immediate save feedback, a header/sidebar avatar and initials fallback. Keyboard controls and narrow-screen touch targets use the existing visual system; the mobile header now accommodates the 44px profile target without horizontal overflow.
+
+The new authenticated profile endpoint saves only the photo reference in the current user's Supabase Auth metadata and bytes in the existing private bucket. It validates/decompresses/normalizes images, strips metadata, checks live beta access and account scope before writes, sanitizes failures, and preserves unrelated metadata, passwords and business records. Existing inventory photos are protected during old-profile cleanup. No migration, environment variable, dependency, production database operation or Auth-setting change is required. See [profile behavior, security and setup](docs/PROFILE.md).
+
+Validation: **typecheck, lint, production build and 427 unit/API/database tests pass** (six opt-in cases skipped). **84 distinct desktop/mobile Chromium checks pass across full and focused runs:** 52 authenticated history/navigation/Whatnot/purchase-cost/profile cases and 32 core/dashboard/editor/profile cases. A transient large purchase-cost service failure passed on the focused desktop/mobile rerun. Profile-specific keyboard-focus and bodyless-DELETE failures were corrected and pass, including private upload/replace/remove/reload, a second browser session, unchanged business records/password, foreign-photo denial and revoked access. Layouts at 320/390/430px fit without horizontal overflow. Changed-file secret scanning and whitespace checks pass. Private integration tests use isolated Auth/storage service doubles; production account/photo mutation and physical Safari/PWA testing are not performed by automation.
+
 ## Whatnot non-seller coupons and giveaway review — November 14, 2026
 
 Prepared on `fix/whatnot-buyer-coupons` from main `d6766fc`. A narrowly scoped read-only diagnosis of the screenshot's workspace found two orders whose item/subtotal amounts agree but buyer payment only covers shipping/tax, plus one zero-price giveaway without a confirmed acquisition cost. The earlier purchase-cost migration is still installed and ready; it is unrelated to these three holds. No production records or schema were manually changed for this fix.

@@ -3,6 +3,7 @@ import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { configured, configurationPresent, requireUser } from './server';
 import { readConfiguration } from './config';
+import { profilePhotoPath } from '@/lib/profile';
 
 // React cache deduplicates layout/page checks within ONE server render only.
 // Every new navigation still verifies Auth and the live beta authorization.
@@ -18,6 +19,7 @@ export const pageIdentity = cache(async () => {
     demo: false,
     userId: user.id,
     email: user.email,
+    avatarPath: profilePhotoPath(user.id, user.user_metadata),
     isOwner:
       user.betaRole === 'owner' &&
       user.email?.toLowerCase() === readConfiguration(process.env).ownerEmail,

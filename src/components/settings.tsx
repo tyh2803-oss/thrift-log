@@ -20,6 +20,7 @@ import { Badge } from './shared';
 import { WhatnotConnection } from './whatnot-connection';
 import { BetaAccess } from './beta-access';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
+import { DEMO_PROFILE_KEY } from '@/lib/profile';
 function SettingsView({ onImport }: { onImport: () => void }) {
   const { w, dispatch, demo, resetDemo, notify, saving } = useWorkspace();
   const [error, setError] = useState('');
@@ -273,8 +274,11 @@ function SettingsView({ onImport }: { onImport: () => void }) {
             <Button
               variant="ghost"
               onClick={() => {
-                if (window.confirm('Reset all demo changes to the original fictional sample?'))
+                if (window.confirm('Reset all demo changes to the original fictional sample?')) {
+                  localStorage.removeItem(DEMO_PROFILE_KEY);
+                  window.dispatchEvent(new Event('thrift-log.demo-profile'));
                   resetDemo();
+                }
               }}
             >
               Reset demo workspace

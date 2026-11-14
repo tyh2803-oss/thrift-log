@@ -7,7 +7,7 @@ const ids = {
   friend: '22222222-2222-4222-8222-222222222222',
   friend2: '33333333-3333-4333-8333-333333333333',
 };
-let users, workspaces, sessions, links, metrics;
+let users, workspaces, sessions, links, metrics, profilePhotos;
 const workspace = (name) => ({
   revision: 1,
   imports: [],
@@ -76,11 +76,15 @@ function reset() {
     [ids.friend, workspace('Friend retained jacket')],
     [ids.friend2, workspace('Second friend retained shirt')],
   ]);
+  profilePhotos = new Map();
   sessions = new Map();
   links = new Map();
   metrics = {
     generatedFor: [],
     passwordUpdates: [],
+    profileUpdates: [],
+    profileUploads: 0,
+    profileRemovals: 0,
     businessWrites: 0,
     unexpectedWrites: 0,
     authReads: 0,
@@ -95,7 +99,7 @@ function safeUser(user) {
     aud: 'authenticated',
     role: 'authenticated',
     app_metadata: {},
-    user_metadata: {},
+    user_metadata: user.metadata || {},
     created_at: '2026-11-01T12:00:00Z',
     updated_at: '2026-11-01T12:00:00Z',
     id: user.id,
@@ -126,13 +130,17 @@ const server = createServer(async (request, response) => {
   };
   let body = {};
   try {
-    let raw = '';
+    const chunks = [];
+    let size = 0;
     for await (const chunk of request) {
-      raw += chunk;
-      if (raw.length > (process.env.HISTORY_BROWSER_WRITES === '1' ? 8_000_000 : 100_000))
+      size += chunk.length;
+      chunks.push(chunk);
+      if (size > (process.env.HISTORY_BROWSER_WRITES === '1' ? 8_000_000 : 100_000))
         throw new Error('Test request too large');
     }
-    if (raw) body = JSON.parse(raw);
+    const raw = Buffer.concat(chunks);
+    const imageUpload = url.pathname.startsWith('/storage/v1/object/') && request.method === 'POST';
+    if (raw.length && !imageUpload) body = JSON.parse(raw.toString());
     if (url.pathname === '/__health') return send({ ready: true });
     if (url.pathname === '/__reset' && request.method === 'POST') {
       reset();
@@ -158,6 +166,53 @@ const server = createServer(async (request, response) => {
       metrics.authReads++;
       return current ? send(safeUser(current)) : send({ msg: 'Unauthorized' }, 401);
     }
+    if (
+      process.env.HISTORY_BROWSER_WRITES === '1' &&
+      url.pathname.startsWith('/storage/v1/object/')
+    ) {
+      if (bearer !== 'test-server-key') return send({ message: 'Denied' }, 403);
+      if (imageUpload) {
+        const key = decodeURIComponent(
+          url.pathname.slice('/storage/v1/object/inventory-photos/'.length),
+        );
+        if (!/^[a-f0-9-]+\/profile-[a-f0-9-]+\.jpg$/.test(key))
+          return send({ message: 'Invalid key' }, 400);
+        profilePhotos.set(key, raw);
+        metrics.profileUploads++;
+        return send({ Key: 'inventory-photos/' + key, Id: randomUUID() });
+      }
+      if (request.method === 'GET') {
+        const key = decodeURIComponent(
+          url.pathname.replace(
+            /^\/storage\/v1\/object\/(?:authenticated\/)?inventory-photos\//,
+            '',
+          ),
+        );
+        const bytes = profilePhotos.get(key);
+        if (!bytes) return send({ message: 'Not found' }, 404);
+        response.writeHead(200, {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'private, no-store',
+        });
+        return response.end(bytes);
+      }
+      if (request.method === 'DELETE') {
+        for (const key of body.prefixes || [])
+          if (profilePhotos.delete(key)) metrics.profileRemovals++;
+        return send([]);
+      }
+    }
+    if (
+      process.env.HISTORY_BROWSER_WRITES === '1' &&
+      url.pathname === '/rest/v1/items' &&
+      request.method === 'HEAD'
+    ) {
+      if (bearer !== 'test-server-key') return send({ message: 'Denied' }, 403);
+      const id = url.searchParams.get('user_id')?.replace(/^eq\./, '');
+      if (!users.get(id)?.active) return send({ message: 'Denied' }, 403);
+      response.writeHead(200, { 'Content-Range': '*/0' });
+      return response.end();
+    }
     if (url.pathname === '/rest/v1/workspaces' && request.method === 'GET') {
       metrics.versionReads++;
       if (bearer !== 'test-server-key' || url.searchParams.get('select') !== 'revision')
@@ -170,6 +225,20 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === '/auth/v1/user' && request.method === 'PUT') {
       if (!current || !current.email_confirmed_at) return send({ msg: 'Unauthorized' }, 401);
+      if (
+        process.env.HISTORY_BROWSER_WRITES === '1' &&
+        Object.keys(body).every((key) =>
+          ['data', 'code_challenge', 'code_challenge_method'].includes(key),
+        ) &&
+        body.code_challenge == null &&
+        body.code_challenge_method == null &&
+        body.data &&
+        Object.keys(body.data).every((key) => key === 'thrift_log_avatar')
+      ) {
+        current.metadata = { ...current.metadata, ...body.data };
+        metrics.profileUpdates.push(current.id);
+        return send(safeUser(current));
+      }
       if (typeof body.password !== 'string' || body.password.length < 8)
         return send({ msg: 'Weak password', code: 'weak_password' }, 422);
       current.password = body.password;
