@@ -1,6 +1,6 @@
 # Import review and bulk purchase costs
 
-Prepared on `fix/whatnot-review-and-bulk-costs`. The user authorized code deployment; saved-sale cost changes stay capability-gated until the separate migration is approved. The migration below has **not** been applied to production.
+Released originally on `fix/whatnot-review-and-bulk-costs`, with the follow-up fix on `fix/purchase-cost-review`. On November 14 the user approved the necessary database changes and deployment. **Migration `202611130002` is now applied and verified in the existing production project; do not replay it.** Its source remains linked below.
 
 ## Why Whatnot orders were held
 
@@ -22,11 +22,13 @@ Ordinary sales may be recorded with unknown purchase costs or missing seller fee
 
 ## Add purchase costs to saved records
 
+Click the dashboard **Profit** card to review missing information for the selected date range, then **Edit purchase costs**. Seller-fee gaps appear separately with a link to Whatnot settings; never enter invented zero fees just to complete profit.
+
 Use **Bulk purchase costs** in Inventory or Sales, including the Listings tab, or **Set purchase costs** for selected inventory. The dialog counts unique physical items across cross-listings and orders, not listing rows.
 
 - Same cost per item, split total cost, or individual entry. Exact-cent remainders are allocated deterministically in the displayed selection order. Individual overrides remain in place when changing modes or expanding other details.
 - Unknown-cost items are selected initially. Recorded costs require **Allow corrections to recorded purchase costs** before selection. Blank is unknown; explicit $0 confirms free inventory.
-- **Apply purchase costs** is the explicit final approval. A failed request retains the batch for a safe retry. At most 200 physical items are applied atomically.
+- The sticky top **Save Changes** and bottom **Apply purchase costs** actions use the same validation and save lock. Both are explicit final approval. Long SKUs and errors wrap on phones. Setup is checked before saving; costs stay entered during setup recovery. The long item/sale editor, preferences and dated-adjustment form also have top save actions. A failed request retains the batch for a safe retry. At most 200 physical items are applied atomically.
 - Current inventory costs are updated. Saved sales receive separate audited **Cost basis adjustment** events at their original sale dates, so historical profit is restated accurately. Original sale lines and posted events are retained unchanged. Corrections affect COGS, not revenue, fees, payouts or cash proceeds. Returns reverse the corrected cost; a returned and resold piece is not expensed twice. Further corrections append another delta rather than reversing the correction event through the generic financial editor.
 
 ## Other interaction changes
@@ -41,10 +43,12 @@ User messages, assistant responses and proposed changes have separate labeled bo
 
 The additive migration is [202611130002_purchase_cost_corrections.sql](../supabase/migrations/202611130002_purchase_cost_corrections.sql). It requires existing schema 6 or 7. It adds a nullable cost target, a financial event kind, an owned-sale foreign key, validation triggers, a service-only capability helper and guarded additions to the existing private commit function. It preserves Auth UUIDs, beta access, inventory, original financial postings, photos, RLS, private storage and revision locks. Compatibility and preservation are checked in isolated PostgreSQL-compatible tests, not by applying it to production.
 
-**Code deployment is authorized; production migration application still requires separate explicit approval.** The deployed app safely refuses saved-sale cost changes until the migration is installed. After database approval:
+**Applied rollout, November 14:** applied only this migration transactionally, recorded its original SQL in migration history, and reloaded PostgREST. Before/after fingerprints inside the same transaction verified that all existing records in 24 protected business/Auth/beta/photo tables were unchanged. Existing readiness and security policies remained unchanged; the new capability is service-only. No original sale lines, inventory costs, purchase dates or account records were edited by the migration. A separate local SQL test commits 200 historical cost corrections and preserves original orders and proceeds.
+
+For a different existing project that has not installed this optional feature, obtain database approval, then:
 
 1. Retain a database backup and inspect migration history. Apply only this new file once through the existing Supabase SQL Editor/migration workflow; it is transactional. Do not replay earlier migrations. Reload the PostgREST schema if the SQL Editor workflow does not do so.
 2. Verify the service-only `purchase_costs_ready()` helper returns true and existing readiness/isolation checks remain valid. Unauthenticated/client execution must remain denied.
 3. Deploy the checked code through the existing GitHub/Vercel workflow. No new credentials, SMTP, buckets or Auth settings are needed. Test a small, intentionally chosen cost batch and compare COGS/profit with the entered amounts.
 
-Until the migration is installed, saved-sale cost changes return a clear setup message without writing anything. Unsold inventory cost entry and other UI/import improvements use the existing schema. After new cost events have been posted, do not roll back to an older application that cannot read the new event kind; roll forward with compatible code or an explicitly reviewed recovery plan. No production business records were changed during development or testing. Physical iPhone Safari/PWA and real provider acceptance remain manual; browser automation uses Chromium desktop and iPhone-sized emulation, local API doubles, and isolated database tests.
+On a project where the migration is absent, saved-sale cost changes return a clear setup message without writing anything. Unsold inventory cost entry and other UI/import improvements use the existing schema. After new cost events have been posted, do not roll back to an older application that cannot read the new event kind; roll forward with compatible code or an explicitly reviewed recovery plan. No production business records were changed during development or testing. Physical iPhone Safari/PWA and real provider acceptance remain manual; browser automation uses Chromium desktop and iPhone-sized emulation, local API doubles, and isolated database tests.

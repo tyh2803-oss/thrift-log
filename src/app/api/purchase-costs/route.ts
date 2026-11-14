@@ -5,7 +5,25 @@ import { loadWorkspace } from '@/lib/supabase/workspace';
 import { purchaseCostsSchema, purchaseCostCommands } from '@/lib/purchase-costs';
 import { applyCommand } from '@/lib/commands';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 const options = { headers: { 'Cache-Control': 'private, no-store' } };
+export async function GET(request: Request) {
+  try {
+    await requireUser(request);
+    const result = await adminClient().rpc('purchase_costs_ready');
+    if (result.error && !['PGRST202', '42883'].includes(result.error.code))
+      return NextResponse.json(
+        { error: 'Unable to check purchase-cost setup. Try again.' },
+        { status: 503, ...options },
+      );
+    return NextResponse.json({ savedSaleCosts: !result.error && result.data === true }, options);
+  } catch {
+    return NextResponse.json(
+      { error: 'Sign in to check purchase-cost setup.' },
+      { status: 401, ...options },
+    );
+  }
+}
 export async function POST(request: Request) {
   try {
     checkOrigin(request);
@@ -44,8 +62,9 @@ export async function POST(request: Request) {
       if (readiness.error || readiness.data !== true)
         return NextResponse.json(
           {
+            code: 'purchase_cost_setup_required',
             error:
-              'Saved sale costs need migration 202611130002_purchase_cost_corrections.sql. Existing records are unchanged.',
+              'Purchase costs for saved sales need a one-time administrator setup. Your entries are retained; nothing has been saved.',
           },
           { status: 503, ...options },
         );

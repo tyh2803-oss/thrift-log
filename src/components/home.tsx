@@ -26,6 +26,7 @@ import { InventoryPipeline } from './inventory-pipeline';
 import { Button } from './ui/button';
 import { FinancialMetricToggle } from './financial-metric';
 import type { EditorTarget } from './editor';
+import { ProfitReview } from './profit-review';
 function HomeView({
   range,
   onEdit,
@@ -40,6 +41,7 @@ function HomeView({
   const postings = useMemo(() => orderPostings(w, ...range), [w, range]);
   const base = usePathname().startsWith('/demo') ? '/demo' : '';
   const [metric, setMetric] = useState<'profit' | 'revenue'>('profit');
+  const [reviewingProfit, setReviewingProfit] = useState(false);
   const m = metrics(w, ...range);
   const month = metrics(w, ...periodRange('This month', w.settings.timezone));
   const upcoming = [...w.shows]
@@ -271,6 +273,9 @@ function HomeView({
   };
   return (
     <>
+      {reviewingProfit && (
+        <ProfitReview range={range} onClose={() => setReviewingProfit(false)} onEdit={onEdit} />
+      )}
       <div className="metric-grid dashboard-metrics">
         <Metric
           label="Total revenue"
@@ -282,13 +287,21 @@ function HomeView({
         <Metric
           label="Net operating profit"
           tone="profit"
+          onClick={() => setReviewingProfit(true)}
+          actionLabel="Review profit and missing information"
           value={m.profitKnown ? money(m.profit) : '—'}
           note={
             m.profitKnown
               ? `${m.margin.toFixed(1)}% profit margin`
-              : m.unknownFinancials
-                ? `${m.unknownFinancials} Whatnot orders awaiting seller fees`
-                : `${m.unknownCosts} purchase costs unknown · profit incomplete`
+              : [
+                  m.unknownCosts ? `${m.unknownCosts} purchase costs unknown` : '',
+                  m.unknownFinancials
+                    ? `${m.unknownFinancials} Whatnot orders awaiting seller fees`
+                    : '',
+                  'profit incomplete',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
           }
           positive={m.profitKnown && m.profit > 0}
           icon={<TrendingUp size={17} />}

@@ -173,3 +173,52 @@ it('remains compatible with existing schema-7 registration', async () => {
   ).toBe(7);
   expect((await load()).orders).toEqual(base.orders);
 });
+
+it('atomically persists a full 200-item historical cost batch with original sale records and net proceeds unchanged', async () => {
+  let w = await load();
+  const template = base,
+    ids: string[] = [];
+  for (let n = 0; n < 200; n++) {
+    const itemId = crypto.randomUUID(),
+      orderId = crypto.randomUUID();
+    ids.push(itemId);
+    const audit = JSON.parse(template.imports[0].rawCsv);
+    audit.unknownCostItemIds = [itemId];
+    w.items.push({ ...template.items[0], id: itemId, sku: `LARGE-COST-${n}` });
+    w.orders.push({
+      ...template.orders[0],
+      id: orderId,
+      externalId: `LARGE-COST-${n}`,
+      importKey: `LARGE-COST-${n}`,
+      lines: [{ ...template.orders[0].lines[0], itemId }],
+    });
+    w.imports.push({
+      ...template.imports[0],
+      id: orderId,
+      recordIds: [itemId, orderId],
+      rawCsv: JSON.stringify(audit),
+    });
+  }
+  await commit(w, w.revision);
+  w = await load();
+  const before = metrics(w),
+    original = structuredClone(w.orders);
+  const commands = purchaseCostCommands(w, {
+    id: crypto.randomUUID(),
+    entries: ids.map((itemId) => ({ itemId, cost: 300 })),
+    confirmCorrections: false,
+    reason: 'Verified batch purchase costs',
+  });
+  const next = commands.reduce(applyCommand, w);
+  await commit(next, w.revision);
+  const actual = await load();
+  expect(actual.orders).toEqual(original);
+  expect(
+    actual.financialEvents.filter(
+      (e) => e.kind === 'Cost basis adjustment' && ids.includes(e.costItemId!),
+    ),
+  ).toHaveLength(200);
+  expect(metrics(actual).cogs - before.cogs).toBe(60000);
+  expect(metrics(actual).revenue).toBe(before.revenue);
+  expect(actual.payouts).toEqual(w.payouts);
+}, 30000);

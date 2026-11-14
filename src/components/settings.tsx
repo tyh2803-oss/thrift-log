@@ -15,12 +15,13 @@ import { useWorkspace } from '@/lib/use-workspace';
 import { adapters } from '@/lib/integrations/adapters';
 import { parseMoney } from '@/lib/finance';
 import { Button } from './ui/button';
+import { FormSaveBar } from './form-save-bar';
 import { Badge } from './shared';
 import { WhatnotConnection } from './whatnot-connection';
 import { BetaAccess } from './beta-access';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
 function SettingsView({ onImport }: { onImport: () => void }) {
-  const { w, dispatch, demo, resetDemo, notify } = useWorkspace();
+  const { w, dispatch, demo, resetDemo, notify, saving } = useWorkspace();
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   return (
@@ -54,6 +55,7 @@ function SettingsView({ onImport }: { onImport: () => void }) {
             }
           }}
         >
+          <FormSaveBar summary="Preferences" busy={saving} />
           {error && (
             <p role="alert" className="error-text">
               {error}
@@ -99,7 +101,9 @@ function SettingsView({ onImport }: { onImport: () => void }) {
             expected.
           </p>
           <div className="actions">
-            <Button type="submit">Save preferences</Button>
+            <Button type="submit" disabled={saving}>
+              Save preferences
+            </Button>
             <Button
               type="button"
               variant="outline"

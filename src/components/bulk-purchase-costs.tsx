@@ -1,11 +1,12 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkspace } from '@/lib/use-workspace';
 import { purchaseCostCommands, inventoryCostKnown, type PurchaseCosts } from '@/lib/purchase-costs';
 import { allocate, money } from '@/lib/money';
 import { listingAmount } from '@/lib/assistant/listing-review';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
+import { FormSaveBar } from './form-save-bar';
 export function BulkPurchaseCosts({
   itemIds,
   onClose,
@@ -32,7 +33,40 @@ export function BulkPurchaseCosts({
     [overrides, setOverrides] = useState<Record<string, string>>({}),
     [confirm, setConfirm] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [saleCostsReady, setSaleCostsReady] = useState<boolean | null>(demo ? true : null),
+    [setupError, setSetupError] = useState('');
+  const checkSetup = useCallback(
+    async (signal?: AbortSignal) => {
+      if (demo) return;
+      try {
+        const response = await fetch('/api/purchase-costs', {
+          headers: requestHeaders,
+          cache: 'no-store',
+          signal,
+        });
+        const data = await response.json();
+        if (!response.ok || typeof data.savedSaleCosts !== 'boolean')
+          throw new Error(data.error || 'Unable to check purchase-cost setup.');
+        if (!signal?.aborted) {
+          setSaleCostsReady(data.savedSaleCosts);
+          setSetupError('');
+        }
+      } catch (e) {
+        if (!signal?.aborted)
+          setSetupError(e instanceof Error ? e.message : 'Unable to check purchase-cost setup.');
+      }
+    },
+    [demo, requestHeaders],
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => void checkSetup(controller.signal), 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [checkSetup]);
   const lock = useRef(false);
   const chosen = items.filter((i) => selected.includes(i.id)),
     amount = listingAmount(raw),
@@ -61,8 +95,12 @@ export function BulkPurchaseCosts({
     entries.length <= 200 &&
     entries.every((e) => e.value !== null && !e.error);
   const saleCount = w.orders.filter((o) => o.lines.some((l) => selected.includes(l.itemId))).length;
+  const canSave = valid && (!saleCount || saleCostsReady === true);
+  const selectedTotal = valid
+    ? money(entries.reduce((sum, e) => sum + e.value!, 0))
+    : 'Enter valid costs';
   async function save() {
-    if (lock.current || !valid) return;
+    if (lock.current || !canSave) return;
     lock.current = true;
     setBusy(true);
     setError('');
@@ -84,6 +122,7 @@ export function BulkPurchaseCosts({
           body: JSON.stringify({ revision: w.revision, batch }),
         });
         const data = await response.json();
+        if (data.code === 'purchase_cost_setup_required') setSaleCostsReady(false);
         if (!response.ok)
           throw new Error(
             data.error || 'The cost batch was not confirmed. Refresh before retrying.',
@@ -111,6 +150,39 @@ export function BulkPurchaseCosts({
       wide
     >
       <div className="padded bulk-purchase-costs">
+        <FormSaveBar
+          summary={
+            <strong>
+              {selectedTotal} · {entries.length} selected
+            </strong>
+          }
+          label={`Save Changes (${entries.length})`}
+          accessibleLabel="Save purchase costs at top"
+          disabled={!canSave}
+          busy={busy}
+          onSave={() => void save()}
+        />
+        {!!saleCount && saleCostsReady !== true && (
+          <div className="cost-setup-notice" role="status">
+            <p>
+              {setupError ||
+                (saleCostsReady === null
+                  ? 'Checking saved-sale purchase-cost setup…'
+                  : 'Purchase-cost updates for saved sales need a one-time administrator setup. Your entries stay here until it is ready.')}
+            </p>
+            <Button variant="outline" disabled={busy} onClick={() => void checkSetup()}>
+              Check setup again
+            </Button>
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="error-box cost-save-error">
+            <p>{error}</p>
+            <Button variant="ghost" disabled={busy} onClick={() => void refresh()}>
+              Refresh records
+            </Button>
+          </div>
+        )}
         <p>
           {items.length} matching physical items · {chosen.length} selected. Apply up to 200 at a
           time.
@@ -227,7 +299,9 @@ export function BulkPurchaseCosts({
                     onChange={(e) => setOverrides((old) => ({ ...old, [item.id]: e.target.value }))}
                   />
                 </label>
-                {value?.error && <small className="error-text">{value.error}</small>}
+                {value?.error && (
+                  <small className="error-text bulk-cost-error">{value.error}</small>
+                )}
               </div>
             );
           })}
@@ -239,20 +313,12 @@ export function BulkPurchaseCosts({
             unchanged. Returns retain the correct cost reversal.
           </p>
         )}
-        {error && (
-          <div role="alert" className="error-box">
-            {error}
-            <Button variant="ghost" disabled={busy} onClick={() => void refresh()}>
-              Refresh records
-            </Button>
-          </div>
-        )}
         <div className="actions">
           <strong>
             {valid ? money(entries.reduce((sum, e) => sum + e.value!, 0)) : 'Enter valid costs'} ·{' '}
             {entries.length} physical items
           </strong>
-          <Button disabled={busy || !valid} onClick={() => void save()}>
+          <Button disabled={busy || !canSave} onClick={() => void save()}>
             {busy ? 'Saving costs…' : `Apply purchase costs (${entries.length})`}
           </Button>
         </div>

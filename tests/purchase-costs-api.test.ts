@@ -7,7 +7,7 @@ vi.mock('../src/lib/supabase/server', () => ({
   adminClient: () => ({ rpc: m.rpc }),
 }));
 vi.mock('../src/lib/supabase/workspace', () => ({ loadWorkspace: m.load }));
-import { POST } from '../src/app/api/purchase-costs/route';
+import { GET, POST } from '../src/app/api/purchase-costs/route';
 import { purchaseCostCommands } from '../src/lib/purchase-costs';
 import { applyCommand } from '../src/lib/commands';
 import { soldCostFixture } from './helpers/purchase-costs';
@@ -102,4 +102,23 @@ it('keeps a failed database save atomic, bounds input and hides database diagnos
   expect(failed.status).toBe(503);
   expect(await failed.text()).not.toContain('PRIVATE_DATABASE_DIAGNOSTIC');
   expect((await POST(req({ ...body, extra: 'x'.repeat(110000) }))).status).toBe(413);
+});
+
+it('checks saved-sale setup before entering costs, fails closed and requires fresh verified access', async () => {
+  const request = new Request('https://app.test/api/purchase-costs');
+  expect(await (await GET(request)).json()).toEqual({ savedSaleCosts: true });
+  m.rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202' } });
+  expect(await (await GET(request)).json()).toEqual({ savedSaleCosts: false });
+  m.rpc.mockResolvedValueOnce({
+    data: null,
+    error: { code: 'PRIVATE', message: 'PRIVATE_DATABASE_DIAGNOSTIC' },
+  });
+  const failed = await GET(request);
+  expect(failed.status).toBe(503);
+  expect(await failed.text()).not.toContain('PRIVATE_DATABASE_DIAGNOSTIC');
+  m.rpc.mockClear();
+  m.user.mockRejectedValueOnce(new Error('Unauthorized'));
+  expect((await GET(request)).status).toBe(401);
+  expect(m.rpc).not.toHaveBeenCalled();
+  expect(m.load).not.toHaveBeenCalled();
 });

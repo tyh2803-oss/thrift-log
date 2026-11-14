@@ -1,5 +1,16 @@
 # Thrift Log project status
 
+## Saved-sale costs and profit review — November 14, 2026
+
+Implemented on `fix/purchase-cost-review` from main `b8d1738`. The user's screenshot showed the missing purchase-cost migration, rather than invalid costs. The user authorized the necessary changes and deployment after that cause was explained.
+
+Applied **only `202611130002_purchase_cost_corrections.sql`**, transactionally recorded its original SQL as version `202611130002` / `purchase_cost_corrections`, and reloaded PostgREST. The application remains schema 7. Before/after record fingerprints and row counts inside the same transaction verified all records in **24 protected business/Auth/beta/photo tables** were unchanged, normalizing only the newly added nullable cost target. Existing readiness and policy fingerprints matched exactly. The service-only cost capability is ready; original sales, inventory costs, dates, credentials and authorizations were not edited by the migration. No live business-cost batch was posted during testing. Do not replay the migration.
+
+The bulk dialog now preflights setup, keeps entered values during setup recovery, wraps long SKUs/errors on phones, and offers sticky top **Save Changes** alongside the bottom apply action. Shared top save actions also cover item/sale editors, preferences and dated adjustments, with the same native form validation and saving locks. The dashboard Profit card opens date-aware missing-cost and seller-fee review, links directly to the focused bulk cost editor, recalculates after saving, and explains fee gaps independently of costs.
+
+Validation: typecheck, lint and production build pass; **417 unit/API/database tests pass** (six opt-in cases skipped). **88 desktop/mobile Chromium checks pass**: 46 authenticated history/navigation/Whatnot/cost checks and 42 dashboard/editor/ledger/pipeline checks. New coverage includes the real 495-sale / 200-item batch flow, setup preflight and recovery without lost input, top save/repeated taps, exact totals, original sale preservation and reload, profit correction/zero/returned items/date ranges, fees remaining unknown, 200-row SQL persistence, native required-field validation, security and no horizontal overflow. The exact migration transaction wrapper also passed a local schema-7 dry run before production. Physical iPhone Safari/PWA acceptance remains manual.
+
+
 ## Navigation, import recovery and review polish — November 14, 2026
 
 Prepared on `fix/whatnot-review-and-bulk-costs` from latest main `4df47dc34acc6d65e42c7ec1d87e8813e9f53212`. The user authorized code deployment. See [implementation and optional migration](docs/IMPORT_REVIEW_AND_PURCHASE_COSTS.md) and [navigation behavior](docs/PERFORMANCE.md). No production migration has been applied for this work.

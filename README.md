@@ -1,6 +1,6 @@
 # Thrift Log
 
-**Import and cost updates prepared:** instant tab presentation, a quieter home dashboard, automatic recovery of Whatnot matching holds, optional inventory matching, bulk purchase costs, clearer assistant replies and a top pipeline Save button. See [behavior and approval-gated migration/setup](docs/IMPORT_REVIEW_AND_PURCHASE_COSTS.md). Code deployment is authorized; production migration `202611130002_purchase_cost_corrections.sql` remains unapplied.
+**Import and cost updates prepared:** instant tab presentation, a quieter home dashboard, automatic recovery of Whatnot matching holds, optional inventory matching, bulk purchase costs, clearer assistant replies and a top pipeline Save button. See [behavior and approval-gated migration/setup](docs/IMPORT_REVIEW_AND_PURCHASE_COSTS.md). The approved production migration `202611130002_purchase_cost_corrections.sql` is applied and verified. The Profit card opens missing-information review; long forms have top save actions.
 
 **Private business assistant:** natural conversation and iPhone dictation, owned-workspace read tools, persistent context, native PDF/photo reading and flexible CSV analysis, with business changes prepared for explicit approval. GPT-6.1 Sol is the default. See [setup, privacy, limits and verification](docs/BUSINESS_ASSISTANT.md); the optional migration was applied and verified on November 13 after release approval.
 

@@ -167,3 +167,162 @@ test('a large shipped-stage move can be submitted at the top without scrolling t
   expect(saved.financialEvents).toHaveLength(0);
   expect(saved.orders.every((o) => o.lines[0].costBasis === 100)).toBe(true);
 });
+
+test('dashboard profit opens missing-cost review, saves from the top, and updates profit after reload', async ({
+  page,
+}) => {
+  const { soldCostFixture } = await import('../helpers/purchase-costs');
+  const initial = await soldCostFixture();
+  const current = await (
+    await page.request.get('/api/workspace', { headers: { 'x-thrift-user': owner } })
+  ).json();
+  const commands = [
+    { type: 'item', value: { ...initial.items[0], status: 'Purchased' } },
+    { type: 'order', value: initial.orders[0] },
+    { type: 'import', value: initial.imports[0] },
+  ];
+  expect(
+    (
+      await page.request.post('/api/workspace', {
+        headers: headers(page.url()),
+        data: { revision: current.revision, commands },
+      })
+    ).ok(),
+  ).toBe(true);
+  await page.reload();
+  const profit = page.getByRole('button', {
+    name: 'Review profit and missing information',
+    exact: true,
+  });
+  await expect(profit).toContainText('purchase costs unknown');
+  await profit.click();
+  const review = page.getByRole('dialog', { name: 'Review profit', exact: true });
+  await review.getByRole('button', { name: 'Edit purchase costs (1)', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk purchase costs', exact: true });
+  await dialog.getByLabel('Batch purchase amount', { exact: true }).fill('3');
+  const save = dialog.getByRole('button', { name: 'Save purchase costs at top', exact: true });
+  await expect(save).toBeInViewport();
+  await expect(save).toBeEnabled();
+  await save.evaluate((el: HTMLButtonElement) => {
+    el.click();
+    el.click();
+  });
+  await expect(review.getByRole('status')).toContainText('Profit is complete: $30.00.');
+  await review.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(profit).toContainText('$30.00');
+  await expect(profit).not.toContainText('incomplete');
+  await page.reload();
+  await expect(profit).toContainText('$30.00');
+  const saved = workspaceSchema.parse(
+    await (
+      await page.request.get('/api/workspace', { headers: { 'x-thrift-user': owner } })
+    ).json(),
+  );
+  expect(saved.financialEvents).toHaveLength(1);
+  expect(saved.orders[0].lines[0].costBasis).toBe(0);
+});
+
+test('495-item purchase review wraps long SKUs, warns about setup before saving and retains inputs through recovery', async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const { soldCostFixture } = await import('../helpers/purchase-costs');
+  const original = await soldCostFixture();
+  const commands = Array.from({ length: 495 }, (_, n) => {
+    const itemId = crypto.randomUUID(),
+      orderId = crypto.randomUUID();
+    const audit = JSON.parse(original.imports[0].rawCsv);
+    audit.unknownCostItemIds = [itemId];
+    return [
+      {
+        type: 'item',
+        value: {
+          ...original.items[0],
+          status: 'Purchased',
+          id: itemId,
+          sku: `WN-${itemId}`,
+          title: `$1 STARTS #${n + 1}`,
+        },
+      },
+      {
+        type: 'order',
+        value: {
+          ...original.orders[0],
+          id: orderId,
+          externalId: `BULK-REVIEW-${n}`,
+          importKey: `BULK-REVIEW-${n}`,
+          lines: [{ ...original.orders[0].lines[0], itemId }],
+        },
+      },
+      {
+        type: 'import',
+        value: {
+          ...original.imports[0],
+          id: orderId,
+          recordIds: [orderId, itemId],
+          rawCsv: JSON.stringify(audit),
+        },
+      },
+    ];
+  }).flat();
+  for (let start = 0; start < commands.length; start += 750) {
+    const current = await (
+      await page.request.get('/api/workspace', { headers: { 'x-thrift-user': owner } })
+    ).json();
+    const response = await page.request.post('/api/workspace', {
+      headers: headers(page.url()),
+      data: { revision: current.revision, commands: commands.slice(start, start + 750) },
+    });
+    expect(response.ok()).toBe(true);
+  }
+  let ready = false,
+    writes = 0;
+  await page.route('**/api/purchase-costs', (route) => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({ json: { savedSaleCosts: ready } });
+    writes++;
+    return route.continue();
+  });
+  await page.goto('/inventory');
+  await page.getByRole('button', { name: 'Bulk purchase costs', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk purchase costs', exact: true });
+  await expect(dialog.getByRole('status')).toContainText('one-time administrator setup');
+  await expect(dialog.getByText(/496 matching physical items · 200 selected/)).toBeVisible();
+  await dialog.getByLabel('Batch purchase amount', { exact: true }).fill('3');
+  const save = dialog.getByRole('button', { name: 'Save purchase costs at top', exact: true });
+  await expect(save).toBeDisabled();
+  expect(writes).toBe(0);
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const firstInput = dialog.locator('.bulk-cost-item input[inputmode=decimal]:enabled').first();
+  const bounds = await firstInput.boundingBox(),
+    db = await dialog.boundingBox();
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(db!.x + db!.width);
+  await dialog.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await expect(save).toBeInViewport();
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await dialog
+    .getByRole('button', { name: 'Check setup again', exact: true })
+    .scrollIntoViewIfNeeded();
+  ready = true;
+  await dialog.getByRole('button', { name: 'Check setup again', exact: true }).click();
+  await expect(save).toBeEnabled();
+  await expect(dialog.getByLabel('Batch purchase amount', { exact: true })).toHaveValue('3');
+  await page.screenshot({ path: test.info().outputPath('large-purchase-costs.png') });
+  await save.click();
+  await expect(dialog).toHaveCount(0, { timeout: 60000 });
+  expect(writes).toBe(1);
+  const saved = workspaceSchema.parse(
+    await (
+      await page.request.get('/api/workspace', { headers: { 'x-thrift-user': owner } })
+    ).json(),
+  );
+  expect(saved.orders).toHaveLength(495);
+  expect(saved.financialEvents).toHaveLength(200);
+  expect(saved.financialEvents.every((e) => e.amount === 300)).toBe(true);
+  expect(metrics(saved).unknownCosts).toBe(295);
+  await page.reload();
+  await page.getByRole('button', { name: 'Bulk purchase costs', exact: true }).click();
+  await expect(dialog.getByText(/496 matching physical items · 200 selected/)).toBeVisible();
+});

@@ -78,7 +78,11 @@ export function Metric({
   icon,
   tone = 'neutral',
   negative = value.trimStart().startsWith('-'),
+  onClick,
+  actionLabel,
 }: {
+  onClick?: () => void;
+  actionLabel?: string;
   tone?: FinancialTone | 'neutral';
   negative?: boolean;
   label: string;
@@ -87,8 +91,15 @@ export function Metric({
   positive?: boolean;
   icon?: React.ReactNode;
 }) {
+  const Container = onClick ? 'button' : 'div';
   return (
-    <div className="metric" data-metric={tone}>
+    <Container
+      className={`metric${onClick ? ' metric-action' : ''}`}
+      data-metric={tone}
+      onClick={onClick}
+      aria-label={actionLabel}
+      type={onClick ? 'button' : undefined}
+    >
       <div className="metric-top">
         <span>{label}</span>
         {icon}
@@ -97,7 +108,12 @@ export function Metric({
       <div className="metric-note">
         {positive && <ArrowUpRight size={13} />} {note}
       </div>
-    </div>
+      {onClick && (
+        <span className="metric-action-hint">
+          Review details <ArrowUpRight size={13} aria-hidden="true" />
+        </span>
+      )}
+    </Container>
   );
 }
 export function CheckButton({

@@ -1561,3 +1561,111 @@ select.marketplace-select option {
     display: none;
   }
 }
+
+/* Save actions stay reachable in long forms without changing their submit path. */
+.form-top-actions {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.form-top-actions > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.form-top-actions .btn {
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.bulk-purchase-costs {
+  width: 100%;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.bulk-purchase-costs > *,
+.bulk-cost-item > *,
+.bulk-cost-item .check-row > span {
+  min-width: 0;
+}
+.bulk-purchase-costs .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.bulk-cost-item .check-row > span {
+  overflow-wrap: anywhere;
+}
+.bulk-purchase-costs input:not([type='checkbox']),
+.bulk-purchase-costs select {
+  max-width: 100%;
+  min-width: 0;
+}
+.bulk-purchase-costs .cost-save-error,
+.cost-setup-notice {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.cost-setup-notice {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  padding: 12px;
+}
+.cost-setup-notice .btn {
+  justify-self: start;
+}
+.bulk-cost-error {
+  grid-column: 1 / -1;
+}
+.metric-action {
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+}
+.metric-action:hover {
+  border-color: var(--color-profit);
+}
+.metric-action:active {
+  background: var(--color-profit-soft);
+}
+.metric-action-hint {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--color-profit);
+  font-weight: 600;
+}
+.profit-review {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.profit-review details .btn {
+  display: block;
+  text-align: left;
+  margin-top: 8px;
+}
+@media (max-width: 600px) {
+  .bulk-purchase-costs {
+    padding: 16px;
+  }
+  .bulk-purchase-costs .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+form:has(.form-top-actions) :is(input, select, textarea),
+.bulk-purchase-costs :is(input, select) {
+  scroll-margin-top: 88px;
+  scroll-margin-bottom: 24px;
+}

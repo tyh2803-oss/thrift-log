@@ -27,6 +27,7 @@ import { allocate, parseMoney } from '@/lib/finance';
 import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { ItemPhoto } from './shared';
+import { FormSaveBar } from './form-save-bar';
 export type EditorTarget =
   | { kind: 'item'; value?: Item }
   | { kind: 'listing'; value?: Listing; itemId?: string }
@@ -101,6 +102,7 @@ export function Editor({
     error: workspaceError,
   } = useWorkspace();
   const formRef = useRef<HTMLFormElement>(null);
+  const submitLock = useRef(false);
   const draftKey = `thrift-log.draft.${scope}.${target.kind}.${target.value?.id || 'new'}`;
   const [recovered, setRecovered] = useState(false);
   const attachForm = useCallback(
@@ -235,6 +237,8 @@ export function Editor({
   }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLock.current || saving || uploading) return;
+    submitLock.current = true;
     setError('');
     try {
       const f = new FormData(event.currentTarget);
@@ -433,6 +437,8 @@ export function Editor({
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Check the form and try again.');
+    } finally {
+      submitLock.current = false;
     }
   }
   const titles = {
@@ -458,6 +464,7 @@ export function Editor({
       wide={target.kind === 'order' || target.kind === 'show'}
     >
       <form ref={attachForm} onSubmit={submit} onChange={saveDraft} className="editor-form">
+        <FormSaveBar summary={titles[target.kind]} disabled={uploading} busy={saving} />
         {recovered && (
           <p className="hint">
             Recovered the text fields from your draft in this tab. Recheck item selections and

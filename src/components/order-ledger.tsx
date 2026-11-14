@@ -1,5 +1,5 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState, useRef, type FormEvent } from 'react';
 import { useWorkspace } from '@/lib/use-workspace';
 import { financialEventSchema, financialKinds, type FinancialEvent } from '@/lib/model';
 import { currentOrderTotals, returnedItemIds, paidForOrder } from '@/lib/ledger';
@@ -8,6 +8,7 @@ import { Dialog } from './ui/dialog';
 import { Button } from './ui/button';
 import { Field } from './editor';
 import { Metric, Badge } from './shared';
+import { FormSaveBar } from './form-save-bar';
 const localDate = () => {
   const d = new Date();
   return new Date(+d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -15,6 +16,8 @@ const localDate = () => {
 export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: () => void }) {
   const { w, dispatch, saving, error: workspaceError, notify } = useWorkspace();
   const order = w.orders.find((o) => o.id === orderId)!;
+  const submitLock = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const [initialDate] = useState(localDate);
   const [kind, setKind] = useState<FinancialEvent['kind']>('Refund');
   const [returns, setReturns] = useState<string[]>([]);
@@ -26,6 +29,8 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLock.current || saving) return;
+    submitLock.current = true;
     setError('');
     try {
       const form = new FormData(event.currentTarget);
@@ -53,6 +58,8 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Check the financial event.');
+    } finally {
+      submitLock.current = false;
     }
   }
   return (
@@ -64,6 +71,13 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
       wide
     >
       <div className="padded">
+        <FormSaveBar
+          summary="Dated adjustment"
+          label="Record dated event"
+          accessibleLabel="Save adjustment at top"
+          busy={saving}
+          onSave={() => formRef.current?.requestSubmit()}
+        />
         <div className="metric-grid compact">
           <Metric
             label="Lifetime revenue"
@@ -87,7 +101,7 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
             note="Actual recorded receipts"
           />
         </div>
-        <form className="editor-form ledger-form" onSubmit={submit}>
+        <form ref={formRef} className="editor-form ledger-form" onSubmit={submit}>
           {(error || workspaceError) && (
             <div role="alert" className="error-box">
               {error || workspaceError}
