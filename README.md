@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Faster large workspaces:** imported cost/date checks reuse parsed receipts, long Inventory/Listings/Orders views render 50 rows at a time with **Show more**, and offscreen thumbnails load lazily. Search, totals, exports and bulk actions still include every matching record. See [large-workspace performance](docs/PERFORMANCE.md#large-imported-workspaces--november-14). No database change or setup is required.
+
 **Subtle app motion:** short page/tab fades, gentle menu/dialog entrances and restrained press feedback make navigation smoother without delaying actions. Reduced-motion preferences disable the effects. See [motion behavior](docs/VISUAL_SYSTEM.md#subtle-motion); no new setup is required.
 
 **Profile menu and photo:** tap the top-right avatar for photo controls, Settings and Sign out. Add, replace or remove a private profile photo; it appears in the header and desktop sidebar and survives signing in on another device. See [profile privacy and setup](docs/PROFILE.md). No migration or new environment variable is required.

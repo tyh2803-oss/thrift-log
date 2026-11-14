@@ -1,3 +1,4 @@
+import { readImportAudit } from '../import-audit';
 import { parseMoney } from '../money';
 import type { Workspace } from '../model';
 import type { DraftRow } from './drafts';
@@ -7,7 +8,7 @@ export function confirmedFreeInventory(w: Workspace, itemId: string) {
     if (receipt.mapping.format === 'purchase-cost-v1') {
       try {
         return (
-          JSON.parse(receipt.rawCsv).changes?.some(
+          readImportAudit(receipt).changes?.some(
             (e: { itemId: string; after: number }) => e.itemId === itemId && e.after === 0,
           ) && w.items.find((i) => i.id === itemId)?.cost === 0
         );
@@ -18,7 +19,7 @@ export function confirmedFreeInventory(w: Workspace, itemId: string) {
     if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1'].includes(receipt.mapping.format))
       return false;
     try {
-      const audit = JSON.parse(receipt.rawCsv);
+      const audit = readImportAudit(receipt);
       if (
         receipt.mapping.history === 'true' &&
         audit.knownZeroItemIds?.includes(itemId) &&

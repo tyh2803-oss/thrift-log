@@ -1787,6 +1787,28 @@ form:has(.form-top-actions) :is(input, select, textarea),
 .view-surface {
   min-width: 0;
 }
+.list-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.list-progress p {
+  margin: 0;
+  min-width: 0;
+}
+.list-progress small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.list-progress .btn {
+  min-height: 44px;
+}
 /* No exit delays, height animations, scroll hijacking or permanent will-change layers. */
 @media (prefers-reduced-motion: no-preference) {
   .nav-link,

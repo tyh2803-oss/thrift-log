@@ -26,6 +26,7 @@ import { PhotoGallery } from './photo-gallery';
 import { PipelineMoveDialog } from './pipeline-move-dialog';
 import { BulkPurchaseCosts } from './bulk-purchase-costs';
 import { OrderFulfillment } from './order-fulfillment';
+import { ListProgress, useProgressiveRows } from './progressive-list';
 import type { EditorTarget } from './editor';
 function InventoryView({
   search,
@@ -47,7 +48,10 @@ function InventoryView({
     ? (requested as InventoryStage)
     : 'all';
   const pipeline = useMemo(() => inventoryPipeline(w), [w]);
-  const entriesById = new Map(pipeline.entries.map((entry) => [entry.item.id, entry]));
+  const entriesById = useMemo(
+    () => new Map(pipeline.entries.map((entry) => [entry.item.id, entry])),
+    [pipeline],
+  );
   const stageOf = (i: Item) =>
     i.status === 'Archived' ? 'archived' : entriesById.get(i.id)?.stage;
   const [fulfillmentId, setFulfillmentId] = useState<string | null>(null);
@@ -63,7 +67,7 @@ function InventoryView({
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [tab, setTab] = useState('Inventory');
   const [marketplace, setMarketplace] = useState('All marketplaces');
-  const listingSummary = listingMetrics(w, marketplace);
+  const listingSummary = useMemo(() => listingMetrics(w, marketplace), [w, marketplace]);
   const [sort, setSort] = useState('Newest');
   const [selected, setSelected] = useState<string[]>([]);
   const [costItems, setCostItems] = useState<string[] | null>(null);
@@ -117,6 +121,9 @@ function InventoryView({
       `${item.title} ${item.sku} ${l.marketplace}`.toLowerCase().includes(search.toLowerCase())
     );
   });
+  const listQuery = JSON.stringify([tab, view, status, marketplace, sort, search]);
+  const itemRows = useProgressiveRows(items, listQuery);
+  const listingRows = useProgressiveRows(listings, listQuery);
   async function updateCost(i: Item, value: string) {
     try {
       if (!value.trim() && historyInventoryCostUnknown(w, i.id)) return;
@@ -386,7 +393,7 @@ function InventoryView({
               />
             ) : view === 'grid' ? (
               <div className="photo-grid">
-                {items.map((i) => (
+                {itemRows.rows.map((i) => (
                   <div className="product-card selectable-product" key={i.id}>
                     <label className="inventory-select">
                       <input
@@ -455,7 +462,7 @@ function InventoryView({
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((i) => {
+                    {itemRows.rows.map((i) => {
                       const age = Math.max(
                         0,
                         Math.floor((now - +new Date(i.purchasedAt)) / 86400000),
@@ -554,6 +561,7 @@ function InventoryView({
                 </table>
               </div>
             )}
+            <ListProgress list={itemRows} label="inventory items" />
           </section>
         </>
       ) : (
@@ -577,7 +585,7 @@ function InventoryView({
                   </tr>
                 </thead>
                 <tbody>
-                  {listings.map((l) => {
+                  {listingRows.rows.map((l) => {
                     const i = w.items.find((i) => i.id === l.itemId)!;
                     return (
                       <tr key={l.id}>
@@ -618,6 +626,7 @@ function InventoryView({
               </table>
             </div>
           )}
+          <ListProgress list={listingRows} label="listings" />
         </section>
       )}
       {fulfillmentId && (

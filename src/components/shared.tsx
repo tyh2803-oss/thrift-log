@@ -63,6 +63,8 @@ export function ItemPhoto({ item, large = false }: { item: Item; large?: boolean
         <img
           src={src.startsWith('data:') ? src : `/api/photos?path=${encodeURIComponent(src)}`}
           alt={item.title}
+          loading="lazy"
+          decoding="async"
         />
       ) : (
         <Shirt strokeWidth={1} size={large ? 80 : 28} />

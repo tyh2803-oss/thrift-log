@@ -1,3 +1,4 @@
+import { readImportAudit } from './import-audit';
 import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
 import { correctedCostBasis, hasCostConfirmation } from './cost-basis';
 import { orderPostings, returnedItemIds } from './ledger';
@@ -128,14 +129,14 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
   for (const receipt of w.imports) {
     if (receipt.mapping.format === 'purchase-cost-v1') {
       try {
-        for (const row of JSON.parse(receipt.rawCsv).changes || [])
+        for (const row of readImportAudit(receipt).changes || [])
           if (row.after === 0) freeCosts.add(row.itemId);
       } catch {}
       continue;
     }
     if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1'].includes(receipt.mapping.format)) continue;
     try {
-      const audit = JSON.parse(receipt.rawCsv);
+      const audit = readImportAudit(receipt);
       if (receipt.mapping.format === 'pipeline-v1') {
         for (const row of audit.request?.items || [])
           if (row.sale?.purchaseCost === 0 && audit.result?.successIds?.includes(row.itemId))

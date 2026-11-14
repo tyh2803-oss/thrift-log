@@ -24,6 +24,7 @@ import { BulkPurchaseCosts } from './bulk-purchase-costs';
 import { WhatnotShowAnalytics } from './whatnot-show-analytics';
 import { Fulfillment } from './fulfillment';
 import { Dialog } from './ui/dialog';
+import { ListProgress, useProgressiveRows } from './progressive-list';
 import type { EditorTarget } from './editor';
 function SalesView({
   search,
@@ -66,6 +67,10 @@ function SalesView({
   const shows = w.shows
     .filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+  const orderRows = useProgressiveRows(
+    orders,
+    JSON.stringify([tab, market, status, search, range[0], range[1], pipelineStage]),
+  );
   const show = w.shows.find((s) => s.id === showId);
   const sm = show ? metrics(w, 0, now, show.id) : null;
   const exportOrders = () =>
@@ -202,7 +207,7 @@ function SalesView({
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((o) => (
+                  {orderRows.rows.map((o) => (
                     <tr key={o.id}>
                       <td className="sales-order-cell">
                         <button
@@ -266,6 +271,7 @@ function SalesView({
               action={<Button onClick={() => onEdit({ kind: 'order' })}>Record sale</Button>}
             />
           )}
+          <ListProgress list={orderRows} label="orders" />
         </section>
       ) : tab === 'Payouts' || tab === 'Shipments' ? (
         <Fulfillment kind={tab} range={range} search={search} />

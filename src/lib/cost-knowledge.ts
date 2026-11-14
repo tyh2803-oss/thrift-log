@@ -1,3 +1,4 @@
+import { readImportAudit } from './import-audit';
 import type { Workspace } from './model';
 import { confirmedFreeInventory } from './assistant/listing-review';
 import { hasCostConfirmation } from './cost-basis';
@@ -36,7 +37,7 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
     )
       continue;
     try {
-      const audit = JSON.parse(receipt.rawCsv);
+      const audit = readImportAudit(receipt);
       const order = w.orders.find((o) => o.id === receipt.id);
       if (order)
         result.set(
@@ -73,7 +74,7 @@ export function assumedHistoryAcquisition(w: Workspace, itemId: string) {
     if (r.mapping.history !== 'true') return false;
     try {
       return (
-        JSON.parse(r.rawCsv).assumedAcquisitionItemIds?.includes(itemId) &&
+        readImportAudit(r).assumedAcquisitionItemIds?.includes(itemId) &&
         w.items.find((i) => i.id === itemId)?.purchasedAt ===
           w.orders.find((o) => o.id === r.id)?.date
       );
@@ -100,7 +101,7 @@ export function whatnotFinancialPending(w: Workspace, orderId: string) {
     for (const receipt of w.imports) {
       if (receipt.mapping.whatnot !== 'true') continue;
       try {
-        if (JSON.parse(receipt.rawCsv).whatnotFinancialsPending === true) ids.add(receipt.id);
+        if (readImportAudit(receipt).whatnotFinancialsPending === true) ids.add(receipt.id);
       } catch {
         ids.add(receipt.id);
       }
