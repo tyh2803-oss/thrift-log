@@ -1251,7 +1251,7 @@ select.marketplace-select option {
   display: block;
   overflow-wrap: anywhere;
 }
-.whatnot-connection input,
+.whatnot-connection input:not([type='checkbox']),
 .whatnot-connection select {
   width: 100%;
   min-width: 0;
@@ -1668,4 +1668,18 @@ form:has(.form-top-actions) :is(input, select, textarea),
 .bulk-purchase-costs :is(input, select) {
   scroll-margin-top: 88px;
   scroll-margin-bottom: 24px;
+}
+
+.whatnot-connection input[type='checkbox'] {
+  width: 20px;
+  flex: 0 0 20px;
+}
+.whatnot-batch-toolbar .check-row {
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 44px;
+}
+.whatnot-batch-toolbar .check-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

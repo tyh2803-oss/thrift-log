@@ -38,6 +38,33 @@ export function sourceUnits(source: OrderSource) {
       })),
     );
 }
+/** Whatnot documents total as buyer payment, while applied_discount only exposes
+ * seller coupons. An omitted non-seller coupon must not reduce seller merchandise. */
+export function orderAmounts(source: OrderSource) {
+  const a = source.order.amounts,
+    gross = source.items.reduce((n, item) => n + item.quantity * dollars(item.unit_price), 0),
+    subtotal = dollars(a.subtotal),
+    discount = a.applied_discount ? dollars(a.applied_discount.amount) : 0,
+    shipping = dollars(a.shipping),
+    tax = dollars(a.tax),
+    total = dollars(a.total),
+    difference = subtotal - discount + shipping + tax - total;
+  const omittedNonSellerCoupon =
+    a.applied_discount === null &&
+    ['auction', 'buy_it_now'].includes(source.order.transaction_type || '') &&
+    ['completed', 'pending_fulfillment'].includes(source.order.status) &&
+    difference > 0 &&
+    difference <= gross &&
+    total >= shipping + tax;
+  if (
+    gross !== subtotal ||
+    [gross, shipping, tax, total, discount].some((n) => n < 0) ||
+    discount > gross ||
+    (difference !== 0 && !omittedNonSellerCoupon)
+  )
+    throw new Error('Order merchandise, coupon, tax and buyer total do not reconcile.');
+  return { gross, discount, buyerPaymentDifference: omittedNonSellerCoupon ? difference : 0 };
+}
 export class WhatnotPlan {
   w: Workspace;
   changed = false;
@@ -223,7 +250,12 @@ export class WhatnotPlan {
     let local =
       this.w.orders.find((o) => o.id === previous?.local_id) ||
       this.w.orders.find((o) => o.marketplace === 'Whatnot' && o.externalId === api.id);
-    const payload: { source: OrderSource; unitMap: Record<string, string>; adopted: boolean } = {
+    const payload: {
+      source: OrderSource;
+      unitMap: Record<string, string>;
+      adopted: boolean;
+      buyerPaymentDifference?: number;
+    } = {
       source,
       unitMap: structuredClone(prior?.unitMap || {}),
       adopted: prior?.adopted ?? !!local,
@@ -267,20 +299,8 @@ export class WhatnotPlan {
           throw new Error(
             'Order items are inconsistent or tax-inclusive. Verify net merchandise prices before importing.',
           );
-        const gross = units.reduce((n, u) => n + u.price, 0),
-          subtotal = dollars(api.amounts.subtotal),
-          discount = api.amounts.applied_discount
-            ? dollars(api.amounts.applied_discount.amount)
-            : 0;
-        if (
-          gross !== subtotal ||
-          gross < 0 ||
-          discount < 0 ||
-          discount > gross ||
-          dollars(api.amounts.total) !==
-            subtotal - discount + dollars(api.amounts.tax) + dollars(api.amounts.shipping)
-        )
-          throw new Error('Order merchandise, coupon, tax and buyer total do not reconcile.');
+        const { gross, discount, buyerPaymentDifference } = orderAmounts(source);
+        if (buyerPaymentDifference) payload.buyerPaymentDifference = buyerPaymentDifference;
         if (api.transaction_type === 'other' || api.transaction_type === null)
           throw new Error(
             'This order has an unsupported transaction type. Confirm the original business event.',
@@ -337,8 +357,11 @@ export class WhatnotPlan {
             );
           const used = new Set<string>();
           for (const u of units) {
-            let id = previous?.resolution?.units?.[u.key]?.itemId || payload.unitMap[u.key];
-            if (id === 'new')
+            const choice = previous?.resolution?.units?.[u.key]?.itemId;
+            // A prior "new item" decision has already produced this saved physical unit.
+            // Reuse its durable mapping on later polls rather than rejecting the old decision.
+            let id = choice === 'new' ? payload.unitMap[u.key] : choice || payload.unitMap[u.key];
+            if (choice === 'new' && !id)
               throw new Error(
                 'An existing sale cannot be assigned a new physical item. Correct its dated ledger instead.',
               );
@@ -456,9 +479,13 @@ export class WhatnotPlan {
               this.put({ type: 'item', value: item });
               assumed.push(id);
             }
-            if (api.transaction_type === 'giveaway' && (cost === null || u.price !== 0))
+            if (api.transaction_type === 'giveaway' && u.price !== 0)
               throw new Error(
-                'Giveaways need confirmed purchase cost (0 if free) and zero merchandise proceeds.',
+                'Giveaways must have $0 merchandise proceeds. Confirm the source transaction type.',
+              );
+            if (api.transaction_type === 'giveaway' && cost === null)
+              throw new Error(
+                'Enter the purchase cost for this giveaway (0 only if the item was free).',
               );
             if (cost === null) unknown.push(item.id);
             if (cost === 0) zero.push(item.id);
@@ -497,7 +524,10 @@ export class WhatnotPlan {
             payout: 'Pending',
             amountsConfirmed: false,
             provenance:
-              'Whatnot Seller API: buyer shipping and tax excluded; seller costs awaiting verified financial report.',
+              'Whatnot Seller API: buyer shipping and tax excluded; seller costs awaiting verified financial report.' +
+              (buyerPaymentDifference
+                ? ` Buyer payment is $${(buyerPaymentDifference / 100).toFixed(2)} below item, tax and shipping totals; non-seller coupon details are omitted by the API. Seller merchandise uses item prices.`
+                : ''),
             importKey: `whatnot:${this.sellerId}:order:${api.id}`,
           });
           this.put({ type: 'order', value: local });

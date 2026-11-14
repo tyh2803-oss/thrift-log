@@ -13,6 +13,14 @@ An extra encryption environment variable is optional: without it the app derives
 
 Migration application remains an explicit operator step. Do not replay existing migrations or run a blanket push against production without checking its history. To disable the feature safely, disconnect accounts or roll back application code; keep additive tables and imported records. Dropping tables is unnecessary.
 
+## Buyer totals and omitted coupons
+
+The official v2 `OrderAmounts` contract defines `subtotal` as item prices, `total` as what the buyer paid, and `applied_discount` as **the seller's coupon**, null when none applies **or the coupon is not the seller's**. They are not always an equality. Completed auction/buy-it-now orders may have a lower buyer payment with no seller coupon exposed.
+
+Import requires item prices/quantities to match the subtotal, valid USD amounts and non-negative tax/shipping, and an exposed seller discount within the merchandise total. A lower buyer total is accepted only with no exposed seller coupon, no more than the merchandise amount missing, and buyer payment covering recorded tax/shipping. Higher totals, item/subtotal mismatches, invalid currencies and mismatched exposed seller coupons still require correction. The funding difference is retained as source metadata/provenance; it is neither extra revenue nor an invented seller discount. Merchandise, unknown seller fees, missing costs and actual refund accounting keep their existing definitions.
+
+Legacy holds caused solely by the old buyer-total equality check retry automatically when the corrected rules validate their cached source. No database migration or manual source edits are required. Giveaways separately require a confirmed purchase cost ($0 only if acquired free) and zero merchandise proceeds. Their inline form now labels that cost as required, preserves saved decisions/costs, and accepts the default new-item selection without a redundant dropdown choice. Subsequent polls reuse the durable created-unit mapping rather than rejecting the earlier new-item decision.
+
 ## Matching holds and purchase costs
 
 Old matching-only order holds are automatically reprocessed in batches of 20 during normal authorized sync. No per-item duplicate decisions are required. Genuine totals/refund/currency or giveaway-cost exceptions remain visible. Settings also provides Select all orders / Import selected, exact-cent pending purchase-cost entry and actionable partial results. See [import and saved-cost setup](IMPORT_REVIEW_AND_PURCHASE_COSTS.md); only saved-sale cost corrections require the new optional migration.

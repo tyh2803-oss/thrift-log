@@ -497,3 +497,26 @@ it('reconciles multi-unit order quantities before using per-item source cost and
   expect(metrics(review.w)).toMatchObject({ unknownCosts: 2, profitKnown: false });
   expect(review.record('order', source.order.id)?.state).toBe('review');
 });
+
+it('uses authoritative merchandise and seller coupon amounts independently of omitted non-seller coupons in buyer payments', async () => {
+  const { orderAmounts } = await import('../src/lib/integrations/whatnot/planner');
+  const source = whatnotSource();
+  source.order.amounts.applied_discount = null;
+  source.order.amounts.total.amount = '8';
+  expect(orderAmounts(source)).toEqual({ gross: 4500, discount: 0, buyerPaymentDifference: 4500 });
+  source.order.amounts.total.amount = '53';
+  expect(orderAmounts(source).buyerPaymentDifference).toBe(0);
+  for (const total of ['7.99', '53.01', '-1']) {
+    source.order.amounts.total.amount = total;
+    expect(() => orderAmounts(source)).toThrow('do not reconcile');
+  }
+  source.order.amounts.total.amount = '8';
+  source.order.amounts.applied_discount = {
+    type: 'fixed_price',
+    amount: { amount: '2', currency: 'USD' },
+  };
+  expect(() => orderAmounts(source)).toThrow('do not reconcile');
+  source.order.amounts.applied_discount = null;
+  source.order.amounts.subtotal.amount = '44';
+  expect(() => orderAmounts(source)).toThrow('do not reconcile');
+});

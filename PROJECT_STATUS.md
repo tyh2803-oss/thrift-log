@@ -1,5 +1,16 @@
 # Thrift Log project status
 
+## Whatnot non-seller coupons and giveaway review — November 14, 2026
+
+Prepared on `fix/whatnot-buyer-coupons` from main `d6766fc`. A narrowly scoped read-only diagnosis of the screenshot's workspace found two orders whose item/subtotal amounts agree but buyer payment only covers shipping/tax, plus one zero-price giveaway without a confirmed acquisition cost. The earlier purchase-cost migration is still installed and ready; it is unrelated to these three holds. No production records or schema were manually changed for this fix.
+
+Re-read the official Whatnot v2 OpenAPI (same recorded SHA-256): `applied_discount` only exposes seller coupons and is null for non-seller coupons. The old strict buyer-total equality check incorrectly held those supported orders. Added bounded validation for omitted non-seller coupon amounts while retaining item/subtotal, currency, shipping/tax, explicit seller-coupon and actual transaction validation. Seller merchandise stays at its source price; the funding gap is source metadata only, and unknown fees remain unknown. Old holds that satisfy the new rules retry automatically through the existing actor-scoped, leased canonical sync. Provider-ID replay safety is preserved.
+
+Giveaway review now identifies purchase cost as the required missing fact, accepts the default new-item choice, and preserves earlier saved item/cost decisions. No actual giveaway cost is inferred from its zero sale price. Checkbox widths no longer push order labels off the iPhone screen.
+
+Validation: typecheck, lint, production build and **420 unit/API/database tests pass** (six opt-in cases skipped). New synthetic regressions cover both coupon-total shapes with retained entered costs, zero-cost giveaway confirmation, automatic legacy-hold recovery, repeated polling, strict invalid-total boundaries and unchanged financial safeguards. **All 10 focused desktop/mobile Whatnot browser checks pass**, including giveaway cost validation without extra selection, source-cost preservation, retry, account-data preservation and compact order checkboxes. A repeat-poll regression also reuses the durable physical-unit mapping after a prior new-item decision, keeping the imported orders applied without duplication. Actual giveaway cost still requires the user's input; no production cost was guessed.
+
+
 ## Saved-sale costs and profit review — November 14, 2026
 
 Implemented on `fix/purchase-cost-review` from main `b8d1738`. The user's screenshot showed the missing purchase-cost migration, rather than invalid costs. The user authorized the necessary changes and deployment after that cause was explained.

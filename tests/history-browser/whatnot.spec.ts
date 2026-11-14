@@ -259,3 +259,54 @@ test('bulk Whatnot review splits exact cents across new physical items and retai
   await expect.poll(() => submitted.length).toBe(2);
   expect(submitted[1].map((e) => e.id)).toEqual(['100003']);
 });
+
+test('giveaway requires a real purchase cost and imports without an unnecessary new-item selection while order checkboxes stay compact', async ({
+  page,
+}) => {
+  status = { ready: true, connected: true, status: 'synced', pending: 1, hasMore: false };
+  const source = whatnotSource('777771', null);
+  source.order.transaction_type = 'giveaway';
+  source.order.amounts = {
+    subtotal: { amount: '0', currency: 'USD' },
+    tax: { amount: '0', currency: 'USD' },
+    shipping: { amount: '0', currency: 'USD' },
+    total: { amount: '0', currency: 'USD' },
+    applied_discount: null,
+  };
+  source.items[0].unit_price = { amount: '0', currency: 'USD' };
+  records = [
+    {
+      kind: 'order',
+      external_id: '777771',
+      hash: 'a'.repeat(64),
+      payload: { source, adopted: false },
+      state: 'review',
+      issue: 'Enter the purchase cost for this giveaway (0 only if the item was free).',
+      local_id: null,
+    },
+  ];
+  await page.goto('/settings');
+  const region = page.getByRole('region', { name: 'Whatnot connection', exact: true });
+  await region.getByRole('button', { name: 'Review 1 Whatnot updates', exact: true }).click();
+  const toolbar = region.getByRole('region', { name: 'Whatnot bulk review', exact: true });
+  await toolbar.getByText('Choose orders (1)', { exact: true }).click();
+  const check = toolbar.getByRole('checkbox');
+  expect((await check.boundingBox())!.width).toBeLessThanOrEqual(24);
+  await expect(toolbar.getByText('Order 777771', { exact: true })).toBeInViewport();
+  expect(await toolbar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await region
+    .locator('summary')
+    .filter({ hasText: /^Order 777771$/ })
+    .click();
+  const cost = region.getByLabel('Giveaway purchase cost · required', { exact: true });
+  await expect(cost).toHaveAttribute('required', '');
+  await expect(cost).toHaveValue('');
+  await region.getByRole('button', { name: 'Save cost & import', exact: true }).click();
+  expect(actions.some((a) => a.action === 'resolve')).toBe(false);
+  await cost.fill('0');
+  await region.getByRole('button', { name: 'Save cost & import', exact: true }).click();
+  await expect.poll(() => actions.filter((a) => a.action === 'resolve').length).toBe(1);
+  expect(actions.find((a) => a.action === 'resolve')!.resolution).toEqual({
+    units: { '9777771:0': { itemId: 'new', cost: 0 } },
+  });
+});

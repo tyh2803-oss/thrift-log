@@ -167,3 +167,80 @@ it('imports a reused sold SKU as a separate provider unit without reopening or d
   expect(next.w.items).toHaveLength(2);
   expect(next.w.orders[1].lines[0].itemId).not.toBe(first);
 });
+
+it('imports two omitted non-seller-coupon orders at their full seller prices, then records the giveaway only after an explicit cost', async () => {
+  const inputs = ['222221', '222222', '222223'].map(row);
+  inputs.forEach((r, i) => {
+    const source = (r.payload as { source: ReturnType<typeof whatnotSource> }).source;
+    const price = i === 0 ? '10' : i === 1 ? '3' : '0',
+      tax = i === 1 ? '0.27' : '0',
+      shipping = i === 2 ? '0' : '5.25';
+    source.order.status = 'completed';
+    source.order.transaction_type = i === 2 ? 'giveaway' : 'auction';
+    source.order.amounts = {
+      subtotal: { amount: price, currency: 'USD' },
+      shipping: { amount: shipping, currency: 'USD' },
+      tax: { amount: tax, currency: 'USD' },
+      total: { amount: i === 1 ? '5.52' : shipping, currency: 'USD' },
+      applied_discount: null,
+    };
+    source.items[0].unit_price = { amount: price, currency: 'USD' };
+    r.issue =
+      i === 2
+        ? 'Giveaways need confirmed purchase cost (0 if free) and zero merchandise proceeds.'
+        : 'Order merchandise, coupon, tax and buyer total do not reconcile.';
+    r.resolution =
+      i === 2 ? {} : { units: { [source.items[0].id + ':0']: { itemId: 'new', cost: 100 } } };
+    r.hash = payloadHash(r.payload);
+    records.set(r.external_id, r);
+  });
+  const result = await reviewWhatnotOrders(
+    actor,
+    inputs.map((r) => ({ id: r.external_id, hash: r.hash, resolution: {} })),
+  );
+  expect(result.applied).toEqual(['222221', '222222']);
+  expect(result.unresolved).toEqual([
+    {
+      id: '222223',
+      issue: 'Enter the purchase cost for this giveaway (0 only if the item was free).',
+    },
+  ]);
+  expect(w.items).toHaveLength(2);
+  expect(w.orders).toHaveLength(2);
+  expect(
+    w.orders.map((o) => ({
+      price: o.lines[0].price,
+      cost: o.lines[0].costBasis,
+      discount: o.discount,
+    })),
+  ).toEqual([
+    { price: 1000, cost: 100, discount: 0 },
+    { price: 300, cost: 100, discount: 0 },
+  ]);
+  const giveaway = records.get('222223')!;
+  const saved = await reviewWhatnotOrders(actor, [
+    {
+      id: giveaway.external_id,
+      hash: giveaway.hash,
+      resolution: { units: { '9222223:0': { itemId: 'new', cost: 0 } } },
+    },
+  ]);
+  expect(saved.applied).toEqual(['222223']);
+  expect(w.items).toHaveLength(3);
+  expect(w.orders).toHaveLength(3);
+  expect(w.orders.find((o) => o.type === 'Giveaway')!.lines[0]).toMatchObject({
+    price: 0,
+    costBasis: 0,
+  });
+  const nextPoll = new WhatnotPlan(actor, sellerId, structuredClone(w), [...records.values()]);
+  for (const input of inputs)
+    nextPoll.order((input.payload as { source: ReturnType<typeof whatnotSource> }).source);
+  expect(nextPoll.w.orders).toEqual(w.orders);
+  expect(nextPoll.w.items).toEqual(w.items);
+  expect(nextPoll.w.financialEvents).toEqual(w.financialEvents);
+  expect(inputs.map((r) => nextPoll.record('order', r.external_id)!.state)).toEqual([
+    'applied',
+    'applied',
+    'applied',
+  ]);
+});

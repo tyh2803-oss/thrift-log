@@ -15,7 +15,7 @@ import {
   type OrderSource,
 } from './schema';
 import { parseFinancialReport, type LedgerTransaction } from './reports';
-import { WhatnotPlan } from './planner';
+import { WhatnotPlan, orderAmounts } from './planner';
 import { matchingNotice } from '@/lib/assistant/warnings';
 const sourceSchema = z.object({
   order: sourceOrderSchema,
@@ -48,8 +48,21 @@ export async function runSync(userId: string, force = false) {
     const held = resolved.length
       ? []
       : await readRecords(userId, { kind: 'order', state: 'review', limit: 200 });
-    const matchingHolds = held.filter((row) => matchingNotice(row.issue)).slice(0, 20);
-    const retry = resolved.length ? resolved : matchingHolds;
+    const retryableHolds = held
+      .filter((row) => {
+        if (matchingNotice(row.issue)) return true;
+        if (row.issue !== 'Order merchandise, coupon, tax and buyer total do not reconcile.')
+          return false;
+        const source = sourceSchema.safeParse((row.payload as { source?: unknown }).source);
+        if (!source.success) return false;
+        try {
+          return orderAmounts(source.data).buyerPaymentDifference > 0;
+        } catch {
+          return false;
+        }
+      })
+      .slice(0, 20);
+    const retry = resolved.length ? resolved : retryableHolds;
     if (retry.length) {
       plan.remember(retry);
       for (const record of retry) {
@@ -288,7 +301,7 @@ export async function runSync(userId: string, force = false) {
       workspace: plan.changed ? plan.w : null,
       records: [...plan.writes.values()],
       checkpoint,
-      more: checkpoint.phase !== 'done' || matchingHolds.length > 0,
+      more: checkpoint.phase !== 'done' || retryableHolds.length > 0,
     });
     return {
       busy: false,

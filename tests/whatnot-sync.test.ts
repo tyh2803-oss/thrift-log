@@ -230,3 +230,29 @@ it('automatically retries matching-only holds without manual decisions and leave
   await runSync(actor, true);
   expect(w).toEqual(saved);
 });
+
+it('automatically recovers old buyer-total holds only when the documented omitted-coupon rules reconcile', async () => {
+  checkpoint = { phase: 'done' };
+  ['333331', '333332'].forEach((id, n) => {
+    const source = whatnotSource(id, null);
+    source.order.amounts.applied_discount = null;
+    source.order.amounts.total.amount = n === 0 ? '8.00' : '999.00';
+    const payload = { source, unitMap: {}, adopted: false };
+    records.set('order:' + id, {
+      kind: 'order',
+      external_id: id,
+      hash: 'a'.repeat(64),
+      payload,
+      state: 'review',
+      local_id: null,
+      issue: 'Order merchandise, coupon, tax and buyer total do not reconcile.',
+    });
+  });
+  const result = await runSync(actor, true);
+  expect(result.changed).toBe(true);
+  expect(w.orders).toHaveLength(1);
+  expect(w.orders[0].lines[0].price).toBe(4500);
+  expect(records.get('order:333331')!.state).toBe('applied');
+  expect(records.get('order:333332')!.state).toBe('review');
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(0);
+});

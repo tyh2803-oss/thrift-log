@@ -387,7 +387,7 @@ export function WhatnotConnection() {
           <WhatnotBatchReview records={records} busy={busy} onReview={reviewOrders} />
           {records.map((row) => (
             <WhatnotReview
-              key={`${row.kind}:${row.external_id}:${row.hash}`}
+              key={`${row.kind}:${row.external_id}:${row.hash}:${JSON.stringify(row.resolution || {})}`}
               row={row}
               busy={busy}
               onResolve={(resolution) =>
@@ -410,8 +410,18 @@ function WhatnotReview({
   onResolve: (resolution: Resolution) => void;
 }) {
   const { w } = useWorkspace();
-  const [selections, setSelections] = useState<Record<string, string>>({}),
-    [costs, setCosts] = useState<Record<string, string>>({}),
+  const [selections, setSelections] = useState<Record<string, string>>(() =>
+      Object.fromEntries(
+        Object.entries(row.resolution?.units || {}).map(([key, value]) => [key, value.itemId]),
+      ),
+    ),
+    [costs, setCosts] = useState<Record<string, string>>(() =>
+      Object.fromEntries(
+        Object.entries(row.resolution?.units || {})
+          .filter(([, value]) => value.cost !== null && value.cost !== undefined)
+          .map(([key, value]) => [key, (value.cost! / 100).toFixed(2)]),
+      ),
+    ),
     [fees, setFees] = useState(''),
     [processing, setProcessing] = useState('0'),
     [sellerShipping, setSellerShipping] = useState('0'),
@@ -480,7 +490,7 @@ function WhatnotReview({
               <label className="field">
                 <span>Physical item · {unit.key}</span>
                 <select
-                  required
+                  required={!!adopted}
                   value={selections[unit.key] || ''}
                   onChange={(e) => setSelections({ ...selections, [unit.key]: e.target.value })}
                   disabled={busy}
@@ -498,19 +508,41 @@ function WhatnotReview({
               </label>
               {!adopted && (
                 <label className="field">
-                  <span>Purchase cost · optional</span>
+                  <span>
+                    {source?.order.transaction_type === 'giveaway'
+                      ? 'Giveaway purchase cost · required'
+                      : 'Purchase cost · optional'}
+                  </span>
                   <input
                     inputMode="decimal"
+                    aria-label={
+                      source?.order.transaction_type === 'giveaway'
+                        ? 'Giveaway purchase cost · required'
+                        : 'Purchase cost · optional'
+                    }
+                    required={
+                      source?.order.transaction_type === 'giveaway' &&
+                      (!selections[unit.key] || selections[unit.key] === 'new')
+                    }
                     value={costs[unit.key] || ''}
                     onChange={(e) => setCosts({ ...costs, [unit.key]: e.target.value })}
                     disabled={busy}
                     placeholder="Unknown"
                   />
+                  {source?.order.transaction_type === 'giveaway' && (
+                    <small>
+                      Enter what the item cost you. Use $0 only if you acquired it for free.
+                    </small>
+                  )}
                 </label>
               )}
             </div>
           ))}
-          <Button disabled={busy}>Resolve item matches</Button>
+          <Button type="submit" disabled={busy}>
+            {source?.order.transaction_type === 'giveaway'
+              ? 'Save cost & import'
+              : 'Resolve item matches'}
+          </Button>
         </form>
       )}
       {tx?.type === 'ORDER_EARNINGS' && row.local_id && !tx.revisionConflict && (
