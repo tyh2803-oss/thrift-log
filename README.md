@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Import and cost updates prepared:** instant tab presentation, a quieter home dashboard, automatic recovery of Whatnot matching holds, optional inventory matching, bulk purchase costs, clearer assistant replies and a top pipeline Save button. See [behavior and approval-gated migration/setup](docs/IMPORT_REVIEW_AND_PURCHASE_COSTS.md). Code deployment is authorized; production migration `202611130002_purchase_cost_corrections.sql` remains unapplied.
+
 **Private business assistant:** natural conversation and iPhone dictation, owned-workspace read tools, persistent context, native PDF/photo reading and flexible CSV analysis, with business changes prepared for explicit approval. GPT-6.1 Sol is the default. See [setup, privacy, limits and verification](docs/BUSINESS_ASSISTANT.md); the optional migration was applied and verified on November 13 after release approval.
 
 **Personal spreadsheet imports:** the assistant recognizes table headings below title/year rows, preserves purchase costs, ignores side totals, and prepares incomplete rows for review. Fill missing dates and seller fees in bulk. Unfamiliar CSV/PDF analysis retains row-coverage and accounting safeguards. See [the import guide](docs/SALE_HISTORY_IMPORTS.md#personal-spreadsheets-and-missing-information).

@@ -8,7 +8,7 @@ import {
   extractedSale,
   visionExtraction,
 } from './helpers/assistant';
-it('keeps four supported cards and drops phantom fifth, partial edges and repeated crop views', () => {
+it('keeps every supported source card including repeated IDs, while dropping unsupported and partial regions', () => {
   const lines = [0, 1, 2, 3].map((i) =>
     extractedLine({ title: `Distinct jacket ${i}`, listingId: `card-${i}`, price: (i + 1) * 1000 }),
   );
@@ -27,16 +27,16 @@ it('keeps four supported cards and drops phantom fifth, partial edges and repeat
   ]);
   input.records[0].lines[5].clothing.partial = true;
   const result = normalizeVision(input);
-  expect(result.records).toHaveLength(4);
-  expect(result.notes).toHaveLength(3);
+  expect(result.records).toHaveLength(5);
+  expect(result.notes).toHaveLength(2);
   const batch = createBatch(
     [{ hash: 'c'.repeat(64), name: 'actual-pixels-not-supplied.png', extraction: result }],
     assistantWorkspace(),
   );
-  expect(batch.rows).toHaveLength(4);
+  expect(batch.rows).toHaveLength(5);
   const removed = removeDraft(batch, batch.rows[1].id);
-  expect(removed.rows.map((r) => r.recordIndex)).toEqual([0, 2, 3]);
-  expect(batch.rows).toHaveLength(4);
+  expect(removed.rows.map((r) => r.recordIndex)).toEqual([0, 2, 3, 4]);
+  expect(batch.rows).toHaveLength(5);
 });
 it('does not reinterpret a shipment mentioning sale prices as another sale', () => {
   const input = visionExtraction();
@@ -257,7 +257,7 @@ it('recognizes batch-wide instructions, cost corrections, draft removal and sale
       lines: [extractedLine({ sku: w.items[0].sku })],
     }),
   ]);
-  expect(correctBatch(b, 'Approve everything', w).message).toContain('Approve All (1)');
+  expect(correctBatch(b, 'Approve everything', w).message).toContain('Approve All (2)');
   const cost = correctBatch(b, 'The second item cost me $8.', w);
   expect(cost.batch.rows[1].matches[0].costOverride).toBe(800);
   const removed = correctBatch(cost.batch, 'Remove the first item', w);
@@ -342,7 +342,7 @@ it('removes a blank placeholder from an order event without inventing product id
   const w = soldWorkspace();
   expect(previewBatch(w, imageBatch(w, onlyOrder.records))[0].ready).toBe(true);
 });
-it('records a completed refund with a physical return only when explicitly included, without repeating an existing refund', () => {
+it('records explicitly approved refund and return events without matching-value blockers and preserves prior postings', () => {
   const w = soldWorkspace(),
     b = imageBatch(w, [event('returned')]);
   b.rows[0].confirmPhysicalReturn = true;
@@ -357,7 +357,14 @@ it('records a completed refund with a physical return only when explicitly inclu
   refund.rows[0].facts.refund = 500;
   refund.rows[0].facts.event!.externalEventId = 'RMA-1';
   const alreadyRefunded = approvalCommands(w, refund, [refund.rows[0].id]).reduce(applyCommand, w);
-  expect(previewBatch(alreadyRefunded, b)[0].ready).toBe(false);
+  expect(previewBatch(alreadyRefunded, b)[0].ready).toBe(true);
+  const separatelyApproved = approvalCommands(alreadyRefunded, b, [b.rows[0].id]).reduce(
+    applyCommand,
+    alreadyRefunded,
+  );
+  expect(separatelyApproved.financialEvents.filter((e) => e.kind === 'Refund')).toHaveLength(2);
+  expect(new Set(separatelyApproved.financialEvents.map((e) => e.externalId)).size).toBe(3);
+  expect(separatelyApproved.financialEvents[0]).toEqual(alreadyRefunded.financialEvents[0]);
   b.rows[0].applyRefund = false;
   expect(previewBatch(alreadyRefunded, b)[0].ready).toBe(true);
 });
@@ -373,7 +380,7 @@ it('does not block a fully specified sale on optional clothing observations but 
   b.rows[0].facts.warnings.push('The seller shipping amount is ambiguous.');
   expect(previewBatch(w, b)[0].ready).toBe(false);
 });
-it('keeps one current listing view per physical item and marketplace while permitting cross-listing', () => {
+it('accepts every requested listing update and still supports cross-listing', () => {
   const w = assistantWorkspace();
   const first = extractedSale({
     kind: 'listing',
@@ -385,7 +392,7 @@ it('keeps one current listing view per physical item and marketplace while permi
     lines: [extractedLine({ sku: w.items[0].sku, price: 4900 })],
   });
   const b = imageBatch(w, [first, second]);
-  expect(previewBatch(w, b).filter((p) => p.ready)).toHaveLength(1);
+  expect(previewBatch(w, b).filter((p) => p.ready)).toHaveLength(2);
   b.rows[1].facts.marketplace = 'eBay';
   expect(previewBatch(w, b).filter((p) => p.ready)).toHaveLength(2);
 });

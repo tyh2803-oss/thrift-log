@@ -85,9 +85,22 @@ export function ThriftApp({
     );
   return <Shell section={section} email={email} />;
 }
-function Shell({ section, email }: { section: string; email?: string }) {
+function Shell({ section: serverSection, email }: { section: string; email?: string }) {
   const params = useSearchParams();
-  const pipelineStage = readPipelineStage(params.get('pipeline'));
+  const pathname = usePathname();
+  const [opening, setOpening] = useState<{
+    from: string;
+    section: string;
+    pipeline: string | null;
+  } | null>(null);
+  const locationKey = pathname + '?' + params.toString();
+  useEffect(() => {
+    const timer = setTimeout(() => setOpening(null), 0);
+    return () => clearTimeout(timer);
+  }, [locationKey]);
+  const pending = opening?.from === locationKey ? opening : null;
+  const section = pending?.section || serverSection;
+  const pipelineStage = readPipelineStage(pending ? pending.pipeline : params.get('pipeline'));
   const inventoryStage = pipelineStage;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
   const { w, ready, demo, saving, error, notice, dispatch, refresh, notify } = useWorkspace();
@@ -219,7 +232,32 @@ function Shell({ section, email }: { section: string; email?: string }) {
     setQuick(false);
   }, []);
   return (
-    <div className="app-layout">
+    <div
+      className="app-layout"
+      onClickCapture={(event) => {
+        // Paint the already-owned view immediately. Next Link still performs the normal
+        // server navigation, fresh Auth/beta check, redirects and history update.
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+          return;
+        const anchor = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+        if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
+        const url = new URL(anchor.href, window.location.href);
+        if (url.origin !== window.location.origin) return;
+        const relative = base ? url.pathname.replace(/^\/demo(?=\/|$)/, '') : url.pathname;
+        if (base && !url.pathname.startsWith('/demo/')) return;
+        const next = relative.replace(/^\/|\/$/g, '') || 'home';
+        if (!['home', 'inventory', 'sales', 'activity', 'insights', 'settings'].includes(next))
+          return;
+        setOpening({
+          from: locationKey,
+          section: next,
+          pipeline: url.searchParams.get('pipeline'),
+        });
+        setSearch('');
+        setQuick(false);
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      }}
+    >
       <aside className="sidebar">
         <Link href={`${base}/`} className="brand" aria-label="Thrift Log home">
           <span className="brand-mark">

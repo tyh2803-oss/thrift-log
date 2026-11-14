@@ -86,6 +86,7 @@ export function Assistant({
   const [choices, setChoices] = useState<ChatResponse['choices']>([]);
   const [chatRunning, setChatRunning] = useState(false);
   const [chatRefresh, setChatRefresh] = useState(0);
+  const chatRevision = useRef(0);
   const chatRetry = useRef<{ key: string; id: string } | null>(null);
   const chatAbort = useRef<AbortController | null>(null);
   const [restored, setRestored] = useState(false);
@@ -155,6 +156,8 @@ export function Assistant({
         const parsed = chatMessageSchema.array().safeParse(data.messages);
         if (!parsed.success || typeof data.ready !== 'boolean' || typeof data.revision !== 'number')
           return;
+        if (data.revision < chatRevision.current) return;
+        chatRevision.current = data.revision;
         setChat({
           ready: data.ready,
           enabled: data.enabled,
@@ -169,11 +172,15 @@ export function Assistant({
         );
         const saved = chatResponseSchema.safeParse(data.response);
         if (saved.success) {
-          setChoices(saved.data.choices);
           const pending = (b: DraftBatch | null) =>
             b ? { ...b, rows: b.rows.filter((r) => !w.imports.some((i) => i.id === r.id)) } : null;
           const b = pending(saved.data.drafts.batch),
             h = pending(saved.data.drafts.historyBatch);
+          const proposed =
+            (saved.data.drafts.batch?.rows.length || 0) +
+            (saved.data.drafts.historyBatch?.rows.length || 0);
+          if (!lock.current)
+            setChoices(proposed && !b?.rows.length && !h?.rows.length ? [] : saved.data.choices);
           if (b?.rows.length) setBatch((old) => (old?.rows.length ? old : b));
           if (h?.rows.length) setHistoryBatch((old) => (old?.rows.length ? old : h));
         }
@@ -273,6 +280,7 @@ export function Assistant({
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Could not clear the conversation.');
+        chatRevision.current = data.revision;
         setChat({ ...chat, revision: data.revision });
         if (data.notice) notify(data.notice);
       } catch (error) {
@@ -300,6 +308,7 @@ export function Assistant({
     files: Attachment[] = [],
   ) {
     if (!chat?.ready || !chat.enabled) return;
+    setChoices([]);
     const snapshot = {
       batch: JSON.stringify(drafts.batch),
       historyBatch: JSON.stringify(drafts.historyBatch),
@@ -336,6 +345,9 @@ export function Assistant({
       }));
       if (!response.ok) throw new Error(data.error || 'Business chat could not finish.');
       const result = chatResponseSchema.parse(data.response);
+      if (data.revision < chatRevision.current)
+        throw new Error('This conversation changed. Refresh chat before retrying.');
+      chatRevision.current = data.revision;
       setChat((old) => (old ? { ...old, revision: data.revision } : old));
       setBatch((current) =>
         JSON.stringify(current) === snapshot.batch ? result.drafts.batch : current,
@@ -553,6 +565,7 @@ export function Assistant({
   }
   async function approveHistory(ids: string[]) {
     if (lock.current || !historyBatch) return;
+    setChoices([]);
     lock.current = true;
     setBusy(true);
     setError('');
@@ -587,6 +600,7 @@ export function Assistant({
   }
   async function approve(ids: string[]) {
     if (lock.current || !batch) return;
+    setChoices([]);
     lock.current = true;
     setBusy(true);
     setError('');
@@ -752,7 +766,9 @@ export function Assistant({
               )}
               {messages.map((m) => (
                 <div key={m.id} className={`assistant-message assistant-${m.role}`}>
-                  <small>{m.role === 'user' ? 'You' : 'Thrift Log'}</small>
+                  <small className="assistant-message-label">
+                    {m.role === 'user' ? 'You' : 'Thrift Log assistant'}
+                  </small>
                   <p>{m.text}</p>
                   {!!m.files?.length && (
                     <div className="assistant-thumbnails">
@@ -786,53 +802,53 @@ export function Assistant({
                   )}
                 </div>
               ))}
-              {!!choices.length && (
-                <div className="assistant-choices" aria-label="Assistant reply choices">
-                  {choices.map((choice, i) => (
-                    <Button
-                      key={`${choice.itemId || 'reply'}:${i}`}
-                      variant="outline"
-                      disabled={busy || saving}
-                      onClick={() => void sendChoice(choice)}
-                    >
-                      {choice.label}
-                    </Button>
-                  ))}
-                </div>
-              )}
               {batch && (
-                <AssistantReview
-                  batch={batch}
-                  footerHost={footerHost}
-                  sourceUrls={
-                    new Map([
-                      ...batch.screenshots
-                        .filter((s) => s.chatFileId && (!s.sourceType || s.sourceType === 'image'))
-                        .map(
-                          (s) =>
-                            [
-                              s.hash,
-                              `/api/assistant/files?id=${encodeURIComponent(s.chatFileId!)}`,
-                            ] as const,
-                        ),
-                      ...sourceUrls,
-                    ])
-                  }
-                  onChange={setBatch}
-                  onApprove={(ids) => void approve(ids)}
-                  onCancel={() => setBatch(null)}
-                  busy={busy || saving}
-                  onView={onView}
-                />
+                <section className="assistant-proposal-group" aria-label="Proposed changes">
+                  <div className="assistant-proposal-label">
+                    <strong>Proposed changes</strong>
+                    <small>Not saved · approve to apply</small>
+                  </div>
+                  <AssistantReview
+                    batch={batch}
+                    footerHost={footerHost}
+                    sourceUrls={
+                      new Map([
+                        ...batch.screenshots
+                          .filter(
+                            (s) => s.chatFileId && (!s.sourceType || s.sourceType === 'image'),
+                          )
+                          .map(
+                            (s) =>
+                              [
+                                s.hash,
+                                `/api/assistant/files?id=${encodeURIComponent(s.chatFileId!)}`,
+                              ] as const,
+                          ),
+                        ...sourceUrls,
+                      ])
+                    }
+                    onChange={setBatch}
+                    onApprove={(ids) => void approve(ids)}
+                    onCancel={() => setBatch(null)}
+                    busy={busy || saving}
+                    onView={onView}
+                  />
+                </section>
               )}
               {historyBatch && (
-                <HistoryReview
-                  batch={historyBatch}
-                  onChange={setHistoryBatch}
-                  onApprove={(ids) => void approveHistory(ids)}
-                  onCancel={() => setHistoryBatch(null)}
-                  busy={busy || saving}
-                />
+                <section className="assistant-proposal-group" aria-label="Proposed sale history">
+                  <div className="assistant-proposal-label">
+                    <strong>Proposed sale history</strong>
+                    <small>Not saved · approve to apply</small>
+                  </div>
+                  <HistoryReview
+                    batch={historyBatch}
+                    onChange={setHistoryBatch}
+                    onApprove={(ids) => void approveHistory(ids)}
+                    onCancel={() => setHistoryBatch(null)}
+                    busy={busy || saving}
+                  />
+                </section>
               )}
               {!!recentOrders.length && <AssistantFulfillmentActions orderIds={recentOrders} />}
               {busy && (
@@ -881,6 +897,24 @@ export function Assistant({
                   </div>
                 ))}
               </div>
+            )}
+            {!!choices.length && (
+              <section className="assistant-reply-panel" aria-label="Suggested replies">
+                <strong>Suggested replies</strong>
+                <small>Tap a button to answer</small>
+                <div className="assistant-choices" aria-label="Assistant reply choices">
+                  {choices.map((choice, i) => (
+                    <Button
+                      key={`${choice.itemId || 'reply'}:${i}`}
+                      variant="outline"
+                      disabled={busy || saving}
+                      onClick={() => void sendChoice(choice)}
+                    >
+                      {choice.label}
+                    </Button>
+                  ))}
+                </div>
+              </section>
             )}
             <div ref={setFooterHost} className="assistant-review-footer-host" />
             <details

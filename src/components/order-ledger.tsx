@@ -103,9 +103,11 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
                   setReturns([]);
                 }}
               >
-                {financialKinds.map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
+                {financialKinds
+                  .filter((k) => k !== 'Cost basis adjustment')
+                  .map((k) => (
+                    <option key={k}>{k}</option>
+                  ))}
               </select>
             </label>
             <Field
@@ -143,7 +145,9 @@ export function OrderLedger({ orderId, onClose }: { orderId: string; onClose: ()
                   <option value="">Select a posted event</option>
                   {events
                     .filter(
-                      (e) => e.kind !== 'Reversal' && !events.some((r) => r.reversesId === e.id),
+                      (e) =>
+                        !['Reversal', 'Cost basis adjustment'].includes(e.kind) &&
+                        !events.some((r) => r.reversesId === e.id),
                     )
                     .map((e) => (
                       <option key={e.id} value={e.id}>

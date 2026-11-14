@@ -8,6 +8,7 @@ import {
   type Workspace,
 } from './model';
 import { parseMoney, allocate } from './finance';
+import { itemIsSold } from './ledger';
 export type ImportKind = 'Inventory' | 'Sales' | 'Listings' | 'Expenses';
 export const importColumns: Record<ImportKind, string[]> = {
   Inventory: [
@@ -65,7 +66,7 @@ export function planImport(
 ): { commands: Command[]; errors: string[]; duplicates: number } {
   const commands: Command[] = [];
   const errors: string[] = [];
-  let duplicates = 0;
+  const duplicates = 0;
   const normalized = rows.map((r) =>
     Object.fromEntries(
       Object.entries(mapping).map(([target, source]) => [target, r[source] ?? '']),
@@ -73,80 +74,53 @@ export function planImport(
   );
   const seen = new Set<string>();
   if (kind === 'Sales') {
-    const saleLine = (r: Record<string, string>) => {
-      if (!r.price?.trim()) throw new Error('Sale price is required on every row.');
-      const item = w.items.find((i) => i.sku === r.sku);
-      if (!item)
-        throw new Error(`Unmatched SKU “${r.sku}”. Add or map the physical inventory item first.`);
-      return { itemId: item.id, price: cents(r.price), costBasis: item.cost };
-    };
-    const groups = new Map<string, Record<string, string>[]>();
-    normalized.forEach((raw, i) => {
-      const r: Record<string, string> = {
-        ...raw,
-        order_id: raw.order_id?.trim() || '',
-        marketplace: raw.marketplace?.trim() || 'Whatnot',
-      };
-      if (r.order_id) {
-        const key = `${r.marketplace}:${r.order_id}`;
-        groups.set(key, [...(groups.get(key) || []), r]);
-        return;
-      }
-      try {
-        const line = saleLine(r);
-        // Each ID-less row is a separate sale. Use canonical source values, not the
-        // generated UUID, row position, current time or mutable acquisition cost.
-        // A missing date stays null in this key even though the saved date defaults to today.
-        const key = `csv-sale-row-v1:${JSON.stringify([
-          r.marketplace,
-          line.itemId,
-          r.date?.trim() ? date(r.date) : null,
-          line.price,
-          r.show_id?.trim() || null,
-          ...[
-            'discount',
-            'shipping_collected',
-            'fees',
-            'processing',
-            'shipping',
-            'packaging',
-            'refund',
-          ].map((field) => cents(r[field])),
-        ])}`;
-        if (seen.has(key)) {
-          duplicates++;
-          return;
-        }
-        seen.add(key);
-        groups.set(key, [r]);
-      } catch (e) {
-        errors.push(`Row ${i + 2}: ${e instanceof Error ? e.message : 'Invalid row'}`);
-      }
+    const groups = new Map<string, Record<string, string>[]>(),
+      used = new Set<string>();
+    normalized.forEach((r, index) => {
+      const key = r.order_id?.trim()
+        ? `${r.marketplace || 'Whatnot'}:${r.order_id.trim()}`
+        : `row:${index}`;
+      groups.set(key, [...(groups.get(key) || []), r]);
     });
-    for (const [key, group] of groups)
+    for (const [key, group] of groups) {
       try {
-        const first = group[0];
-        if (
-          w.orders.some(
-            (o) =>
-              o.importKey === key ||
-              (first.order_id &&
-                o.marketplace === first.marketplace &&
-                o.externalId === first.order_id),
-          )
-        ) {
-          duplicates++;
-          continue;
-        }
-        const lines = group.map(saleLine);
-        // Monetary fee columns are per line; sum once per row, never duplicate an order-level total.
-        const sum = (k: string) => group.reduce((n, r) => n + cents(r[k]), 0);
-        commands.push({
+        const staged: Command[] = [],
+          first = group[0],
+          lines = group.map((r) => {
+            if (!r.price?.trim()) throw new Error('Sale price is required on every row.');
+            let item = w.items.find((i) => i.sku === r.sku);
+            if (!item)
+              throw new Error(
+                `Unmatched SKU “${r.sku}”. Add or map the physical inventory item first.`,
+              );
+            if (used.has(item.id) || itemIsSold(w, item.id)) {
+              const id = crypto.randomUUID();
+              item = {
+                ...item,
+                id,
+                sku: `CSV-${id}`,
+                status: 'Purchased',
+                createdAt: new Date().toISOString(),
+                notes: `Imported as a separate physical item. Source SKU: ${r.sku}`,
+              };
+              staged.push({ type: 'item', value: item });
+            }
+            used.add(item.id);
+            return { itemId: item.id, price: cents(r.price), costBasis: item.cost };
+          });
+        const sum = (field: string) => group.reduce((n, r) => n + cents(r[field]), 0);
+        staged.push({
           type: 'order',
           value: orderSchema.parse({
             id: crypto.randomUUID(),
             marketplace: first.marketplace || 'Whatnot',
-            externalId: first.order_id,
+            externalId: w.orders.some(
+              (o) =>
+                o.marketplace === (first.marketplace || 'Whatnot') &&
+                o.externalId === first.order_id,
+            )
+              ? ''
+              : first.order_id || '',
             date: date(first.date),
             showId: first.show_id || null,
             lines,
@@ -166,12 +140,14 @@ export function planImport(
             fulfillment: 'Unfulfilled',
             payout: 'Pending',
             provenance: JSON.stringify(group).slice(0, 500),
-            importKey: key,
+            importKey: `csv-approved:${crypto.randomUUID()}`,
           }),
         });
-      } catch (e) {
-        errors.push(`${key}: ${e instanceof Error ? e.message : 'Invalid row'}`);
+        commands.push(...staged);
+      } catch (error) {
+        errors.push(`${key}: ${error instanceof Error ? error.message : 'Invalid row'}`);
       }
+    }
   } else
     normalized.forEach((r, i) => {
       try {
@@ -179,16 +155,19 @@ export function planImport(
           if (!r.sku) throw new Error('SKU is required.');
           if (!r.cost?.trim())
             throw new Error('Purchase cost is required; enter 0 explicitly for a free item.');
-          if (w.items.some((item) => item.sku === r.sku) || seen.has(r.sku)) {
-            duplicates++;
-            return;
-          }
-          seen.add(r.sku);
+          const id = crypto.randomUUID();
+          const sku =
+            w.items.some((item) => item.sku.toLowerCase() === r.sku.toLowerCase()) ||
+            seen.has(r.sku.toLowerCase())
+              ? `CSV-${id}`
+              : r.sku;
+          seen.add(r.sku.toLowerCase());
           commands.push({
             type: 'item',
             value: itemSchema.parse({
-              id: crypto.randomUUID(),
-              sku: r.sku,
+              id,
+              sku,
+              notes: `Source SKU: ${r.sku}`,
               title: r.title,
               brand: r.brand || '',
               category: r.category || 'Other',
@@ -206,10 +185,8 @@ export function planImport(
           if (!item) throw new Error('Unmatched SKU.');
           if (!r.listing_id) throw new Error('listing_id is required.');
           const key = `${r.marketplace}:${r.listing_id}`;
-          if (seen.has(key) || w.listings.some((l) => `${l.marketplace}:${l.externalId}` === key)) {
-            duplicates++;
-            return;
-          }
+          const repeated =
+            seen.has(key) || w.listings.some((l) => `${l.marketplace}:${l.externalId}` === key);
           seen.add(key);
           commands.push({
             type: 'listing',
@@ -219,7 +196,7 @@ export function planImport(
               marketplace: r.marketplace,
               price: cents(r.price),
               originalPrice: cents(r.price),
-              externalId: r.listing_id,
+              externalId: repeated ? '' : r.listing_id,
               url: r.url || '',
               listedAt: date(r.date),
               status: 'Active',
@@ -228,15 +205,15 @@ export function planImport(
         } else {
           if (!r.expense_id)
             throw new Error('expense_id (UUID) is required for repeatable expense imports.');
-          if (seen.has(r.expense_id) || w.expenses.some((e) => e.id === r.expense_id)) {
-            duplicates++;
-            return;
-          }
+          const expenseId =
+            seen.has(r.expense_id) || w.expenses.some((e) => e.id === r.expense_id)
+              ? crypto.randomUUID()
+              : r.expense_id;
           seen.add(r.expense_id);
           commands.push({
             type: 'expense',
             value: expenseSchema.parse({
-              id: r.expense_id,
+              id: expenseId,
               title: r.title,
               category: r.category || 'Other',
               amount: cents(r.amount),

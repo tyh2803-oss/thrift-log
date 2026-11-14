@@ -1,4 +1,5 @@
 import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
+import { correctedCostBasis, hasCostConfirmation } from './cost-basis';
 import { orderPostings, returnedItemIds } from './ledger';
 import { allocate } from './money';
 import { lineFulfillment, type FulfillmentState } from './fulfillment-state';
@@ -125,6 +126,13 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
     freeCosts = new Set<string>();
   // Historical assistant receipts prove explicit zeros without changing legacy records.
   for (const receipt of w.imports) {
+    if (receipt.mapping.format === 'purchase-cost-v1') {
+      try {
+        for (const row of JSON.parse(receipt.rawCsv).changes || [])
+          if (row.after === 0) freeCosts.add(row.itemId);
+      } catch {}
+      continue;
+    }
     if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1'].includes(receipt.mapping.format)) continue;
     try {
       const audit = JSON.parse(receipt.rawCsv);
@@ -198,8 +206,11 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
       const fulfillment = lineFulfillment(order, item.id);
       const knownCost =
         !historyCostUnknown(w, order.id, item.id) &&
-        (line.costBasis > 0 || confirmed.has(order.id) || freeCosts.has(item.id));
-      const cost = knownCost ? line.costBasis : null;
+        (line.costBasis > 0 ||
+          confirmed.has(order.id) ||
+          freeCosts.has(item.id) ||
+          hasCostConfirmation(w, order.id, item.id));
+      const cost = knownCost ? correctedCostBasis(w, order, item.id) : null;
       entries.push({
         item,
         stage: fulfillment.status === 'Unfulfilled' ? 'sold' : 'shipped',

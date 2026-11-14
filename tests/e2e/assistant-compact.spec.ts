@@ -6,7 +6,7 @@ import { localDay } from '../../src/lib/dates';
 import { inventoryPipeline } from '../../src/lib/pipeline';
 
 function fixtures(w = emptyWorkspace(), count = 4, shared = false) {
-  return createBatch(
+  const batch = createBatch(
     [
       {
         hash: 'a'.repeat(64),
@@ -38,6 +38,9 @@ function fixtures(w = emptyWorkspace(), count = 4, shared = false) {
     ],
     w,
   );
+  // This fixture explicitly identifies one cross-listed physical item; names/SKUs alone do not merge it.
+  if (shared) batch.rows[1].matches[0].newItem = structuredClone(batch.rows[0].matches[0].newItem);
+  return batch;
 }
 async function load(page: Page, w: Workspace, batch: DraftBatch) {
   await page.goto('/demo');
@@ -168,7 +171,7 @@ test('ten new listings receive $5 each from a $50 total, support individual cost
   await dialog.getByRole('button', { name: 'Approve All (9)', exact: true }).click();
   await expect(dialog.getByText(/Saved 9 approved records/)).toBeVisible();
 });
-test('ambiguous inventory is an inline exception and existing recorded costs are protected from batch edits', async ({
+test('similar inventory never blocks a new proposal and existing recorded costs are protected from batch edits', async ({
   page,
 }) => {
   const w = assistantWorkspace(),
@@ -179,8 +182,10 @@ test('ambiguous inventory is an inline exception and existing recorded costs are
   batch.rows[1].facts.marketplace = 'eBay';
   const dialog = await load(page, w, batch),
     cards = dialog.locator('.assistant-compact-card');
-  await expect(cards.first().getByText('Possible existing item', { exact: true })).toBeVisible();
-  await cards.first().getByRole('button', { name: 'Create different item', exact: true }).click();
+  await expect(cards.first().getByText('Possible existing item', { exact: true })).toHaveCount(0);
+  await expect(
+    cards.first().getByRole('button', { name: 'Create different item', exact: true }),
+  ).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Batch Cost', exact: true }).click();
   await dialog.getByLabel('Cost per item ($)').fill('0');
   await dialog.getByRole('button', { name: 'Apply cost', exact: true }).click();

@@ -1,6 +1,7 @@
 import type { FinancialEvent, Order, Workspace } from './model';
 import { allocate, orderTotals } from './money';
 import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
+import { correctedCostBasis } from './cost-basis';
 export type Posting = {
   id: string;
   date: string;
@@ -34,6 +35,7 @@ export function itemIsSold(w: Workspace, itemId: string, exceptOrderId?: string)
   );
 }
 function eventPostings(
+  w: Workspace,
   event: FinancialEvent,
   orders: ReadonlyMap<string, Order>,
   events: ReadonlyMap<string, FinancialEvent>,
@@ -65,7 +67,14 @@ function eventPostings(
     marketplace: order.marketplace,
     itemId: line.itemId,
     revenue: sign * revenue[i],
-    cogs: line.itemId !== null && base.itemIds.includes(line.itemId) ? -sign * line.costBasis : 0,
+    cogs:
+      base.kind === 'Cost basis adjustment'
+        ? order.status === 'Completed' && line.itemId === base.costItemId
+          ? sign * base.amount
+          : 0
+        : line.itemId !== null && base.itemIds.includes(line.itemId)
+          ? -sign * correctedCostBasis(w, order, line.itemId)
+          : 0,
     fees: sign * fees[i],
     direct: sign * (direct[i] + fees[i]),
     gross: 0,
@@ -107,7 +116,7 @@ export function orderPostings(w: Workspace, from = 0, to = Infinity): Posting[] 
   }
   for (const event of w.financialEvents)
     if (Date.parse(event.date) >= from && Date.parse(event.date) <= to)
-      result.push(...eventPostings(event, orders, events));
+      result.push(...eventPostings(w, event, orders, events));
   return result;
 }
 /** Build the ledger once when rendering a list, rather than once per cell/order. */

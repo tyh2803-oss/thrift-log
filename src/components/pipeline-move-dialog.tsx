@@ -239,7 +239,16 @@ export function PipelineMoveDialog({
       wide
     >
       <div className="editor-form pipeline-move-review">
-        <strong>{rows.length} physical items selected</strong>
+        <div className="pipeline-top-actions">
+          <strong>{rows.length} physical items selected</strong>
+          <Button
+            aria-label="Save status changes at top"
+            disabled={saving || !rows.length || (consequential && !confirmed)}
+            onClick={() => void save()}
+          >
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+        </div>
         <div className="form-grid">
           <label className="field">
             <span>Move to</span>
@@ -274,7 +283,12 @@ export function PipelineMoveDialog({
             />
           </label>
         </div>
-        {['sold', 'shipped', 'for-sale'].includes(destination) && (
+        {rows.some((row) => {
+          const entry = snapshot.entries.find((e) => e.item.id === row.itemId);
+          return ['sold', 'shipped'].includes(destination)
+            ? !entry?.order
+            : destination === 'for-sale' && entry?.stage !== 'for-sale';
+        }) && (
           <div className="pipeline-shared-defaults">
             <label className="field">
               <span>Shared marketplace</span>

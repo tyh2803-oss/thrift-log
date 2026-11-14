@@ -61,7 +61,7 @@ it('prepares known identity and actual sale price but never copies listing dates
   ).rejects.toThrow();
   expect(w.orders).toHaveLength(0);
 });
-it('requires a real user choice for equally plausible pieces and preserves an explicit zero separately from unknown', async () => {
+it('offers identity choices without a match gate and preserves explicit zero separately from unknown', async () => {
   const w = businessWorkspace();
   w.items.push({
     ...w.items[0],
@@ -76,9 +76,8 @@ it('requires a real user choice for equally plausible pieces and preserves an ex
     ambiguous: boolean;
   };
   expect(result.ambiguous).toBe(true);
-  await expect(
-    tools.execute('prepare_changes', { changes: [saleChange(w.items[0].id)] }),
-  ).rejects.toThrow('choose');
+  await tools.execute('prepare_changes', { changes: [saleChange(w.items[0].id)] });
+  expect(tools.drafts.batch?.rows).toHaveLength(1);
   const chosen = createBusinessTools(
     w,
     emptyDrafts,
@@ -277,6 +276,9 @@ it('reuses private file imports, preserves mixed-document source indexes, alloca
   expect(tools.drafts.batch!.rows.map((r) => r.recordIndex)).toEqual([1, 2, 3, 4]);
   expect(tools.drafts.historyBatch!.rows.map((r) => r.recordIndex)).toEqual([0]);
   expect(tools.drafts.batch!.screenshots[0].extraction.records).toHaveLength(5);
+  tools.drafts.batch!.rows[2].matches[0].newItem = structuredClone(
+    tools.drafts.batch!.rows[0].matches[0].newItem,
+  ); // User links the cross-listing.
   const beforeIds = tools.drafts.batch!.rows.map((r) => r.id);
   await tools.execute('prepare_file_import', {
     fileIds: [fileId],

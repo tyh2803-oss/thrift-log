@@ -146,7 +146,10 @@ test('exception review submits owned physical matches and an explicit net-refund
   ];
   await page.reload();
   await region.getByRole('button', { name: 'Review 1 Whatnot updates', exact: true }).click();
-  await region.getByText('Order 123456', { exact: true }).click();
+  await region
+    .locator('summary')
+    .filter({ hasText: /^Order 123456$/ })
+    .click();
   await region
     .getByRole('combobox', { name: 'Physical item · 9123456:0', exact: true })
     .selectOption(item);
@@ -193,4 +196,66 @@ test('shows setup and provider-estimate states honestly without changing private
   await expect(dialog.locator('.metric').filter({ hasText: 'Realized profit' })).toContainText(
     '$0.00',
   );
+});
+
+test('bulk Whatnot review splits exact cents across new physical items and retains a real accounting exception for retry', async ({
+  page,
+}) => {
+  status = { ready: true, connected: true, status: 'synced', pending: 3, hasMore: false };
+  records = ['100001', '100002', '100003'].map((id) => ({
+    kind: 'order',
+    external_id: id,
+    hash: id.repeat(11).slice(0, 64),
+    state: 'review',
+    issue: 'Possible existing inventory.',
+    local_id: null,
+    payload: { source: whatnotSource(id, null), adopted: false },
+  }));
+  const submitted: {
+    id: string;
+    resolution: { units: Record<string, { itemId: string; cost: number }> };
+  }[][] = [];
+  await page.route('**/api/integrations/whatnot', async (route) => {
+    if (
+      route.request().method() !== 'POST' ||
+      route.request().postDataJSON().action !== 'review_batch'
+    )
+      return route.fallback();
+    const entries = route.request().postDataJSON().entries;
+    submitted.push(entries);
+    records = records.filter((r) => r.external_id === '100003');
+    status = { ...status, pending: 1 };
+    return route.fulfill({
+      json: {
+        busy: false,
+        changed: false,
+        applied: ['100001', '100002'],
+        unresolved: [{ id: '100003', issue: 'Order totals do not reconcile.' }],
+      },
+    });
+  });
+  await page.goto('/settings');
+  const region = page.getByRole('region', { name: 'Whatnot connection', exact: true });
+  await region.getByRole('button', { name: 'Review 3 Whatnot updates', exact: true }).click();
+  const toolbar = region.getByRole('region', { name: 'Whatnot bulk review' });
+  await toolbar.getByRole('button', { name: 'Select all orders (3)', exact: true }).click();
+  await toolbar.getByText('Bulk purchase costs for new items', { exact: true }).click();
+  await toolbar.getByLabel('Cost mode').selectOption('split');
+  await toolbar.getByLabel('Total purchase cost ($)', { exact: true }).fill('5');
+  await expect(toolbar.getByText(/3 new physical items included/)).toBeVisible();
+  expect(await toolbar.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+  await toolbar.getByRole('button', { name: 'Apply costs & import', exact: true }).click();
+  await expect(toolbar.getByText('1 selected', { exact: true })).toBeVisible();
+  await expect(
+    toolbar.getByText('Order 100003: Order totals do not reconcile.', { exact: true }),
+  ).toBeVisible();
+  expect(submitted).toHaveLength(1);
+  expect(submitted[0].map((e) => Object.values(e.resolution.units)[0])).toEqual([
+    { itemId: 'new', cost: 167 },
+    { itemId: 'new', cost: 167 },
+    { itemId: 'new', cost: 166 },
+  ]);
+  await toolbar.getByRole('button', { name: 'Import selected (1)', exact: true }).click();
+  await expect.poll(() => submitted.length).toBe(2);
+  expect(submitted[1].map((e) => e.id)).toEqual(['100003']);
 });

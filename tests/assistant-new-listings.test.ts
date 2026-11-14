@@ -57,33 +57,24 @@ it('auto-selects only a unique exact match; approximate matches still require an
   expect(context.rows[0].matches[0]).toMatchObject({ itemId: w.items[0].id, newItem: null });
 });
 
-it('blocks repeated external listing identities within the same batch even when both new drafts are confirmed', () => {
+it('imports repeated source listing identifiers without a match gate and preserves them in the audit', () => {
   const w = emptyWorkspace(),
     batch = fiveUnknownListings(w);
   batch.rows = batch.rows.map((row) => changeListingCost(w, row, 0, '12'));
-  for (const row of batch.rows) {
-    row.matches[0].newItem!.purchasedAt = '2026-10-01';
-    row.matches[0].newItem!.confirmedDistinct = true;
-  }
+  for (const row of batch.rows) row.matches[0].newItem!.purchasedAt = '2026-10-01';
   batch.rows[1].facts.lines[0].listingId = batch.rows[0].facts.lines[0].listingId;
-  const previews = previewBatch(w, batch);
-  expect(previews[0].ready).toBe(false);
-  expect(previews[1].ready).toBe(false);
-  expect(previews[1].issues.join(' ')).toContain('Conflicting duplicate identifiers');
-  expect(() =>
-    approvalCommands(
-      w,
-      batch,
-      batch.rows.map((r) => r.id),
-    ),
-  ).toThrow();
+  expect(previewBatch(w, batch).every((p) => p.ready)).toBe(true);
   const saved = approvalCommands(
     w,
     batch,
-    previews.filter((p) => p.ready).map((p) => p.row.id),
+    batch.rows.map((r) => r.id),
   ).reduce(applyCommand, w);
-  expect(saved.items).toHaveLength(3);
-  expect(saved.listings).toHaveLength(3);
+  expect(saved.items).toHaveLength(5);
+  expect(saved.listings).toHaveLength(5);
+  expect(saved.imports).toHaveLength(5);
+  expect(JSON.parse(saved.imports[1].rawCsv).corrected.lines[0].listingId).toBe(
+    batch.rows[0].facts.lines[0].listingId,
+  );
 });
 
 it('upgrades older pending cards without losing cost entries or explicit matches', () => {
@@ -99,4 +90,18 @@ it('upgrades older pending cards without losing cost entries or explicit matches
   expect(upgraded.rows.slice(1)).toEqual(batch.rows.slice(1));
   batch.context = { itemId: crypto.randomUUID() };
   expect(sanitizeBatch(batch).rows[0].matches[0].newItem).toBeNull();
+});
+
+it('matching warnings are optional while duplicate-fee and other financial inconsistencies remain blocking', async () => {
+  const { blockingWarnings, matchingNotice } = await import('../src/lib/assistant/warnings');
+  expect(matchingNotice('Possible existing inventory: select a physical item.')).toBe(true);
+  expect(matchingNotice('Duplicate seller fee amount does not match the order total.')).toBe(false);
+  const record = fiveUnknownListings(emptyWorkspace()).rows[0].facts;
+  record.warnings = [
+    'Possible existing inventory.',
+    'Duplicate seller fee amount does not match the order total.',
+  ];
+  expect(blockingWarnings(record)).toEqual([
+    'Duplicate seller fee amount does not match the order total.',
+  ]);
 });

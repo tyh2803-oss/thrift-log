@@ -137,19 +137,22 @@ it('matches exact inventory, preserves recorded costs, and blocks ID manipulatio
   batch.rows[0].matches[0].itemId = crypto.randomUUID();
   expect(() => historyCommands(w, batch, [batch.rows[0].id])).toThrow('unavailable');
 });
-it('allows order-ID-free legacy SKU imports with stable duplicate detection after reordering and a later import day', () => {
+it('imports all ID-free legacy rows including identical and deliberately reimported rows', () => {
   const w = assistantWorkspace(),
     row = { sku: 'JACKET-1', price: '45', marketplace: 'Vinted' };
   const mapping = Object.fromEntries(Object.keys(row).map((c) => [c, c]));
   const plan = planImport('Sales', [row, row], mapping, w);
   expect(plan.errors).toEqual([]);
-  expect(plan.commands).toHaveLength(1);
-  expect(plan.duplicates).toBe(1);
+  expect(plan.commands.filter((c) => c.type === 'order')).toHaveLength(2);
+  expect(plan.duplicates).toBe(0);
   const saved = plan.commands.reduce(applyCommand, w);
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-12-01'));
   try {
-    expect(planImport('Sales', [row], mapping, saved).duplicates).toBe(1);
+    const reimport = planImport('Sales', [row], mapping, saved);
+    expect(reimport.duplicates).toBe(0);
+    expect(reimport.commands.filter((c) => c.type === 'order')).toHaveLength(1);
+    expect(reimport.commands.reduce(applyCommand, saved).orders).toHaveLength(3);
   } finally {
     vi.useRealTimers();
   }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { extractedRecordSchema, screenshotSchema, type Screenshot } from './schema';
 import { listingEvidenceIssue } from './vision';
 import { matchInventory } from './matching';
+import { itemIsSold } from '../ledger';
 import { type Item, type Workspace } from '../model';
 import { localDay } from '../dates';
 const newItemSchema = z.object({
@@ -86,7 +87,7 @@ export function createBatch(
   const unique = screenshots.filter(
     (s, i) => screenshots.findIndex((v) => v.hash === s.hash) === i,
   );
-  const physicalDrafts = new Map<string, ReturnType<typeof newInventoryDraft>>();
+  const claimedSaleIds = new Set<string>();
   const single = unique.reduce((n, s) => n + s.extraction.records.length, 0) === 1;
   return {
     context,
@@ -94,7 +95,7 @@ export function createBatch(
     id: crypto.randomUUID(),
     revision: w.revision,
     screenshots: unique,
-    rows: unique.flatMap((s) =>
+    rows: screenshots.flatMap((s) =>
       s.extraction.records
         .map((record, recordIndex) => ({
           id: crypto.randomUUID(),
@@ -114,19 +115,30 @@ export function createBatch(
                 confirmZeroCost: false,
               };
             const candidates = matchInventory(w, record, line);
-            const exact = candidates.filter((c) => c.exact);
-            const key =
-              line.sku?.trim().toLowerCase() ||
-              (line.listingId || line.externalProductId || line.url
-                ? `${record.marketplace}:${line.listingId || line.externalProductId || line.url}`
-                : '');
-            let proposal =
-              !exact.length && record.kind === 'listing' && record.status === 'active'
-                ? newInventoryDraft(line.sku, null, w.settings.timezone)
+            const exact = candidates.filter(
+              (c) =>
+                c.exact &&
+                !claimedSaleIds.has(c.item.id) &&
+                !itemIsSold(w, c.item.id) &&
+                (record.kind !== 'sale' ||
+                  !record.date ||
+                  Date.parse(c.item.purchasedAt) <= Date.parse(record.date)),
+            );
+            if (record.kind === 'sale' && exact.length === 1) claimedSaleIds.add(exact[0].item.id);
+            const proposal =
+              !exact.length &&
+              ((record.kind === 'listing' && record.status === 'active') || record.kind === 'sale')
+                ? newInventoryDraft(
+                    w.items.some((item) => item.sku.toLowerCase() === line.sku?.toLowerCase())
+                      ? null
+                      : line.sku,
+                    line.purchaseCost ?? null,
+                    record.kind === 'listing' ? w.settings.timezone : undefined,
+                  )
                 : null;
-            if (proposal && key) {
-              proposal = structuredClone(physicalDrafts.get(key) || proposal);
-              physicalDrafts.set(key, proposal);
+            if (proposal && record.kind === 'sale') {
+              proposal.purchasedAt = record.date || '';
+              proposal.assumedAcquisitionDate = true;
             }
             return {
               itemId: exact.length === 1 ? exact[0].item.id : null,

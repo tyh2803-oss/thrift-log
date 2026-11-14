@@ -13,6 +13,7 @@ import {
 import { seal, webhookKey } from '@/lib/integrations/whatnot/crypto';
 import { connectionStatus, whatnotRpc, readRecords } from '@/lib/integrations/whatnot/store';
 import { runSync, backgroundSync } from '@/lib/integrations/whatnot/sync';
+import { reviewEntriesSchema, reviewWhatnotOrders } from '@/lib/integrations/whatnot/review';
 import { json, failure, body, publicStatusError } from '@/lib/integrations/whatnot/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
       status = await connectionStatus(user.id);
     const records =
       new URL(request.url).searchParams.get('review') === '1' && status.connected
-        ? await readRecords(user.id, { state: 'review', limit: 50 })
+        ? await readRecords(user.id, { state: 'review', limit: 200 })
         : undefined;
     return json({
       ...status,
@@ -43,6 +44,7 @@ const input = z.discriminatedUnion('action', [
   z.object({ action: z.literal('disconnect') }),
   z.object({ action: z.literal('sync'), automatic: z.boolean().optional() }),
   z.object({ action: z.literal('webhook'), secret: z.string().min(1).max(1000) }),
+  z.object({ action: z.literal('review_batch'), entries: reviewEntriesSchema }),
   z.object({
     action: z.literal('resolve'),
     kind: z.enum(['order', 'transaction']),
@@ -55,6 +57,11 @@ export async function POST(request: Request) {
     checkOrigin(request);
     const user = await requireUser(request);
     const data = input.parse(await body(request, 120000));
+    if (data.action === 'review_batch')
+      return json({
+        ...(await reviewWhatnotOrders(user.id, data.entries)),
+        status: await connectionStatus(user.id),
+      });
     if (data.action === 'connect') {
       if (data.webhookSecret) validateWebhookSecret(data.webhookSecret);
       const client = new WhatnotClient(data.token),

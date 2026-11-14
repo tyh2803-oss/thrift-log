@@ -6,7 +6,6 @@ import type { DraftRow } from '@/lib/assistant/drafts';
 import type { Screenshot } from '@/lib/assistant/schema';
 import type { Workspace } from '@/lib/model';
 import { changeListingCost, listingAmount, listingPotential } from '@/lib/assistant/listing-review';
-import { plausibleInventoryMatches } from '@/lib/assistant/matching';
 import { money } from '@/lib/money';
 import { ClothingPreview } from './assistant-clothing';
 import { ListingFields } from './assistant-listing-fields';
@@ -16,14 +15,10 @@ import { Button } from './ui/button';
 /** One short next action, with the full diagnostic context available only on demand. */
 export function listingNextAction(issues: string[]) {
   const issue = issues[0] || '';
-  if (/Possible existing item/.test(issue))
-    return 'Possible existing item — choose a match or create a different item.';
   if (/purchase cost is unknown/.test(issue)) return 'Enter purchase cost, or 0 if free.';
   if (/acquisition cannot/.test(issue))
     return 'Set acquisition date on or before the original listing date.';
   if (/acquisition date/.test(issue)) return 'Choose a valid acquisition date.';
-  if (/already|duplicate|more than once|Another included/.test(issue))
-    return 'Possible duplicate — choose existing inventory or discard this proposal.';
   return issue.replace(/^Line \d+: /, '');
 }
 
@@ -78,11 +73,6 @@ export function CompactListing({
           const costError = listingAmount(raw).error;
           const locked =
             !!item && item.cost > 0 && !match.costCorrection && match.costOverride == null;
-          const candidates = match?.newItem
-            ? plausibleInventoryMatches(w, row.facts, line).filter(
-                (c) => !c.exact && !match.dismissedCandidateIds?.includes(c.item.id),
-              )
-            : [];
           return (
             <div className="compact-listing-line" key={i}>
               <div className="compact-listing-heading">
@@ -141,59 +131,6 @@ export function CompactListing({
                   </small>
                 </div>
               </div>
-              {!!candidates.length && (
-                <div className="compact-match-exception">
-                  <strong>Possible existing item</strong>
-                  <div className="actions">
-                    {candidates.map((candidate) => (
-                      <Button
-                        key={candidate.item.id}
-                        size="sm"
-                        variant="outline"
-                        data-review-missing="true"
-                        disabled={busy}
-                        onClick={() =>
-                          onChange({
-                            ...row,
-                            matches: row.matches.map((m, j) =>
-                              j === i
-                                ? {
-                                    ...m,
-                                    itemId: candidate.item.id,
-                                    newItem: null,
-                                    costInput: undefined,
-                                    costOverride: undefined,
-                                    costCorrection: false,
-                                    purchaseCost: undefined,
-                                  }
-                                : m,
-                            ),
-                          })
-                        }
-                      >
-                        Use {candidate.item.sku}
-                      </Button>
-                    ))}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() =>
-                        onChange({
-                          ...row,
-                          matches: row.matches.map((m, j) =>
-                            j === i
-                              ? { ...m, dismissedCandidateIds: candidates.map((c) => c.item.id) }
-                              : m,
-                          ),
-                        })
-                      }
-                    >
-                      Create different item
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}

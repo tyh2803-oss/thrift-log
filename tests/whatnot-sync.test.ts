@@ -199,3 +199,34 @@ it('stages wrong-seller reports without importing their contents or leaking thei
   expect([...records.values()].filter((r) => r.kind === 'transaction')).toHaveLength(0);
   expect(JSON.stringify([...records.values()])).not.toContain('PRIVATE_SIGNED_URL');
 });
+
+it('automatically retries matching-only holds without manual decisions and leaves actual total conflicts for correction', async () => {
+  checkpoint = { phase: 'done' };
+  for (const [index, id] of ['222221', '222222', '222223'].entries()) {
+    const source = whatnotSource(id, null);
+    if (index === 2) source.order.amounts.total.amount = '999';
+    records.set('order:' + id, {
+      kind: 'order',
+      external_id: id,
+      hash: 'a'.repeat(64),
+      state: 'review',
+      issue:
+        index === 2
+          ? 'Order totals do not reconcile.'
+          : 'Possible existing inventory: select a physical item or explicitly create a new one.',
+      local_id: null,
+      payload: { source, adopted: false },
+    });
+  }
+  const result = await runSync(actor, true);
+  expect(result.changed).toBe(true);
+  expect(w.orders).toHaveLength(2);
+  expect(w.items).toHaveLength(2);
+  expect(records.get('order:222221')!.state).toBe('applied');
+  expect(records.get('order:222222')!.state).toBe('applied');
+  expect(records.get('order:222223')!.state).toBe('review');
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(0);
+  const saved = structuredClone(w);
+  await runSync(actor, true);
+  expect(w).toEqual(saved);
+});

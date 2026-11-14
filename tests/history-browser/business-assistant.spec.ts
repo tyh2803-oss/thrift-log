@@ -259,6 +259,12 @@ test('mobile clarification choices send the selected physical item and clearing 
     exact: true,
   });
   await expect(choice).toBeVisible();
+  const replyPanel = dialog.getByRole('region', { name: 'Suggested replies', exact: true });
+  await expect(replyPanel).toBeInViewport();
+  expect(await replyPanel.evaluate((el) => !!el.closest('[role=log]'))).toBe(false);
+  expect(
+    await replyPanel.evaluate((el) => parseFloat(getComputedStyle(el).borderTopWidth)),
+  ).toBeGreaterThanOrEqual(2);
   expect((await choice.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await choice.click();
   await expect(

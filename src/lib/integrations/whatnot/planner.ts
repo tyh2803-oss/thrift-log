@@ -11,8 +11,6 @@ import { applyCommand } from '@/lib/commands';
 import { lineFulfillment } from '@/lib/fulfillment-state';
 import { itemIsSold, currentOrderTotals } from '@/lib/ledger';
 import { confirmedFreeInventory } from '@/lib/assistant/listing-review';
-import { plausibleInventoryMatches } from '@/lib/assistant/matching';
-import type { ExtractedLine, ExtractedRecord } from '@/lib/assistant/schema';
 import { stableId, payloadHash } from './crypto';
 import { parseMoney } from '@/lib/money';
 import type { LedgerTransaction } from './reports';
@@ -394,10 +392,6 @@ export class WhatnotPlan {
             if (!decision) {
               const available = exact.filter((i) => !itemIsSold(this.w, i.id) && !used.has(i.id));
               if (available.length === 1) item = available[0];
-              else if (exact.length)
-                throw new Error(
-                  'Choose the correct physical item: this Whatnot identifier is ambiguous, already sold or repeated.',
-                );
             }
             const title = u.item.purchased_item?.title || item?.title;
             if (!title)
@@ -438,32 +432,9 @@ export class WhatnotPlan {
                 this.put({ type: 'item', value: item });
               }
             } else {
-              if (!decision) {
-                const line = {
-                  title,
-                  brand: null,
-                  size: null,
-                  color: null,
-                  category: null,
-                  condition: null,
-                  description: null,
-                  sku: u.item.purchased_item?.sku || null,
-                  externalProductId: null,
-                  listingId: null,
-                  url: null,
-                  price: u.price,
-                } satisfies ExtractedLine;
-                if (
-                  plausibleInventoryMatches(
-                    this.w,
-                    { marketplace: 'Whatnot' } as ExtractedRecord,
-                    line,
-                  ).some((c) => !used.has(c.item.id))
-                )
-                  throw new Error(
-                    'Possible existing inventory: select a physical item or explicitly create a new one.',
-                  );
-              }
+              // Titles and seller SKUs can repeat across genuinely separate auction pieces.
+              // Only a unique available exact match is reused. Otherwise the provider's
+              // stable order + physical-unit identity defines a new item; retries reuse it.
               cost = supplied;
               const id = stableId(this.userId, this.sellerId, 'unit', api.id, u.key);
               if (this.w.items.some((i) => i.id === id))

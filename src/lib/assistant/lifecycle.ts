@@ -244,38 +244,14 @@ export function lifecyclePreview(w: Workspace, row: DraftRow, date: string | nul
       if (!physical && (r.refund === null || r.refund <= 0))
         throw new Error('Enter the verified refund amount.');
       const amount = physical ? 0 : r.refund!;
-      const duplicate = w.financialEvents.some(
-        (e) =>
-          e.orderId === order.id &&
-          e.kind === (physical ? 'Return' : 'Refund') &&
-          (event?.externalEventId
-            ? e.externalId === event.externalEventId ||
-              (physical && e.externalId === `${event.externalEventId}:physical`)
-            : e.date.slice(0, 10) === date.slice(0, 10) &&
-              e.amount === amount &&
-              (!physical || selected.some((id) => e.itemIds.includes(id)))),
-      );
-      if (duplicate)
-        throw new Error(
-          'This adjustment appears to be recorded. Reconcile the original ledger event.',
-        );
+      const approvedExternalId = (source: string) =>
+        w.financialEvents.some((e) => e.orderId === order.id && e.externalId === source)
+          ? `${source}:approved:${row.id}`
+          : source;
       if (physical && row.applyRefund) {
         if (r.currency !== 'USD' || r.refund === null || r.refund <= 0)
           throw new Error(
             'Confirm the completed refund amount in USD before including it with this return.',
-          );
-        if (
-          w.financialEvents.some(
-            (e) =>
-              e.orderId === order.id &&
-              e.kind === 'Refund' &&
-              (event?.externalEventId
-                ? e.externalId === event.externalEventId
-                : e.date.slice(0, 10) === date.slice(0, 10) && e.amount === r.refund),
-          )
-        )
-          throw new Error(
-            'This refund appears to be recorded. Leave it out and approve only the physical return.',
           );
         const refundId = row.id.slice(0, -1) + (parseInt(row.id.slice(-1), 16) ^ 1).toString(16);
         commands.push({
@@ -287,8 +263,7 @@ export function lifecyclePreview(w: Workspace, row: DraftRow, date: string | nul
             kind: 'Refund',
             amount: r.refund,
             itemIds: [],
-            externalId:
-              event?.externalEventId || `assistant:refund:${order.id}:${date}:${r.refund}`,
+            externalId: approvedExternalId(event?.externalEventId || `assistant:refund:${row.id}`),
             reason: 'Verified refund explicitly included with approved physical return.',
             reversesId: null,
             category: 'Other',
@@ -304,11 +279,13 @@ export function lifecyclePreview(w: Workspace, row: DraftRow, date: string | nul
           kind: physical ? 'Return' : 'Refund',
           amount,
           itemIds: physical ? selected : [],
-          externalId: event?.externalEventId
-            ? physical
-              ? `${event.externalEventId}:physical`
-              : event.externalEventId
-            : `assistant:${r.kind}:${order.id}:${date}:${amount}`,
+          externalId: approvedExternalId(
+            event?.externalEventId
+              ? physical
+                ? `${event.externalEventId}:physical`
+                : event.externalEventId
+              : `assistant:${r.kind}:${row.id}`,
+          ),
           reason: 'Approved screenshot event; original sale preserved.',
           reversesId: null,
           category: 'Other',

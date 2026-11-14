@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { correctedCostBasis } from '../cost-basis';
 import { marketplaces, type Workspace, type Item } from '../model';
 import { metrics } from '../finance';
 import { currentOrderTotals, currentLineProfits, itemIsSold } from '../ledger';
@@ -338,7 +339,9 @@ export function createBusinessTools(
         seenItems.add(line.itemId);
         return {
           ...line,
-          costBasis: historyCostUnknown(w, order.id, line.itemId) ? null : line.costBasis,
+          costBasis: historyCostUnknown(w, order.id, line.itemId)
+            ? null
+            : correctedCostBasis(w, order, line.itemId),
           title: w.items.find((i) => i.id === line.itemId)?.title,
           netProfit: perLine.find((p) => p.itemId === line.itemId)?.profitKnown
             ? perLine.find((p) => p.itemId === line.itemId)?.profit
@@ -889,15 +892,6 @@ export function createBusinessTools(
             const item = a.itemId ? ownedItem(a.itemId) : undefined;
             if (item && !seenItems.has(item.id))
               throw new Error('Search or read the owned item before proposing a change.');
-            if (
-              item &&
-              ambiguous.has(item.id) &&
-              selectedItemId !== item.id &&
-              !normalize(transcript).includes(normalize(item.sku))
-            )
-              throw new Error(
-                'Multiple inventory items match. Ask the user to choose; do not guess.',
-              );
             if (['sale', 'listing', 'unlisted', 'archived'].includes(a.action) && !item)
               throw new Error('Choose one existing physical inventory item.');
             if (a.action === 'sale' && itemIsSold(w, item!.id))

@@ -770,29 +770,6 @@ function ReviewRow({
                         />
                       </label>
                     </div>
-                    <label className="check-row">
-                      <input
-                        type="checkbox"
-                        checked={row.matches[i].newItem!.confirmedDistinct}
-                        onChange={(e) =>
-                          onChange({
-                            ...row,
-                            matches: row.matches.map((m, j) =>
-                              j === i
-                                ? {
-                                    ...m,
-                                    newItem: {
-                                      ...m.newItem!,
-                                      confirmedDistinct: e.target.checked,
-                                    },
-                                  }
-                                : m,
-                            ),
-                          })
-                        }
-                      />
-                      I checked inventory and confirm this is a new physical item.
-                    </label>
                   </div>
                 )}
                 {selected && !contextItemId && r.kind !== 'listing' && (

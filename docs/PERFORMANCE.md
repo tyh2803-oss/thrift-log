@@ -2,6 +2,12 @@
 
 Thrift Log keeps each authenticated workspace in a shared App Router layout. Switching Home, Inventory, Sales, Activity, Insights and Settings reuses that in-memory snapshot instead of downloading and parsing every business record again. The public demo has a separate layout and browser-only data. No private business-data cache is added to localStorage, IndexedDB or the service worker.
 
+## Immediate tab presentation — November 14
+
+The remaining visible delay was waiting for a dynamic route response: verified Auth and beta-access calls still finish before Next commits the new route. Tab clicks now paint the requested screen from the already-loaded, current user's workspace immediately, while the normal Next Link navigation proceeds. The server still checks live authorization and can redirect to login; all private reads, saves and photos independently verify access. There is no new authorization cache, prefetch of another user's data, History replacement or service-worker data cache. Back, drilldown filters, modified/new-tab clicks and account changes keep their existing behavior.
+
+An explicit regression holds the entire server navigation response, verifies the requested Inventory view appears within a one-second assertion window before that response is released, then verifies server Auth/beta checks and correct Back behavior. This separates local screen response from network confirmation; it is not a production-latency guarantee. Fresh loading, saves and cross-device refresh still wait for the server.
+
 ## What became faster
 
 - Workspace and browser-support providers persist between tabs. Whatnot's synchronization controller also mounts once per workspace; its status notice stays in the existing interface. Navigation no longer restarts initial workspace loading or connection-status requests.

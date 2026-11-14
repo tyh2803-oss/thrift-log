@@ -246,13 +246,13 @@ it('creates only unmatched physical units with durable unknown-cost/date proofs 
   expect(metrics(free.w).unknownCosts).toBe(0);
   expect(JSON.parse(free.w.imports[0].rawCsv).knownZeroItemIds).toHaveLength(1);
 });
-it('queues similar/ambiguous inventory, resolves owned selections, and rejects foreign IDs without partial items or sales', () => {
+it('imports similar inventory without a match gate, allows optional owned links and rejects foreign IDs', () => {
   const source = whatnotSource('123456', null),
     initial = assistantWorkspace();
   const plan = new WhatnotPlan(actor, sellerId, initial);
   plan.order(source);
-  expect(plan.w).toEqual(initial);
-  expect(plan.record('order', '123456')?.state).toBe('review');
+  expect(plan.w.items).toHaveLength(2);
+  expect(plan.record('order', '123456')?.state).toBe('applied');
   const row = plan.record('order', '123456')!;
   row.resolution = { units: { '9123456:0': { itemId: initial.items[0].id } } };
   const next = new WhatnotPlan(actor, sellerId, initial, [row]);

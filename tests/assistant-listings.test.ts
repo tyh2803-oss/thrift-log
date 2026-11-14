@@ -44,19 +44,17 @@ describe('listing imports share physical inventory', () => {
     expect(next.listings).toHaveLength(3);
     expect(metrics(next).inventoryCost).toBe(1200);
   });
-  it('detects identical listing screens, conflicting external IDs and unknown dates', () => {
+  it('accepts repeated listing screens and source IDs while keeping dates and stored identities correct', () => {
     expect(
       previewBatch(
         assistantWorkspace(),
         makeBatch(listing({ lines: [extractedLine({ listingId: 'listing-1', price: 4500 })] })),
       )[0],
-    ).toMatchObject({ ready: false, duplicateKind: 'listing' });
+    ).toMatchObject({ ready: true, duplicateKind: null });
     const b = makeBatch(
       listing({ lines: [extractedLine({ sku: 'JACKET-1', listingId: 'different-id' })] }),
     );
-    expect(previewBatch(assistantWorkspace(), b)[0].issues.join(' ')).toContain(
-      'different external ID',
-    );
+    expect(previewBatch(assistantWorkspace(), b)[0].ready).toBe(true);
     const update = makeBatch(listing({ date: null }));
     expect(previewBatch(assistantWorkspace(), update)[0].ready).toBe(true);
     const add = makeBatch(
@@ -72,7 +70,7 @@ describe('listing imports share physical inventory', () => {
     );
     expect(planned?.value).toHaveProperty('listedAt');
   });
-  it('requires known acquisition cost, date and explicit new-physical-item confirmation', () => {
+  it('requires a known acquisition cost and valid date without a duplicate-confirmation checkbox', () => {
     const w = assistantWorkspace(),
       b = makeBatch(
         listing({
@@ -115,7 +113,7 @@ describe('listing imports share physical inventory', () => {
     expect(next.items[1].condition).toBe('');
     expect(next.items[1].source).toBe('');
   });
-  it('never creates inventory when an exact identifier already points to an item', () => {
+  it('allows an explicitly chosen new physical item when a source identifier repeats', () => {
     const w = assistantWorkspace(),
       b = makeBatch();
     b.rows[0].matches[0] = {
@@ -129,11 +127,12 @@ describe('listing imports share physical inventory', () => {
         confirmedDistinct: true,
       },
     };
-    expect(previewBatch(w, b)[0].issues.join(' ')).toContain(
-      'exact inventory identifier already exists',
-    );
+    expect(previewBatch(w, b)[0].ready).toBe(true);
+    const saved = approvalCommands(w, b, [b.rows[0].id]).reduce(applyCommand, w);
+    expect(saved.items).toHaveLength(2);
+    expect(saved.listings[0]).toEqual(w.listings[0]);
   });
-  it('prevents duplicate new SKUs and preserves unknown zero-cost inventory', () => {
+  it('keeps repeated source SKUs with new internal identifiers and preserves unknown zero cost', () => {
     const w = assistantWorkspace(),
       b = makeBatch(listing({ lines: [extractedLine({ title: 'Boots', listingId: 'boots-1' })] }));
     b.rows[0].matches[0] = {
@@ -147,7 +146,9 @@ describe('listing imports share physical inventory', () => {
         confirmedDistinct: true,
       },
     };
-    expect(previewBatch(w, b)[0].ready).toBe(false);
+    expect(previewBatch(w, b)[0].ready).toBe(true);
+    const saved = approvalCommands(w, b, [b.rows[0].id]).reduce(applyCommand, w);
+    expect(new Set(saved.items.map((i) => i.sku)).size).toBe(2);
     w.items[0].cost = 0;
     const zero = makeBatch(undefined, w);
     zero.rows[0].matches[0].costOverride = null;

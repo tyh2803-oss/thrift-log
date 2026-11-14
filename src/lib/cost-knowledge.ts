@@ -1,10 +1,13 @@
 import type { Workspace } from './model';
 import { confirmedFreeInventory } from './assistant/listing-review';
+import { hasCostConfirmation } from './cost-basis';
 const costCache = new WeakMap<
   Workspace,
   {
     imports: Workspace['imports'];
     orders: Workspace['orders'];
+    financialEvents: Workspace['financialEvents'];
+    eventCount: number;
     importCount: number;
     orderCount: number;
     value: Map<string, Set<string>>;
@@ -19,6 +22,8 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
     cached &&
     cached.imports === w.imports &&
     cached.orders === w.orders &&
+    cached.financialEvents === w.financialEvents &&
+    cached.eventCount === w.financialEvents.length &&
     cached.importCount === w.imports.length &&
     cached.orderCount === w.orders.length
   )
@@ -37,8 +42,10 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
         result.set(
           order.id,
           new Set(
-            (audit.unknownCostItemIds || []).filter((id: string) =>
-              order.lines.some((l) => l.itemId === id && l.costBasis === 0),
+            (audit.unknownCostItemIds || []).filter(
+              (id: string) =>
+                order.lines.some((l) => l.itemId === id && l.costBasis === 0) &&
+                !hasCostConfirmation(w, order.id, id),
             ),
           ),
         );
@@ -49,6 +56,8 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
   costCache.set(w, {
     imports: w.imports,
     orders: w.orders,
+    financialEvents: w.financialEvents,
+    eventCount: w.financialEvents.length,
     importCount: w.imports.length,
     orderCount: w.orders.length,
     value: result,

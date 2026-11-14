@@ -14,6 +14,8 @@ import { money, parseMoney } from '@/lib/money';
 import type { LedgerTransaction } from '@/lib/integrations/whatnot/reports';
 import { Button } from './ui/button';
 import { Badge } from './shared';
+import { WhatnotBatchReview } from './whatnot-batch-review';
+import type { ReviewEntries } from '@/lib/integrations/whatnot/review';
 export function WhatnotConnection() {
   const { demo, requestHeaders, refresh, notify } = useWorkspace();
   const [status, setStatus] = useState<ConnectionStatus | null>(null),
@@ -95,6 +97,47 @@ export function WhatnotConnection() {
       lock.current = false;
       setBusy(false);
     }
+  }
+  async function reviewOrders(entries: ReviewEntries) {
+    if (lock.current || demo) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    const applied: string[] = [],
+      unresolved: { id: string; issue: string }[] = [];
+    try {
+      for (let start = 0; start < entries.length; start += 50) {
+        const response = await fetch('/api/integrations/whatnot', {
+          method: 'POST',
+          headers: { ...requestHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'review_batch',
+            entries: entries.slice(start, start + 50),
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(
+            result.error || 'Import was not confirmed; saved rows are safe to retry.',
+          );
+        if (result.busy)
+          throw new Error('Whatnot is syncing. Wait a moment, then retry the remaining orders.');
+        applied.push(...result.applied);
+        unresolved.push(...result.unresolved);
+        if (result.changed || result.applied?.length) await refresh();
+      }
+      notify(`${applied.length} orders recorded · ${unresolved.length} still need information.`);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Import could not finish. Retry the remaining orders.',
+      );
+    } finally {
+      await load(true).catch(() => {});
+      window.dispatchEvent(new Event('thrift-log.whatnot.changed'));
+      lock.current = false;
+      setBusy(false);
+    }
+    return { applied, unresolved };
   }
   if (demo)
     return (
@@ -338,9 +381,10 @@ export function WhatnotConnection() {
         <div className="whatnot-review">
           <h3>Updates needing review</h3>
           <small>
-            Showing up to 50 updates. Resolved updates leave this queue; other drafts and records
+            Showing up to 200 updates. Resolved updates leave this queue; other drafts and records
             remain.
           </small>
+          <WhatnotBatchReview records={records} busy={busy} onReview={reviewOrders} />
           {records.map((row) => (
             <WhatnotReview
               key={`${row.kind}:${row.external_id}:${row.hash}`}
@@ -413,8 +457,9 @@ function WhatnotReview({
             try {
               const decisions: NonNullable<Resolution['units']> = {};
               for (const unit of units) {
-                const itemId = selections[unit.key];
-                if (!itemId) throw new Error('Choose the physical item for every source unit.');
+                const itemId = selections[unit.key] || (adopted ? '' : 'new');
+                if (!itemId)
+                  throw new Error('Choose the saved physical item for this existing sale.');
                 const raw = costs[unit.key] || '';
                 const cost = raw.trim() ? parseMoney(raw) : null;
                 if (cost !== null && cost < 0)
@@ -440,7 +485,9 @@ function WhatnotReview({
                   onChange={(e) => setSelections({ ...selections, [unit.key]: e.target.value })}
                   disabled={busy}
                 >
-                  <option value="">Choose inventory</option>
+                  <option value="">
+                    {adopted ? 'Choose saved inventory' : 'Import as a new physical item'}
+                  </option>
                   {!adopted && <option value="new">Create a distinct physical item</option>}
                   {w.items.map((i) => (
                     <option key={i.id} value={i.id}>

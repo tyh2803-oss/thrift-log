@@ -5,8 +5,10 @@ import { importDate } from './planner';
 import { itemSchema, orderSchema, type Command, type Workspace } from '../model';
 import { applyCommand } from '../commands';
 import { itemIsSold } from '../ledger';
+import { matchingNotice } from './warnings';
 export function historyWarnings(record: ExtractedRecord) {
   return record.warnings.filter((message) => {
+    if (matchingNotice(message)) return false;
     const optional =
       /purchase|acquisition|shipping|processing|discount|description|brand|size|colo[u]?r|vintage|order.?id|sku/i.test(
         message,

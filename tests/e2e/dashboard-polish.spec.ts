@@ -228,3 +228,26 @@ test('marketplace filters use distinct accessible colors on mobile and desktop i
     await token(page, '--marketplace-whatnot'),
   );
 });
+
+test('home keeps primary finances and pipeline visible while optional planning expands on demand without losing information', async ({
+  page,
+}) => {
+  await page.goto('/demo');
+  await expect(page.locator('.dashboard-metrics .metric')).toHaveCount(2);
+  await expect(page.getByLabel('Time and productivity')).toContainText('Time invested');
+  await expect(page.getByRole('region', { name: 'Inventory Pipeline', exact: true })).toBeVisible();
+  const more = page.locator('details.home-secondary');
+  await expect(more).not.toHaveAttribute('open', '');
+  await expect(
+    page.getByRole('heading', { name: 'Monthly profit goal', exact: true }),
+  ).not.toBeVisible();
+  await more.locator(':scope > summary').click();
+  await expect(
+    page.getByRole('heading', { name: 'Monthly profit goal', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Where your sales happen', exact: true }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('home-simplified.png'), fullPage: true });
+});

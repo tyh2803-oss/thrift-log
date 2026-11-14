@@ -11,6 +11,9 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     trace: 'retain-on-failure',
+    // Browser route mocks must not race a newly installed service worker.
+    // Production's worker is unchanged and never caches private APIs.
+    serviceWorkers: 'block',
     launchOptions: {
       executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || '/usr/bin/chromium',
       args: ['--no-sandbox'],

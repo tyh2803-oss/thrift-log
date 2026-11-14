@@ -16,6 +16,7 @@ import {
 } from './schema';
 import { parseFinancialReport, type LedgerTransaction } from './reports';
 import { WhatnotPlan } from './planner';
+import { matchingNotice } from '@/lib/assistant/warnings';
 const sourceSchema = z.object({
   order: sourceOrderSchema,
   items: z.array(sourceItemSchema).max(500),
@@ -42,9 +43,16 @@ export async function runSync(userId: string, force = false) {
     // Explicit review decisions are handled before the next provider page, using cached,
     // authenticated source facts and the latest tenant workspace. No user-supplied source data.
     const resolved = await readRecords(userId, { state: 'pending', resolved: true, limit: 3 });
-    if (resolved.length) {
-      plan.remember(resolved);
-      for (const record of resolved) {
+    // Previously held similarity-only decisions no longer need human review. Re-run
+    // cached owned source facts under the current planner; financial failures remain held.
+    const held = resolved.length
+      ? []
+      : await readRecords(userId, { kind: 'order', state: 'review', limit: 200 });
+    const matchingHolds = held.filter((row) => matchingNotice(row.issue)).slice(0, 20);
+    const retry = resolved.length ? resolved : matchingHolds;
+    if (retry.length) {
+      plan.remember(retry);
+      for (const record of retry) {
         if (record.kind === 'order') {
           const source = sourceSchema.parse((record.payload as { source: unknown }).source);
           plan.remember(
@@ -280,7 +288,7 @@ export async function runSync(userId: string, force = false) {
       workspace: plan.changed ? plan.w : null,
       records: [...plan.writes.values()],
       checkpoint,
-      more: checkpoint.phase !== 'done',
+      more: checkpoint.phase !== 'done' || matchingHolds.length > 0,
     });
     return {
       busy: false,

@@ -95,6 +95,7 @@ export const financialKinds = [
   'Direct cost adjustment',
   'Return',
   'Reversal',
+  'Cost basis adjustment',
 ] as const;
 export const financialEventSchema = z.object({
   id,
@@ -107,6 +108,7 @@ export const financialEventSchema = z.object({
   externalId: text.default(''),
   reversesId: optionalId,
   category: z.enum(['Shipping', 'Packaging', 'Other']).default('Other'),
+  costItemId: id.nullable().optional(),
 });
 export const payoutSchema = z.object({
   id,

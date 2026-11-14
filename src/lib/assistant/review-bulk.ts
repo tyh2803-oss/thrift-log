@@ -1,60 +1,16 @@
 import type { DraftBatch, DraftRow } from './drafts';
 import type { Workspace } from '../model';
 import { allocate } from '../money';
-import { plausibleInventoryMatches } from './matching';
 import { listingAmount } from './listing-review';
 
-/** Contradictory proposals for the same unique identifier must not dilute a batch cost. */
-export function pendingIdentityConflicts(batch: DraftBatch) {
-  const identifiers = new Map<string, Set<string>>();
-  for (const row of batch.rows) {
-    if (!row.included || row.facts.kind !== 'listing') continue;
-    row.matches.forEach((m, index) => {
-      if (!m.newItem || m.itemId) return;
-      const line = row.facts.lines[index];
-      if (!line) return;
-      const keys = [
-        line.sku?.trim().toLowerCase() ? `sku:${line.sku.trim().toLowerCase()}` : '',
-        ...[line.listingId, line.externalProductId]
-          .filter(Boolean)
-          .map((id) => `${row.facts.marketplace}:id:${id}`),
-      ];
-      if (line.url)
-        try {
-          const url = new URL(line.url);
-          keys.push(
-            `${row.facts.marketplace}:url:${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '')}`,
-          );
-        } catch {
-          /* The planner reports invalid listing URLs. */
-        }
-      for (const key of keys.filter(Boolean)) {
-        const ids = identifiers.get(key) || new Set<string>();
-        ids.add(m.newItem.id);
-        identifiers.set(key, ids);
-      }
-    });
-  }
-  return new Set(
-    [...identifiers.values()].filter((ids) => ids.size > 1).flatMap((ids) => [...ids]),
-  );
-}
-
 export function eligiblePhysicalDrafts(w: Workspace, batch: DraftBatch) {
-  const conflicts = pendingIdentityConflicts(batch);
   const groups = new Map<string, { id: string; title: string; eligible: boolean }>();
   for (const row of batch.rows) {
     if (!row.included || row.facts.kind !== 'listing' || row.facts.status !== 'active') continue;
     row.matches.forEach((match, index) => {
       if (!match.newItem || match.itemId) return;
       const id = match.newItem.id;
-      const safe =
-        !conflicts.has(id) &&
-        !w.items.some((item) => item.id === id) &&
-        !plausibleInventoryMatches(w, row.facts, row.facts.lines[index]).some(
-          (candidate) =>
-            candidate.exact || !match.dismissedCandidateIds?.includes(candidate.item.id),
-        );
+      const safe = !w.items.some((item) => item.id === id);
       const group = groups.get(id);
       groups.set(id, {
         id,
@@ -82,7 +38,7 @@ export function applyBatchCost(
   );
   if (!groups.length)
     throw new Error(
-      'No eligible new physical items selected. Resolve match or duplicate conflicts first.',
+      'Select pending new physical items to allocate purchase costs. Saved inventory costs use the inventory cost editor.',
     );
   const values =
     mode === 'split'

@@ -75,16 +75,6 @@ export function normalizeVision(input: Extraction): Extraction {
           (result.notes ||= []).push(reason);
           continue;
         }
-        const duplicate = rows.some(
-          (r) =>
-            r.kind === 'listing' &&
-            r.marketplace === record.marketplace &&
-            sameProductView(r.lines[0], line),
-        );
-        if (duplicate) {
-          (result.notes ||= []).push('Repeated view of one listing was ignored.');
-          continue;
-        }
         rows.push({
           ...record,
           lines: [line],
@@ -186,31 +176,6 @@ export function listingEvidenceIssue(line: ExtractedLine): string | null {
     ? null
     : 'An unsupported product region was ignored; a title alone is not enough evidence.';
 }
-function sameProductView(a: ExtractedLine, b: ExtractedLine) {
-  if (
-    (a.listingId && a.listingId === b.listingId) ||
-    (a.url && a.url === b.url) ||
-    (a.sku && a.sku === b.sku)
-  )
-    return true;
-  const x = a.clothing?.region,
-    y = b.clothing?.region;
-  if (!x || !y) return false;
-  const area =
-    Math.max(0, Math.min(x.right, y.right) - Math.max(x.left, y.left)) *
-    Math.max(0, Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top));
-  const min = Math.min(
-    (x.right - x.left) * (x.bottom - x.top),
-    (y.right - y.left) * (y.bottom - y.top),
-  );
-  return (
-    min > 0 &&
-    area / min > 0.8 &&
-    a.title?.toLowerCase() === b.title?.toLowerCase() &&
-    a.price === b.price
-  );
-}
-
 export function isEmptyProductLine(line: ExtractedLine) {
   const title = (line.title || '').trim();
   const meaningful =

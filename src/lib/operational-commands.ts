@@ -1,6 +1,7 @@
 import type { Command, Workspace } from './model';
 import { currentOrderTotals, itemIsSold, paidForOrder, returnedItemIds } from './ledger';
 import { allocate } from './money';
+import { correctedCostBasis } from './cost-basis';
 function atLeastSale(date: string, sale: string) {
   if (Date.parse(date) < Date.parse(sale))
     throw new Error('The event cannot occur before its sale.');
@@ -33,13 +34,28 @@ export function applyOperational(
       throw new Error('This adjustment has already been recorded.');
     if (new Set(e.itemIds).size !== e.itemIds.length)
       throw new Error('A physical return may include each item once.');
+    if (e.kind === 'Cost basis adjustment') {
+      if (
+        !e.costItemId ||
+        !order.lines.some((l) => l.itemId === e.costItemId) ||
+        e.itemIds.length ||
+        e.reversesId ||
+        e.date !== order.date
+      )
+        throw new Error(
+          'Purchase cost corrections must identify a sale line and its original sale date.',
+        );
+      if (correctedCostBasis(w, order, e.costItemId) + e.amount < 0)
+        throw new Error('Purchase cost cannot be negative.');
+    } else if (e.costItemId)
+      throw new Error('Only purchase cost corrections may target a cost item.');
     if (e.kind === 'Reversal') {
       const original = w.financialEvents.find(
         (r) => r.id === e.reversesId && r.orderId === e.orderId,
       );
       if (
         !original ||
-        original.kind === 'Reversal' ||
+        ['Reversal', 'Cost basis adjustment'].includes(original.kind) ||
         w.financialEvents.some((r) => r.reversesId === original.id)
       )
         throw new Error('Select an unreversed original event from this order.');
@@ -55,7 +71,11 @@ export function applyOperational(
         );
     } else {
       if (e.reversesId) throw new Error('Only reversal events may reference an original event.');
-      if (e.kind === 'Return' ? e.amount !== 0 || !e.itemIds.length : e.amount === 0)
+      if (
+        e.kind === 'Return'
+          ? e.amount !== 0 || !e.itemIds.length
+          : e.kind !== 'Cost basis adjustment' && e.amount === 0
+      )
         throw new Error(
           'Enter a nonzero adjustment, or select pieces for a zero-dollar physical return.',
         );

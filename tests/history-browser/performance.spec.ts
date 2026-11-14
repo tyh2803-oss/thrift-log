@@ -63,6 +63,10 @@ test('tab navigation reuses the private workspace, verifies authorization on eve
       page.locator('.navigation-progress.is-pending').filter({ visible: true }),
     ).toBeVisible();
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(label === 'Home' ? '/$' : '/' + label.toLowerCase() + '$'),
+    );
+    await expect(page.locator('.navigation-progress.is-pending')).toHaveCount(0);
     await expect(page.getByText('Getting your workspace ready…', { exact: true })).toHaveCount(0);
   }
   await expect(page.getByText('Owner private jacket', { exact: true })).toBeVisible();
@@ -338,6 +342,49 @@ test('the public demo and private workspace keep separate layouts and never tran
     await publicContext.close();
   }
   const after = await (await request.get(`${authOrigin}/__metrics`)).json();
+  expect(after.workspaces).toEqual(before.workspaces);
+  expect(after.businessWrites).toBe(0);
+});
+
+test('cached tab content paints before a slow server navigation completes and Back restores the right view', async ({
+  page,
+  request,
+}) => {
+  const before = await (await request.get(`${authOrigin}/__metrics`)).json();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let blocked = false;
+  await page.route('**/*', async (route) => {
+    if (route.request().headers().rsc === '1' && !blocked) {
+      blocked = true;
+      await held;
+    }
+    await route.continue();
+  });
+  try {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await navLink(page, 'Inventory').click();
+    await expect(
+      page.getByRole('heading', { name: 'Every piece, in its place.', exact: true }),
+    ).toBeVisible({ timeout: 1000 });
+    await expect(
+      page.getByRole('heading', { name: 'Every piece, in its place.', exact: true }),
+    ).toBeInViewport();
+    await expect(page.getByText('Owner private jacket', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/$/); // the authoritative navigation is deliberately still held
+  } finally {
+    release();
+  }
+  await expect(page).toHaveURL(/\/inventory$/);
+  await page.goBack();
+  await expect(
+    page.getByRole('heading', { name: 'A good day for good finds.', exact: true }),
+  ).toBeVisible();
+  const after = await (await request.get(`${authOrigin}/__metrics`)).json();
+  expect(after.authReads).toBeGreaterThan(before.authReads);
+  expect(after.accessChecks).toBeGreaterThan(before.accessChecks);
   expect(after.workspaces).toEqual(before.workspaces);
   expect(after.businessWrites).toBe(0);
 });

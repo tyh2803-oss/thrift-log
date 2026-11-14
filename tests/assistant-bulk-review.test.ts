@@ -33,10 +33,13 @@ function listings(w = emptyWorkspace(), crossListed = false) {
       ],
     }),
   );
-  return createBatch(
+  const batch = createBatch(
     [{ hash: 'f'.repeat(64), name: 'four.png', extraction: { message: '', records } }],
     w,
   );
+  if (crossListed)
+    batch.rows[1].matches[0].newItem = structuredClone(batch.rows[0].matches[0].newItem); // Explicitly linked physical piece.
+  return batch;
 }
 it('four empty-workspace listings become ready from cost entry alone; final approval accepts the labeled date assumption', () => {
   const w = emptyWorkspace();
@@ -94,13 +97,13 @@ it('counts shared cross-listings once, persists one physical item, and synchroni
   expect(new Set(saved.listings.map((l) => l.itemId)).size).toBe(3);
   expect(inventoryPipeline(saved).groups['for-sale'].count).toBe(3);
 });
-it('excludes ambiguous and existing inventory from bulk allocation until an actual candidate decision', () => {
+it('includes similar new items in cost allocation without confirmation and protects saved costs', () => {
   const w = assistantWorkspace();
   let batch = listings(w);
   for (const row of batch.rows) row.facts.lines[0].title = 'Blue Carhartt jacket';
   batch.rows[0].matches[0] = { itemId: w.items[0].id, newItem: null, confirmZeroCost: false };
-  expect(eligiblePhysicalDrafts(w, batch)).toHaveLength(0); // Similar Carhartt attributes require a choice.
-  expect(() => applyBatchCost(w, batch, 'same', '5')).toThrow('No eligible');
+  expect(eligiblePhysicalDrafts(w, batch)).toHaveLength(3);
+  expect(applyBatchCost(w, batch, 'same', '5').rows[1].matches[0].newItem?.cost).toBe(500);
   for (const row of batch.rows.slice(1)) row.matches[0].dismissedCandidateIds = [w.items[0].id];
   batch = applyBatchCost(w, batch, 'same', '5');
   expect(batch.rows[0].matches[0].costInput).toBeUndefined();
@@ -108,7 +111,7 @@ it('excludes ambiguous and existing inventory from bulk allocation until an actu
   expect(batch.rows[1].matches[0].newItem?.cost).toBe(500);
   batch.rows[1].matches[0].dismissedCandidateIds = [];
   batch.rows[1].matches[0].newItem!.confirmedDistinct = true; // Legacy flag cannot bypass genuine ambiguity.
-  expect(previewBatch(w, batch)[1].issues.join(' ')).toContain('Possible existing item');
+  expect(previewBatch(w, batch)[1].issues.join(' ')).not.toContain('Possible existing item');
 });
 it('explicit batch dates replace assumptions and future or impossible dates remain invalid', () => {
   const w = emptyWorkspace();
@@ -159,28 +162,21 @@ it('partial approvals reconcile pending cross-listings to saved inventory withou
   expect(next.items).toHaveLength(3);
   expect(next.listings).toHaveLength(4);
 });
-it('duplicate marketplace screenshots do not create or allocate a second physical item', () => {
+it('accepts repeated marketplace proposals without blocking and keeps explicitly linked physical inventory shared', () => {
   const w = emptyWorkspace(),
     batch = listings(w, true);
   batch.rows[1].facts.marketplace = 'Vinted';
   const costed = applyBatchCost(w, batch, 'same', '5');
   expect(eligiblePhysicalDrafts(w, costed)).toHaveLength(3);
-  const previews = previewBatch(w, costed);
-  expect(previews[1].ready).toBe(false);
-  expect(() =>
-    approvalCommands(
-      w,
-      costed,
-      costed.rows.map((r) => r.id),
-    ),
-  ).toThrow();
+  expect(previewBatch(w, costed).every((p) => p.ready)).toBe(true);
   const saved = approvalCommands(
     w,
     costed,
-    previews.filter((p) => p.ready).map((p) => p.row.id),
+    costed.rows.map((r) => r.id),
   ).reduce(applyCommand, w);
   expect(saved.items).toHaveLength(3);
-  expect(saved.listings).toHaveLength(3);
+  expect(new Set(saved.listings.map((l) => l.itemId)).size).toBe(3);
+  expect(saved.imports).toHaveLength(4);
 });
 
 it('shared physical drafts approve correctly even if the caller submits row IDs in reverse order', () => {
@@ -203,18 +199,21 @@ it('a proposed new ID cannot claim an existing physical record without matching 
   expect(() => approvalCommands(w, batch, [batch.rows[0].id])).toThrow();
 });
 
-it('does not dilute batch costs with contradictory duplicate listing identifiers', () => {
+it('does not exclude source records from cost allocation when an external identifier repeats', () => {
   const w = emptyWorkspace(),
     batch = listings(w);
   batch.rows[1].facts.lines[0].listingId = batch.rows[0].facts.lines[0].listingId;
-  expect(eligiblePhysicalDrafts(w, batch)).toHaveLength(2);
+  expect(eligiblePhysicalDrafts(w, batch)).toHaveLength(4);
   const costed = applyBatchCost(w, batch, 'split', '10.01');
-  expect(costed.rows.map((r) => r.matches[0].newItem?.cost)).toEqual([null, null, 501, 500]);
-  expect(
-    previewBatch(w, costed)
-      .slice(0, 2)
-      .every((p) => !p.ready),
-  ).toBe(true);
+  expect(costed.rows.map((r) => r.matches[0].newItem?.cost)).toEqual([251, 250, 250, 250]);
+  expect(previewBatch(w, costed).every((p) => p.ready)).toBe(true);
+  const saved = approvalCommands(
+    w,
+    costed,
+    costed.rows.map((r) => r.id),
+  ).reduce(applyCommand, w);
+  expect(saved.items).toHaveLength(4);
+  expect(saved.listings).toHaveLength(4);
 });
 
 it('shared brand and size without matching product identity do not require routine duplicate confirmation', () => {

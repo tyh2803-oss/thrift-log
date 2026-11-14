@@ -69,7 +69,7 @@ export function Importer({ onClose }: { onClose: () => void }) {
       ])
     ) {
       setResult(
-        `Imported ${plan.commands.length} records. Skipped ${plan.duplicates} existing records.`,
+        `Imported ${plan.commands.length} records. No rows were skipped by duplicate matching.`,
       );
       notify('Import complete.');
       setRows([]);
@@ -197,8 +197,7 @@ export function Importer({ onClose }: { onClose: () => void }) {
               </table>
             </div>
             <p>
-              {rows.length} rows · {plan.commands.length} new records · {plan.duplicates} duplicates
-              skipped
+              {rows.length} rows · {plan.commands.length} records ready
             </p>
             {plan.errors.map((e, i) => (
               <p className="error-text" key={i}>

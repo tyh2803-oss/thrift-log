@@ -23,6 +23,7 @@ import { listingMetrics } from '@/lib/listing-metrics';
 import { assumedHistoryAcquisition, historyInventoryCostUnknown } from '@/lib/cost-knowledge';
 import { PhotoGallery } from './photo-gallery';
 import { PipelineMoveDialog } from './pipeline-move-dialog';
+import { BulkPurchaseCosts } from './bulk-purchase-costs';
 import { OrderFulfillment } from './order-fulfillment';
 import type { EditorTarget } from './editor';
 function InventoryView({
@@ -64,6 +65,7 @@ function InventoryView({
   const listingSummary = listingMetrics(w, marketplace);
   const [sort, setSort] = useState('Newest');
   const [selected, setSelected] = useState<string[]>([]);
+  const [costItems, setCostItems] = useState<string[] | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   function changeStatus(i: Item) {
     const current = stageOf(i);
@@ -126,6 +128,26 @@ function InventoryView({
   }
   return (
     <>
+      {costItems && (
+        <BulkPurchaseCosts
+          itemIds={costItems}
+          onClose={() => setCostItems(null)}
+          onSaved={(ids) => setSelected((old) => old.filter((id) => !ids.includes(id)))}
+        />
+      )}
+      <div className="actions">
+        <Button
+          variant="outline"
+          disabled={!(tab === 'Listings' ? listings.length : items.length)}
+          onClick={() =>
+            setCostItems(
+              tab === 'Listings' ? listings.map((l) => l.itemId) : items.map((i) => i.id),
+            )
+          }
+        >
+          Bulk purchase costs
+        </Button>
+      </div>
       <div className="page-toolbar">
         <div className="tabs">
           {['Inventory', 'Listings'].map((t) => (
@@ -330,6 +352,9 @@ function InventoryView({
                       ))}
                     </select>
                   </label>
+                  <Button size="sm" variant="outline" onClick={() => setCostItems(selected)}>
+                    Set purchase costs ({selected.length})
+                  </Button>
                   <Button size="sm" onClick={() => setMoving(selected)}>
                     Move selected ({selected.length})
                   </Button>

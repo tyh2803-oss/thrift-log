@@ -304,7 +304,7 @@ describe('CSV reconciliation', () => {
     expect(p.errors).toEqual([]);
     expect(p.commands).toHaveLength(1);
   });
-  it('groups multi-item orders and skips overlapping weekly reports', () => {
+  it('groups bundles and accepts deliberate overlapping report imports as separate physical records', () => {
     const csv = readCsv('order_id,sku,price,fees\nWN1,SKU-1,50,2\nWN1,SKU-2,40,1');
     const map = Object.fromEntries(csv.columns.map((c) => [c, c]));
     let w = fixture();
@@ -313,7 +313,9 @@ describe('CSV reconciliation', () => {
     w = p.commands.reduce(applyCommand, w);
     expect(w.orders[0].fees).toBe(300);
     expect(w.orders[0].lines).toHaveLength(2);
-    expect(planImport('Sales', csv.rows, map, w).duplicates).toBe(1);
+    const repeat = planImport('Sales', csv.rows, map, w);
+    expect(repeat.duplicates).toBe(0);
+    expect(repeat.commands.reduce(applyCommand, w).orders).toHaveLength(2);
   });
   it('does not guess inventory or import ambiguous rows', () => {
     const p = planImport(

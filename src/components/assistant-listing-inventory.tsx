@@ -89,6 +89,7 @@ export function ListingInventory({
           <label className="field">
             <span>Inventory match, line {index + 1}</span>
             <select
+              aria-label={`Inventory match, line ${index + 1}`}
               value={match.itemId || ''}
               data-review-missing={!match.itemId && !match.newItem}
               onChange={(e) => choose(e.target.value || null)}
@@ -165,32 +166,6 @@ export function ListingInventory({
           Create new physical item draft
         </Button>
       )}
-      {match.newItem &&
-        candidates.some(
-          (c) => !c.exact && c.score >= 55 && !match.dismissedCandidateIds?.includes(c.item.id),
-        ) && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              onChange({
-                ...row,
-                matches: row.matches.map((m, i) =>
-                  i === index
-                    ? {
-                        ...m,
-                        dismissedCandidateIds: candidates
-                          .filter((c) => !c.exact)
-                          .map((c) => c.item.id),
-                      }
-                    : m,
-                ),
-              })
-            }
-          >
-            Create a different physical item
-          </Button>
-        )}
     </div>
   );
 }

@@ -1,8 +1,6 @@
-import { pendingIdentityConflicts } from './review-bulk';
 import { listingAmount, listingCost } from './listing-review';
 import { blockingWarnings } from './warnings';
 import { isLifecycle, lifecyclePreview } from './lifecycle';
-import { matchInventory, plausibleInventoryMatches } from './matching';
 import { listingEvidenceIssue, requireMarketplaceReview } from './vision';
 import { clothingDescription } from './clothing';
 import { applyCommand } from '../commands';
@@ -54,20 +52,7 @@ export function importDate(value: string | null, zone: string): string | null {
     ? new Date(value).toISOString()
     : null;
 }
-function importedSource(w: Workspace, row: DraftRow) {
-  if (row.sourceHash === 'conversation') return undefined;
-  return w.imports.find((i) => {
-    if (i.mapping.format !== 'assistant-v1') return false;
-    try {
-      const audit = JSON.parse(i.rawCsv) as { rows: { sourceHash: string; recordIndex: number }[] };
-      return audit.rows.some(
-        (r) => r.sourceHash === row.sourceHash && r.recordIndex === row.recordIndex,
-      );
-    } catch {
-      return false;
-    }
-  });
-}
+
 export function previewRow(
   w: Workspace,
   row: DraftRow,
@@ -124,10 +109,6 @@ export function previewRow(
     );
   if (isLifecycle(r.kind)) {
     const event = lifecyclePreview(w, row, date);
-    if (importedSource(w, row))
-      event.issues.push(
-        'This screenshot record has already been imported. Reconcile the saved event instead.',
-      );
     if (requireMarketplaceReview(r))
       event.issues.push('Confirm the uncertain screenshot marketplace.');
     return {
@@ -205,24 +186,6 @@ export function previewRow(
     if (!item && proposed) {
       if (w.items.some((v) => v.id === proposed.id))
         issues.push(`Line ${i + 1}: this proposed item already exists. Select it from inventory.`);
-      const candidates = matchInventory(w, r, line);
-      if (candidates.some((c) => c.exact))
-        issues.push(
-          `Line ${i + 1}: an exact inventory identifier already exists. Select that item instead of creating a duplicate.`,
-        );
-      if (
-        r.kind === 'listing' &&
-        plausibleInventoryMatches(identity.inventory, r, line).some(
-          (c) => !c.exact && !match.dismissedCandidateIds?.includes(c.item.id),
-        )
-      )
-        issues.push(
-          `Line ${i + 1}: Possible existing item. Choose a match or create a different physical item.`,
-        );
-      if (r.kind !== 'listing' && !proposed.confirmedDistinct)
-        issues.push(
-          `Line ${i + 1}: confirm this is a new physical item after checking possible matches.`,
-        );
       const purchasedAt = importDate(proposed.purchasedAt, w.settings.timezone);
       if (!purchasedAt) issues.push(`Line ${i + 1}: enter the acquisition date for new inventory.`);
       // An explicitly labeled listing-date assumption is provisional, not historical evidence.
@@ -238,7 +201,9 @@ export function previewRow(
       if (!line.title?.trim()) issues.push(`Line ${i + 1}: a new inventory item needs a title.`);
       const parsed = itemSchema.safeParse({
         id: proposed.id,
-        sku: proposed.sku,
+        sku: w.items.some((v) => v.sku.toLowerCase() === proposed.sku.toLowerCase())
+          ? `AI-${proposed.id}`
+          : proposed.sku,
         title: line.title || '',
         brand: line.brand || '',
         size: line.size || '',
@@ -283,12 +248,6 @@ export function previewRow(
   });
   if (new Set(itemIds).size !== itemIds.length)
     issues.push('A physical item appears more than once in this record.');
-  const prior = importedSource(w, row);
-  if (prior) {
-    duplicateId = prior.id;
-    duplicateKind = 'import';
-    issues.push('This screenshot record has already been imported.');
-  }
   let totals: Preview['totals'] = null,
     profits: Preview['profits'] = [];
   if (r.kind === 'sale') {
@@ -310,13 +269,6 @@ export function previewRow(
         !!r.externalOrderId &&
         o.externalId === r.externalOrderId,
     );
-    if (existing) {
-      duplicateId = existing.id;
-      duplicateKind = 'order';
-      issues.push(
-        'This sale appears to already be recorded. View the original order to reconcile it.',
-      );
-    }
     row.matches.forEach((m, i) => {
       if (m.itemId && itemIsSold(w, m.itemId)) {
         const sold = w.orders.find(
@@ -343,7 +295,7 @@ export function previewRow(
       const parsed = orderSchema.safeParse({
         id: row.id,
         marketplace: r.marketplace,
-        externalId: r.externalOrderId || '',
+        externalId: existing ? '' : r.externalOrderId || '',
         date: date || new Date(0).toISOString(),
         showId: null,
         lines: r.lines.map((l, i) => ({
@@ -392,37 +344,17 @@ export function previewRow(
         (l) => l.itemId === itemId && l.marketplace === r.marketplace,
       );
       const existing =
-        byId.length === 1 ? byId[0] : sameItem.length === 1 ? sameItem[0] : undefined;
-      if (byId.length > 1 || (sameItem.length > 1 && !byId.length))
-        issues.push(
-          `Line ${i + 1}: more than one marketplace listing matches. Reconcile the existing listings first.`,
-        );
-      if (existing && existing.itemId !== itemId)
-        issues.push(
-          `Line ${i + 1}: that marketplace listing is linked to a different inventory item.`,
-        );
-      if (existing?.externalId && line.listingId && existing.externalId !== line.listingId)
-        issues.push(
-          `Line ${i + 1}: the existing listing has a different external ID. Reconcile it before updating.`,
-        );
+        byId.find((l) => l.itemId === itemId) ||
+        sameItem.find((l) => l.status === 'Active') ||
+        sameItem[0];
+      const sourceId = line.listingId || '';
+      const externalId =
+        existing?.externalId ||
+        (w.listings.some((l) => l.marketplace === r.marketplace && l.externalId === sourceId)
+          ? ''
+          : sourceId);
       const listedAt = date || existing?.listedAt || new Date().toISOString();
 
-      if (
-        !(
-          match?.costOverride != null &&
-          match.costOverride !== w.items.find((item) => item.id === itemId)?.cost
-        ) &&
-        existing?.status === 'Active' &&
-        existing.price === line.price &&
-        (!line.listingId || existing.externalId === line.listingId) &&
-        (!line.url || existing.url === line.url)
-      ) {
-        duplicateId = existing.id;
-        duplicateKind = 'listing';
-        issues.push(
-          `Line ${i + 1}: this listing is already recorded with the same price and identifiers.`,
-        );
-      }
       const suffix = ((parseInt(row.id.slice(-8), 16) ^ i) >>> 0).toString(16).padStart(8, '0');
       const parsed = listingSchema.safeParse({
         id: existing?.id || row.id.slice(0, -8) + suffix,
@@ -430,7 +362,7 @@ export function previewRow(
         marketplace: r.marketplace,
         price: line.price,
         originalPrice: existing?.originalPrice ?? line.price,
-        externalId: line.listingId || existing?.externalId || '',
+        externalId,
         url: line.url || existing?.url || '',
         listedAt: listedAt || new Date(0).toISOString(),
         status: 'Active',
@@ -462,10 +394,7 @@ export function previewRow(
 export function previewBatch(w: Workspace, input: DraftBatch) {
   const batch = batchSchema.parse(input);
   let next = w;
-  const seen = new Map<string, string>();
-  const listingTargets = new Set<string>();
   const createdDraftIds = new Set<string>();
-  const identityConflicts = pendingIdentityConflicts(batch);
   const draftValues = new Map<string, Set<string>>();
   for (const row of batch.rows.filter((r) => r.included && r.facts.kind === 'listing'))
     for (const m of row.matches)
@@ -488,13 +417,6 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
   const planned = new Map<string, Preview>();
   for (const row of [...batch.rows].sort((a, b) => rank(a) - rank(b))) {
     const preview = previewRow(next, row, { inventory: w, createdDraftIds });
-    if (row.matches.some((m) => m.newItem && identityConflicts.has(m.newItem.id))) {
-      preview.issues.unshift(
-        'Conflicting duplicate identifiers. Link these proposals to one physical item or discard the duplicate.',
-      );
-      preview.ready = false;
-      preview.commands = [];
-    }
     if (row.matches.some((m) => m.newItem && (draftValues.get(m.newItem.id)?.size || 0) > 1)) {
       preview.issues.push(
         'Cross-listings disagree on purchase cost, SKU or acquisition date. Use one value for this physical item.',
@@ -538,27 +460,6 @@ export function previewBatch(w: Workspace, input: DraftBatch) {
       preview.ready = false;
       preview.commands = [];
     }
-    if (row.included && row.facts.kind === 'listing' && preview.ready) {
-      const keys = row.matches.map((m) => `${row.facts.marketplace}:${m.itemId || m.newItem?.id}`);
-      if (keys.some((key) => listingTargets.has(key))) {
-        preview.issues.push(
-          'Another included screenshot already proposes this physical item on the same marketplace. Keep one current listing view.',
-        );
-        preview.ready = false;
-        preview.commands = [];
-      } else keys.forEach((key) => listingTargets.add(key));
-    }
-    const key =
-      row.facts.kind === 'sale' && row.facts.externalOrderId
-        ? `${row.facts.marketplace}:${row.facts.externalOrderId}`
-        : '';
-    if (row.included && key && seen.has(key)) {
-      preview.issues.push(
-        'Another included screenshot has this order ID. Keep one complete order and exclude the repeated screenshot.',
-      );
-      preview.ready = false;
-    }
-    if (row.included && key) seen.set(key, row.id);
     if (row.included && preview.ready) {
       for (const command of preview.commands)
         if (command.type === 'item' && !w.items.some((item) => item.id === command.value.id))

@@ -203,7 +203,7 @@ test('listing review creates new inventory only after cost entry and updates exi
   expect(saved.orders).toHaveLength(0);
   await page.getByLabel('Filter marketplace').selectOption('Depop');
   await expect(page.locator('table tbody tr')).toHaveCount(2);
-  // Re-importing the original screenshot facts produces no ready changes.
+  // A deliberate new review of the same facts remains approvable; selected listing IDs update the existing linked records.
   const repeat = createBatch(
     [{ hash: 'b'.repeat(64), name: 'listings.png', extraction: { records, message: '' } }],
     saved,
@@ -214,7 +214,12 @@ test('listing review creates new inventory only after cost entry and updates exi
   );
   await page.reload();
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
-  await expect(dialog.getByRole('button', { name: 'Approve All (0)', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Approve All (2)', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Approve All (2)', exact: true }).click();
+  await expect(dialog.getByText(/Saved 2 approved records/)).toBeVisible();
+  const again = await page.evaluate(() => JSON.parse(localStorage.getItem('thrift-log.demo.v1')!));
+  expect(again.items).toHaveLength(2);
+  expect(again.listings).toHaveLength(3);
 });
 
 test('clothing cards expose evidence, editable vintage and uncertain marketplace without saving', async ({
@@ -668,9 +673,9 @@ test('inline inventory suggestions reuse a physical item and missing-information
   await page.getByRole('button', { name: 'Open AI assistant' }).click();
   const dialog = page.getByRole('dialog'),
     row = dialog.locator('.assistant-extraction');
-  await expect(row.getByText('Possible existing item', { exact: true })).toBeVisible();
-  await row.getByRole('button', { name: `Use ${w.items[0].sku}`, exact: true }).click();
+  await expect(row.getByText('Possible existing item', { exact: true })).toHaveCount(0);
   await row.locator('.compact-listing-details > summary').click();
+  await row.getByLabel('Inventory match, line 1', { exact: true }).selectOption(w.items[0].id);
   await expect(row.getByLabel('Acquisition date, line 1', { exact: true })).toHaveCount(0);
   await expect(row.getByLabel('Purchase Cost ($)', { exact: true })).toHaveValue('12');
   await expect(row.getByLabel('Purchase Cost ($)', { exact: true })).toHaveAttribute(

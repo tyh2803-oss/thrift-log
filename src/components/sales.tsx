@@ -19,6 +19,7 @@ import { PipelineSales } from './pipeline-sales';
 import { OrderFulfillment } from './order-fulfillment';
 import type { PipelineStage } from '@/lib/pipeline';
 import { OrderLedger } from './order-ledger';
+import { BulkPurchaseCosts } from './bulk-purchase-costs';
 import { WhatnotShowAnalytics } from './whatnot-show-analytics';
 import { Fulfillment } from './fulfillment';
 import { Dialog } from './ui/dialog';
@@ -41,6 +42,7 @@ function SalesView({
   const totals = useMemo(() => orderTotalsById(w), [w]);
   const itemsById = useMemo(() => new Map(w.items.map((i) => [i.id, i])), [w.items]);
   const [tab, setTab] = useState('Orders');
+  const [costItems, setCostItems] = useState<string[] | null>(null);
   const [market, setMarket] = useState('All marketplaces');
   const [status, setStatus] = useState('All orders');
   const [fulfillmentOrderId, setFulfillmentOrderId] = useState<string | null>(null);
@@ -93,6 +95,7 @@ function SalesView({
     );
   return (
     <>
+      {costItems && <BulkPurchaseCosts itemIds={costItems} onClose={() => setCostItems(null)} />}
       <div className="page-toolbar">
         <div className="tabs">
           {['Orders', 'Shows & events', 'Payouts', 'Shipments'].map((t) => (
@@ -103,6 +106,16 @@ function SalesView({
         </div>
         {['Orders', 'Shows & events'].includes(tab) && (
           <div className="actions">
+            {tab === 'Orders' && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!orders.length}
+                onClick={() => setCostItems(orders.flatMap((o) => o.lines.map((l) => l.itemId)))}
+              >
+                Bulk purchase costs
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={exportOrders}>
               <Download size={15} />
               Export
