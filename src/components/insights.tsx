@@ -10,6 +10,7 @@ import {
 } from '@/lib/cost-knowledge';
 import { useWorkspace } from '@/lib/use-workspace';
 import { useNow } from '@/lib/use-now';
+import { useContentTransition } from '@/lib/use-content-transition';
 import { metrics, money, laborMs, allocate } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import { Metric, Empty } from './shared';
@@ -106,8 +107,9 @@ function InsightsView({
         +new Date(i.purchasedAt) <= range[1],
     )
     .reduce((n, i) => n + i.cost, 0);
+  const contentSurface = useContentTransition([tab, dimension].join('|'));
   return (
-    <>
+    <div ref={contentSurface} className="view-surface">
       <div className="page-toolbar">
         <div className="tabs">
           {['Overview', 'Finances', 'Expenses', 'Ledger'].map((t) => (
@@ -520,7 +522,7 @@ function InsightsView({
           )}
         </section>
       )}
-    </>
+    </div>
   );
 }
 

@@ -1,5 +1,11 @@
 # Thrift Log project status
 
+## Subtle app transitions — November 14, 2026
+
+Prepared on `feat/subtle-app-motion` from main `18bb759`. Shared 120/160 ms motion tokens add restrained menu/dialog entrances, press feedback and color transitions. Main navigation and local Inventory/Sales/Activity/Insights changes use a 90%-to-100% opacity fade without remounting content or delaying navigation, clicks or saves. No page transforms, scroll interception, count-up financial values, new dependencies or persistent compositing hints are introduced. Form typing, selection, timers and background workspace updates do not restart fades. Reduced-motion preference changes cancel an in-progress effect immediately; unsupported animation APIs fall back to immediate presentation. See [visual motion conventions](docs/VISUAL_SYSTEM.md#subtle-motion).
+
+Validation: **typecheck, lint, production build and 427 unit/API/database tests pass** (six opt-in cases skipped). **82 distinct desktop/mobile Chromium checks pass across the regression and focused motion runs:** 62 dashboard/navigation/menu/dialog/assistant/pipeline/workflow cases and 20 authenticated performance/profile cases. Motion checks verify short duration, opacity-only content effects, stable DOM and search input, cleanup, presses, layout/focus, reduced motion and unchanged business storage. Existing held-server navigation still presents the selected view immediately; account changes, revoked access, private photos and assistant approval remain covered. No schema/API/authentication/financial logic changes or production database operations are required. Physical iPhone Safari/PWA acceptance remains manual; private service integration checks use isolated loopback doubles.
+
 ## Profile dropdown and private photo — November 14, 2026
 
 Prepared on `feat/profile-menu-and-photo` from main `5acad5c`. The top-right avatar opens an accessible menu for photo controls, Settings and Sign out. Photos can be added, replaced and removed, with a square preview, immediate save feedback, a header/sidebar avatar and initials fallback. Keyboard controls and narrow-screen touch targets use the existing visual system; the mobile header now accommodates the 44px profile target without horizontal overflow.

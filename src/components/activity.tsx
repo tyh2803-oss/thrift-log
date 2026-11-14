@@ -5,6 +5,7 @@ import { Plus, MapPin, Clock3, Download, Navigation, Pause, Play, Square } from 
 import { currentLineProfits, orderPostingGroups } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { useNow } from '@/lib/use-now';
+import { useContentTransition } from '@/lib/use-content-transition';
 import { laborMs, duration, money } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import type { Session } from '@/lib/model';
@@ -67,8 +68,9 @@ function ActivityView({
       { maximumAge: 60000, timeout: 10000 },
     );
   }
+  const contentSurface = useContentTransition(tab);
   return (
-    <>
+    <div ref={contentSurface} className="view-surface">
       <div className="page-toolbar">
         <div className="tabs">
           {['Time', 'Sourcing trips', 'Locations'].map((t) => (
@@ -424,7 +426,7 @@ function ActivityView({
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
 

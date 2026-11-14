@@ -1,5 +1,7 @@
 # Thrift Log
 
+**Subtle app motion:** short page/tab fades, gentle menu/dialog entrances and restrained press feedback make navigation smoother without delaying actions. Reduced-motion preferences disable the effects. See [motion behavior](docs/VISUAL_SYSTEM.md#subtle-motion); no new setup is required.
+
 **Profile menu and photo:** tap the top-right avatar for photo controls, Settings and Sign out. Add, replace or remove a private profile photo; it appears in the header and desktop sidebar and survives signing in on another device. See [profile privacy and setup](docs/PROFILE.md). No migration or new environment variable is required.
 
 **Import and cost updates prepared:** instant tab presentation, a quieter home dashboard, automatic recovery of Whatnot matching holds, optional inventory matching, bulk purchase costs, clearer assistant replies and a top pipeline Save button. See [behavior and approval-gated migration/setup](docs/IMPORT_REVIEW_AND_PURCHASE_COSTS.md). The approved production migration `202611130002_purchase_cost_corrections.sql` is applied and verified. The Profit card opens missing-information review; long forms have top save actions.

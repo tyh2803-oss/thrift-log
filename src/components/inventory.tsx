@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { useMemo, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useNow } from '@/lib/use-now';
+import { useContentTransition } from '@/lib/use-content-transition';
 import {
   inventoryPipeline,
   inventoryStages,
@@ -126,8 +127,9 @@ function InventoryView({
       notify(e instanceof Error ? e.message : 'Invalid cost');
     }
   }
+  const contentSurface = useContentTransition([tab, view, status, marketplace, sort].join('|'));
   return (
-    <>
+    <div ref={contentSurface} className="view-surface">
       {costItems && (
         <BulkPurchaseCosts
           itemIds={costItems}
@@ -786,7 +788,7 @@ function InventoryView({
           </div>
         </Dialog>
       )}
-    </>
+    </div>
   );
 }
 

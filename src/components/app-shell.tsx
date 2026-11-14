@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/lib/use-workspace';
 import { useNow } from '@/lib/use-now';
+import { useContentTransition } from '@/lib/use-content-transition';
 import { NavigationProgress } from './navigation-progress';
 import { returnedItemIds } from '@/lib/ledger';
 import { periodRange, periods, type Period } from '@/lib/dates';
@@ -112,6 +113,7 @@ function Shell({
   }, [locationKey]);
   const pending = opening?.from === locationKey ? opening : null;
   const section = pending?.section || serverSection;
+  const contentSurface = useContentTransition<HTMLElement>(section);
   const pipelineStage = readPipelineStage(pending ? pending.pipeline : params.get('pipeline'));
   const inventoryStage = pipelineStage;
   const salesStage = pipelineStage === 'sold' || pipelineStage === 'shipped' ? pipelineStage : null;
@@ -419,7 +421,7 @@ function Shell({
             />
           </div>
         </header>
-        <main>
+        <main ref={contentSurface}>
           <div className={`environment-banner ${!online ? 'offline-banner' : ''}`}>
             {!online ? (
               <>

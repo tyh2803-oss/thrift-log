@@ -1,5 +1,8 @@
 /* Semantic colors: financial meaning and lifecycle status use separate variables/scopes. */
 :root {
+  --motion-fast: 120ms;
+  --motion-surface: 160ms;
+  --motion-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --muted: #626f67;
   --color-cost: #9b443b;
   --color-cost-soft: #fbefec;
@@ -1780,6 +1783,67 @@ form:has(.form-top-actions) :is(input, select, textarea),
 }
 .profile-email {
   font-weight: 600;
+}
+.view-surface {
+  min-width: 0;
+}
+/* No exit delays, height animations, scroll hijacking or permanent will-change layers. */
+@media (prefers-reduced-motion: no-preference) {
+  .nav-link,
+  .mobile-nav a,
+  .profile-menu-trigger,
+  .profile-dropdown [role='menuitem'],
+  .popover button,
+  .pipeline-stage,
+  .segmented button,
+  .tabs button,
+  summary svg {
+    transition:
+      background-color var(--motion-fast) var(--motion-ease),
+      border-color var(--motion-fast) var(--motion-ease),
+      color var(--motion-fast) var(--motion-ease),
+      box-shadow var(--motion-fast) var(--motion-ease),
+      transform var(--motion-fast) var(--motion-ease);
+  }
+  .nav-link:active,
+  .mobile-nav a:active,
+  .profile-menu-trigger:active,
+  .profile-dropdown [role='menuitem']:active:not(:disabled),
+  .popover button:active:not(:disabled),
+  .segmented button:active:not(:disabled),
+  .tabs button:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  .profile-dropdown,
+  .popover {
+    animation: menu-enter var(--motion-fast) var(--motion-ease);
+  }
+  .dialog-overlay {
+    animation: fade-in var(--motion-fast) var(--motion-ease);
+  }
+  .dialog-content {
+    animation: dialog-enter var(--motion-surface) var(--motion-ease);
+  }
+}
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    translate: 0 -3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes dialog-enter {
+  from {
+    opacity: 0.9;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 @media (max-width: 640px) {
   .topbar .search-box,

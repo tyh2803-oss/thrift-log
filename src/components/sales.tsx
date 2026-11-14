@@ -10,6 +10,7 @@ import {
 import { orderTotalsById, payoutStatus } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
 import { useNow } from '@/lib/use-now';
+import { useContentTransition } from '@/lib/use-content-transition';
 import { money, metrics, duration } from '@/lib/finance';
 import { downloadCsv } from '@/lib/csv';
 import { marketplaces } from '@/lib/model';
@@ -93,8 +94,9 @@ function SalesView({
         };
       }),
     );
+  const contentSurface = useContentTransition([tab, market, status].join('|'));
   return (
-    <>
+    <div ref={contentSurface} className="view-surface">
       {costItems && <BulkPurchaseCosts itemIds={costItems} onClose={() => setCostItems(null)} />}
       <div className="page-toolbar">
         <div className="tabs">
@@ -498,7 +500,7 @@ function SalesView({
           </div>
         </Dialog>
       )}
-    </>
+    </div>
   );
 }
 
