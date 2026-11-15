@@ -1,6 +1,6 @@
 # eBay read-only connection
 
-Implemented on `feat/ebay-seller-connection` from the existing `96cc135` application. **Not published, deployed, or applied to production.** Existing Whatnot, AI approval, manual/CSV workflows, owner records and private photos remain intact.
+Implemented on `feat/ebay-seller-connection` from the existing `96cc135` application. **Included in the owner-approved application release. The production database migration remains unapplied and live account setup is pending.** Existing Whatnot, AI approval, manual/CSV workflows, owner records and private photos remain intact.
 
 ## Minimum setup in the existing projects
 

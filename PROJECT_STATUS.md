@@ -1,5 +1,11 @@
 # Thrift Log project status
 
+## Approved marketplace code release — November 15, 2026
+
+The owner approved pushing and deploying the completed Whatnot response fix and eBay connection together. `release/marketplace-connections` combines `56b73f5` (Whatnot) and `abd266a` (eBay), preserving the prior `96cc135` application. This authorizes code publication; **the production Supabase migration, runtime credentials, Auth settings and business data are not changed as part of this release**. eBay safely shows Setup needed until its saved additive migration and developer/seller authorization are completed. The Whatnot parser/recovery improvement needs no migration. The earlier preparation checkpoints below describe their original unpublished state.
+
+Combined validation: typecheck, lint, production build and **498 unit/API/database tests pass** (eight opt-in cases skipped). **All 130 combined desktop/mobile Chromium checks pass**: 70 authenticated connection/history/Whatnot/eBay/cost/navigation/account-isolation cases and 60 core dashboard/pipeline/assistant/profile/motion/editor cases. Changed-file credential and whitespace scans pass. No production data is used in those tests. Production Whatnot's exact failing payload remains unverified because the production encryption root is absent in Cloud; the documented nullable-field fix and safe response diagnostics are verified using official-shaped fixtures. eBay live consent/access remains pending the owner's developer account. Public production smoke verification uses only the separate demo workspace and unauthenticated endpoint checks, without posting private business data.
+
 ## Whatnot response validation and recovery — November 15, 2026
 
 Prepared separately on `fix/whatnot-response-contract` from `96cc135`; unpublished eBay changes remain untouched in their original worktree/branch. Read-only production SELECTs confirm the screenshot connection is enabled, has saved `last_error=response`, and is stopped at the orders checkpoint. No production Auth/Storage/account/workspace or schema writes were issued, and no code was pushed/deployed. Cloud could not open the credential with its available encryption root; the exact live failing DTO remains unverified. No secrets or source customer data were printed or retained.

@@ -1,6 +1,8 @@
 # Thrift Log
 
-**eBay connection prepared:** per-user OAuth, read-only order/fulfillment sync, optional financial transactions and payouts, private encrypted credentials, and resumable review. Requires owner developer keys/consent and one additive unapplied migration. **Not published or applied to production.** See [minimum setup and limitations](docs/EBAY_INTEGRATION.md).
+**Whatnot response recovery:** documented nullable tracking fields no longer stop order imports. Sync failures identify a safe resource/field, preserve completed queue progress and display one paused-state message. No database migration is needed.
+
+**eBay connection:** per-user OAuth, read-only order/fulfillment sync, optional financial transactions and payouts, private encrypted credentials, and resumable review. Requires owner developer keys/consent and one additive unapplied migration. The database migration remains unapplied until separately approved. See [minimum setup and limitations](docs/EBAY_INTEGRATION.md).
 
 **Inventory through conversation:** the assistant can create items in any category, edit details and purchase costs, and prepare individual/bulk stage moves, including reversals. New inventory, an actual sale and shipment can share one approval. Estimated worth stays separate from revenue; required financial facts and consequential confirmations remain explicit. See [assistant capabilities](docs/BUSINESS_ASSISTANT.md#tools-and-boundaries). No new database setup is required.
 
