@@ -26,6 +26,7 @@ export function WhatnotConnection() {
     [error, setError] = useState(''),
     [review, setReview] = useState(false);
   const lock = useRef(false);
+  const previousStatusError = useRef<string | null>(null);
   const load = useCallback(
     async (withReview = false) => {
       if (demo) return;
@@ -41,6 +42,11 @@ export function WhatnotConnection() {
         }
         throw new Error(data.error || 'Unable to read Whatnot connection.');
       }
+      // A later successful poll can clear the same action/server error after recovery,
+      // while keeping unrelated action failures visible until retried.
+      const recordedError = previousStatusError.current;
+      setError((current) => (current === recordedError || current === data.error ? '' : current));
+      previousStatusError.current = data.error || null;
       setStatus(data);
       if (withReview) setRecords(data.records || []);
     },
@@ -172,14 +178,9 @@ export function WhatnotConnection() {
         Read-only sales, shipping, shows and available financial reports. Thrift Log never changes
         your Whatnot listings, orders or inventory.
       </p>
-      {error && (
+      {(error || status?.error) && (
         <p role="alert" className="error-box">
-          {error}
-        </p>
-      )}
-      {status?.error && (
-        <p role="status" className="error-box">
-          {status.error}
+          {error || status?.error}
         </p>
       )}
       {status?.ready === false ? (
@@ -200,11 +201,13 @@ export function WhatnotConnection() {
                 <div>
                   <dt>Current state</dt>
                   <dd>
-                    {status.status === 'syncing'
-                      ? 'Syncing…'
-                      : status.hasMore
-                        ? `Importing ${status.progress}…`
-                        : status.status}
+                    {status.error
+                      ? 'Paused — needs attention'
+                      : status.status === 'syncing'
+                        ? 'Syncing…'
+                        : status.hasMore
+                          ? `Importing ${status.progress}…`
+                          : status.status}
                   </dd>
                 </div>
               </dl>

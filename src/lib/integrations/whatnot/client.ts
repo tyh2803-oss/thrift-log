@@ -6,6 +6,7 @@ export class WhatnotError extends Error {
     public code: string,
     message: string,
     public status = 502,
+    public diagnosticCode?: string,
   ) {
     super(message);
   }
@@ -20,6 +21,47 @@ export const errorMessages: Record<string, string> = {
   conflict: 'Your workspace changed. Sync will retry against the latest records.',
   credential: 'Reconnect Whatnot to replace its stored credential.',
 };
+/** Structural diagnostics only: fixed operation/field names, never source values or IDs. */
+export function responseDiagnosticMessage(code: string) {
+  const match =
+    /^response:(orders|items|shipment|shows|analytics|reports|seller):([a-zA-Z0-9_.]{1,40})$/.exec(
+      code,
+    );
+  if (!match) return errorMessages.response;
+  const names: Record<string, string> = {
+    orders: 'order data',
+    items: 'order items',
+    shipment: 'shipment details',
+    shows: 'show data',
+    analytics: 'show analytics',
+    reports: 'report details',
+    seller: 'seller details',
+  };
+  return `Whatnot’s ${names[match[1]]} have an unsupported ${match[2]} field. Sync is paused; saved records are preserved.`;
+}
+function schemaFailure(path: string, error: z.ZodError) {
+  const operation = path.startsWith('/shipments')
+    ? 'shipment'
+    : path.endsWith('/items')
+      ? 'items'
+      : path.startsWith('/orders')
+        ? 'orders'
+        : path.startsWith('/analytics')
+          ? 'analytics'
+          : path.startsWith('/shows')
+            ? 'shows'
+            : path.startsWith('/reports')
+              ? 'reports'
+              : 'seller';
+  // Zod paths come from this app's known DTO fields. Drop array indexes and never print inputs/messages.
+  const field =
+    error.issues[0]?.path
+      .filter((k) => typeof k === 'string' && k !== 'data')
+      .join('.')
+      .slice(0, 40) || 'structure';
+  const code = `response:${operation}:${field}`;
+  return new WhatnotError('response', responseDiagnosticMessage(code), 502, code);
+}
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function boundedText(response: Response, limit: number) {
   if (!response.body) throw new WhatnotError('response', errorMessages.response);
@@ -115,6 +157,7 @@ export class WhatnotClient {
         return schema.parse(JSON.parse(await boundedText(response, 2_000_000)));
       } catch (e) {
         if (e instanceof WhatnotError) throw e;
+        if (e instanceof z.ZodError) throw schemaFailure(path, e);
         throw new WhatnotError('response', errorMessages.response);
       }
     }

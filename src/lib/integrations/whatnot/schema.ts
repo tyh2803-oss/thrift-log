@@ -69,7 +69,11 @@ export const sourceShipmentSchema = z.object({
   fulfillment_method: z.enum(['shipping', 'pickup']),
   created_at: date.nullable(),
   updated_at: date.nullable(),
-  tracking: z.object({ carrier: text, service: text, tracking_code: text }).nullable(),
+  // Official ShipmentTracking permits null before carrier details are available.
+  // Keep null as unknown; a label/tracking object alone is never shipping evidence.
+  tracking: z
+    .object({ carrier: text.nullable(), service: text.nullable(), tracking_code: text.nullable() })
+    .nullable(),
   seller_paid_shipping_cost: moneySchema.nullable(),
   replacement_shipment_id: id.nullable(),
 });

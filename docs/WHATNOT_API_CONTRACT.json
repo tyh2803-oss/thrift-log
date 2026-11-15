@@ -82,5 +82,14 @@
     "applied_discount": "Discount from the seller\u2019s coupon; null when none applied or the coupon is not the seller\u2019s.",
     "total": "Total the buyer paid.",
     "interpretation": "A lower buyer payment with an omitted non-seller coupon must not reduce seller merchandise or create additional revenue."
+  },
+  "responseValidation": {
+    "verifiedAt": "2026-11-15",
+    "shipmentTracking": {
+      "carrier": "string or null",
+      "service": "string or null",
+      "tracking_code": "string or null"
+    },
+    "diagnostics": "Only fixed resource/DTO-field names are persisted. Never source values, provider IDs, credentials or raw upstream messages."
   }
 }

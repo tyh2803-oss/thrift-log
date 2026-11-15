@@ -310,3 +310,37 @@ test('giveaway requires a real purchase cost and imports without an unnecessary 
     units: { '9777771:0': { itemId: 'new', cost: 0 } },
   });
 });
+
+test('paused sync shows one actionable error, not duplicate banners, and clears the old error after automatic recovery', async ({
+  page,
+}) => {
+  const message =
+    'Whatnot’s order items have an unsupported unit_price.amount field. Sync is paused; saved records are preserved.';
+  status = {
+    ready: true,
+    connected: true,
+    username: 'synthetic-seller',
+    status: 'error',
+    error: message,
+    hasMore: true,
+    progress: 'orders',
+  };
+  await page.clock.install();
+  await page.goto('/settings');
+  const region = page.getByRole('region', { name: 'Whatnot connection', exact: true });
+  await expect(region.getByText(message, { exact: true })).toHaveCount(1);
+  await expect(region.getByText('Paused — needs attention', { exact: true })).toBeVisible();
+  await page.route('**/api/integrations/whatnot', async (route) =>
+    route.request().method() === 'POST'
+      ? route.fulfill({ status: 502, json: { error: message, code: 'response' } })
+      : route.fulfill({ json: status }),
+  );
+  await region.getByRole('button', { name: 'Refresh Whatnot', exact: true }).click();
+  await expect(region.getByRole('button', { name: 'Refresh Whatnot', exact: true })).toBeEnabled();
+  await expect(region.getByText(message, { exact: true })).toHaveCount(1);
+  status = { ...status, status: 'synced', error: null, hasMore: false };
+  await page.clock.fastForward(16000);
+  await expect(region.getByText(message, { exact: true })).toHaveCount(0);
+  await expect(region.getByText('synced', { exact: true })).toBeVisible();
+  expect(await region.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
