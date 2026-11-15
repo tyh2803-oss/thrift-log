@@ -256,3 +256,63 @@ it('automatically recovers old buyer-total holds only when the documented omitte
   expect(records.get('order:333332')!.state).toBe('review');
   expect(vi.mocked(fetch).mock.calls).toHaveLength(0);
 });
+
+it('continues the saved order queue when carrier fields are null and never mistakes a label for actual shipment', async () => {
+  checkpoint = { phase: 'orders' };
+  const source = whatnotSource('123456', null);
+  source.items[0].shipment_id = '555';
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const path = new URL(input as string).pathname;
+    if (path.endsWith('/orders')) return Response.json({ data: [source.order], next_cursor: null });
+    if (path.endsWith('/orders/123456/items'))
+      return Response.json({ data: source.items, next_cursor: null });
+    if (path.endsWith('/shipments/555'))
+      return Response.json({
+        id: '555',
+        status: 'label_generated',
+        fulfillment_method: 'shipping',
+        created_at: null,
+        updated_at: null,
+        tracking: { carrier: null, service: null, tracking_code: null },
+        seller_paid_shipping_cost: null,
+        replacement_shipment_id: null,
+      });
+    throw new Error('Unexpected read endpoint');
+  });
+  await runSync(actor, true);
+  expect(w.orders).toHaveLength(1);
+  expect(inventoryPipeline(w).groups.sold.count).toBe(1);
+  expect(checkpoint.phase).toBe('transactions');
+});
+it('retains completed earlier orders when a later source is malformed, then stores a redacted field diagnostic for the blocked order', async () => {
+  checkpoint = { phase: 'orders' };
+  const first = whatnotSource('123456', null),
+    second = whatnotSource('123457', null);
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const path = new URL(input as string).pathname;
+    if (path.endsWith('/orders'))
+      return Response.json({ data: [first.order, second.order], next_cursor: null });
+    if (path.endsWith('/orders/123456/items'))
+      return Response.json({ data: first.items, next_cursor: null });
+    if (path.endsWith('/orders/123457')) return Response.json(second.order);
+    if (path.endsWith('/orders/123457/items'))
+      return Response.json({
+        data: [
+          { ...second.items[0], unit_price: { amount: 'PRIVATE_UPSTREAM_VALUE', currency: 'USD' } },
+        ],
+        next_cursor: null,
+      });
+    throw new Error('Unexpected read endpoint');
+  });
+  await runSync(actor, true);
+  expect(w.orders).toHaveLength(1);
+  expect(checkpoint).toMatchObject({ phase: 'orders', orders: ['123457'] });
+  await expect(runSync(actor, true)).rejects.toMatchObject({
+    code: 'response',
+    diagnosticCode: 'response:items:unit_price.amount',
+  });
+  const persisted = mocks.rpc.mock.calls.find(([action]) => action === 'error')?.[2];
+  expect(persisted?.code).toBe('response:items:unit_price.amount');
+  expect(JSON.stringify(persisted)).not.toContain('PRIVATE_UPSTREAM_VALUE');
+  expect(w.orders).toHaveLength(1);
+});

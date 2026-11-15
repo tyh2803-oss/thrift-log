@@ -1,5 +1,13 @@
 # Thrift Log project status
 
+## Whatnot response validation and recovery — November 15, 2026
+
+Prepared separately on `fix/whatnot-response-contract` from `96cc135`; unpublished eBay changes remain untouched in their original worktree/branch. Read-only production SELECTs confirm the screenshot connection is enabled, has saved `last_error=response`, and is stopped at the orders checkpoint. No production Auth/Storage/account/workspace or schema writes were issued, and no code was pushed/deployed. Cloud could not open the credential with its available encryption root; the exact live failing DTO remains unverified. No secrets or source customer data were printed or retained.
+
+Verified the official v2 OpenAPI: shipment carrier/service/tracking-code fields permit null. Corrected the over-strict local schema while preserving null as unknown and all financial/date/fulfillment guards. Added redacted resource/field diagnostics to the existing bounded error-code field; raw source values/IDs are excluded. Completed earlier orders retain their durable queue progress if a subsequent source fails validation. Settings renders one error, shows paused instead of misleading importing, and clears the corresponding stale action error after recovery. No new migration, dependency or environment variable is required for the fix.
+
+Validation: typecheck, lint, production build and **454 unit/API/database tests pass** (eight opt-in cases skipped). **All 12 focused desktop/mobile Whatnot browser cases pass**, covering error deduplication, automatic recovery, connection/review/refresh/disconnect, real financial exceptions and existing account preservation. Live exact-payload confirmation and physical iPhone Safari/PWA acceptance remain manual/pending access.
+
 ## Conversational inventory actions — November 14, 2026
 
 Prepared on `feat/assistant-inventory-actions` from main `94a0f33`. The reasoning assistant gains typed preparation tools for new items in any category, detail edits, audited purchase-cost corrections and all five canonical inventory stages. The original text-only existing-item restriction is removed. The Carhartt example produces a $3-cost, $500-estimated-value proposal, without a sale or marketplace listing. Optional clothing facts remain optional; missing costs stay unknown, confirmed zero remains free, and the default acquisition date is visibly assumed today. The existing batch cost/date toolbar also handles new text-created items.

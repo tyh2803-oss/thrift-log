@@ -78,3 +78,11 @@ Verified from the public documentation and OpenAPI, rather than guessed endpoint
 - [Reports and financial CSV definitions](https://developers.whatnot.com/reports/index.md)
 
 [WHATNOT_API_CONTRACT.json](WHATNOT_API_CONTRACT.json) records the used operations, scopes, enums and the full source specification's SHA-256, without redistributing the proprietary specification. Seller API base: `https://api.whatnot.com/seller-api/rest/v2`.
+
+## Response-parser recovery — November 15, 2026
+
+The official v2 `ShipmentTracking` contract permits null `carrier`, `service` and `tracking_code`. Earlier app validation incorrectly required all three to be strings. New/partial labels or pickup-related tracking objects can therefore stop order synchronization before the sale reaches the planner. The parser now preserves the documented nulls as unknown; it does not infer shipment from the existence of a tracking object, fill missing financial values or weaken amount/date/currency checks.
+
+Other shape failures retain only a redacted resource and known DTO field path, with no source values/IDs/customer details. The existing error-code column stores this bounded diagnostic without a migration. A later malformed order cannot roll back already completed earlier orders in the same queue; the unfinished ID remains pending until corrected. Settings shows one error banner, labels the sync paused and clears the matching old error after a successful recovery poll.
+
+Read-only diagnosis of the screenshot's connection confirmed its saved `response` error and orders checkpoint. The exact failing live payload could not be read because Cloud lacks the production encryption root used for its credential. The nullable-field bug is verified against the official contract and reproduced in isolated tests; it is not asserted to be the confirmed field in that particular live failure. No live token was reset, no sync was run against production and no production data/schema was changed. The production key, if needed for read-only diagnosis, belongs in environment secrets, never chat. Publishing remains subject to the user's confirmation; the eBay branch is preserved separately.

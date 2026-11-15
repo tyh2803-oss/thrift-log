@@ -274,7 +274,7 @@ export async function runSync(userId: string, force = false) {
           if (
             processed &&
             e instanceof WhatnotError &&
-            ['budget', 'rate', 'provider'].includes(e.code)
+            ['budget', 'rate', 'provider', 'response'].includes(e.code)
           )
             break;
           throw e;
@@ -315,7 +315,7 @@ export async function runSync(userId: string, force = false) {
       await whatnotRpc('error', userId, {
         lease: connection.lease,
         version: connection.version,
-        code,
+        code: e instanceof WhatnotError ? e.diagnosticCode || code : code,
       });
     } catch {
       /* A disconnected or revoked account cannot commit, including its error state. */

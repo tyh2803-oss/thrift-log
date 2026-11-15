@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { WhatnotError, boundedText, errorMessages } from './client';
+import { WhatnotError, boundedText, errorMessages, responseDiagnosticMessage } from './client';
 export const responseOptions = { headers: { 'Cache-Control': 'private, no-store' } };
 export const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, ...responseOptions });
@@ -35,5 +35,7 @@ export function failure(error: unknown) {
 }
 export const publicStatusError = (code: string | null | undefined) =>
   code
-    ? errorMessages[code] || 'This connection needs attention. Refresh or replace its token.'
+    ? code.startsWith('response:')
+      ? responseDiagnosticMessage(code)
+      : errorMessages[code] || 'This connection needs attention. Refresh or replace its token.'
     : null;

@@ -224,3 +224,14 @@ it('accepts only a signed raw-body webhook for its own seller and deduplicates b
     ).status,
   ).toBe(400);
 });
+
+it('returns the persisted safe response diagnostic through status without provider IDs, values or credentials', async () => {
+  mocks.rpc.mockResolvedValueOnce({
+    data: { ...status, error: 'response:shipment:tracking.carrier' },
+    error: null,
+  });
+  const response = await GET(new Request('https://app.test/api/integrations/whatnot'));
+  expect((await response.json()).error).toBe(
+    'Whatnot’s shipment details have an unsupported tracking.carrier field. Sync is paused; saved records are preserved.',
+  );
+});

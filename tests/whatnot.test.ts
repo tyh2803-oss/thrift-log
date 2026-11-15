@@ -123,7 +123,7 @@ it('respects retry-after, stops expired/insufficient tokens and rejects malforme
       vi.fn().mockResolvedValue(response({ data: 'wrong', next_cursor: null })),
       async () => {},
     ).page('/orders', sourceOrderSchema),
-  ).rejects.toThrow('unsupported response');
+  ).rejects.toMatchObject({ code: 'response', diagnosticCode: 'response:orders:structure' });
 });
 it('does not forward credentials to report downloads or follow arbitrary/private URLs', async () => {
   for (const url of [
@@ -519,4 +519,70 @@ it('uses authoritative merchandise and seller coupon amounts independently of om
   source.order.amounts.applied_discount = null;
   source.order.amounts.subtotal.amount = '44';
   expect(() => orderAmounts(source)).toThrow('do not reconcile');
+});
+
+it('accepts documented null carrier/service/tracking values without inventing shipped status or weakening money validation', async () => {
+  const shipment = {
+    id: '555',
+    status: 'label_generated',
+    fulfillment_method: 'shipping',
+    created_at: null,
+    updated_at: null,
+    tracking: { carrier: null, service: null, tracking_code: null, last_mile_tracking_code: null },
+    seller_paid_shipping_cost: null,
+    replacement_shipment_id: null,
+    recipient: { email: 'PRIVATE_CUSTOMER' },
+  };
+  const parsed = sourceShipmentSchema.parse(shipment);
+  expect(parsed.tracking).toEqual({ carrier: null, service: null, tracking_code: null });
+  expect(parsed).not.toHaveProperty('recipient');
+  const client = new WhatnotClient(
+    'test-credential',
+    vi.fn().mockResolvedValue(response(shipment)),
+    async () => {},
+  );
+  expect((await client.get('/shipments/555', sourceShipmentSchema)).tracking?.carrier).toBeNull();
+  const source = whatnotSource();
+  source.items[0].shipment_id = '555';
+  source.shipments = [parsed];
+  const p = new WhatnotPlan(actor, sellerId, emptyWorkspace());
+  p.order(source);
+  expect(p.w.orders).toHaveLength(1);
+  expect(inventoryPipeline(p.w).groups.sold.count).toBe(1);
+  expect(inventoryPipeline(p.w).groups.shipped.count).toBe(0);
+  expect(
+    sourceItemSchema.safeParse({
+      ...source.items[0],
+      unit_price: { amount: 'not-money', currency: 'USD' },
+    }).success,
+  ).toBe(false);
+});
+it('records only known resource/field paths in response diagnostics and never exposes body values or external IDs', async () => {
+  const unsafe = 'PRIVATE_PROVIDER_BODY_VALUE',
+    source = whatnotSource();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValue(
+      response({
+        data: [{ ...source.items[0], unit_price: { amount: unsafe, currency: 'USD' } }],
+        next_cursor: null,
+      }),
+    );
+  let error: unknown;
+  try {
+    await new WhatnotClient('credential', fetcher, async () => {}).all(
+      '/orders/123456/items',
+      sourceItemSchema,
+    );
+  } catch (e) {
+    error = e;
+  }
+  expect(error).toMatchObject({
+    code: 'response',
+    diagnosticCode: 'response:items:unit_price.amount',
+  });
+  const text = JSON.stringify(error);
+  expect(text).not.toContain(unsafe);
+  expect(text).not.toContain('123456');
+  expect((error as Error).message).toContain('unit_price.amount');
 });
