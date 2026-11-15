@@ -16,7 +16,7 @@ export function confirmedFreeInventory(w: Workspace, itemId: string) {
         return false;
       }
     }
-    if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1'].includes(receipt.mapping.format))
+    if (!['assistant-v1', 'pipeline-v1', 'whatnot-v1', 'ebay-v1'].includes(receipt.mapping.format))
       return false;
     try {
       const audit = readImportAudit(receipt);

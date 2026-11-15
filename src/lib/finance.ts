@@ -1,7 +1,7 @@
 import {
   historyUnknownCosts,
   historyInventoryCostUnknown,
-  whatnotFinancialPending,
+  sellerFinancialPending,
 } from './cost-knowledge';
 import type { Session, Workspace } from './model';
 import { orderPostings, orderTotalsById, payoutOutstanding, payoutReceived } from './ledger';
@@ -53,7 +53,7 @@ export function metrics(w: Workspace, from = 0, to = Date.now(), showId?: string
     }
   const unknownCosts = [...netUnknown.values()].filter((n) => n !== 0).length;
   const unknownFinancials = new Set(
-    postings.filter((p) => whatnotFinancialPending(w, p.orderId)).map((p) => p.orderId),
+    postings.filter((p) => sellerFinancialPending(w, p.orderId)).map((p) => p.orderId),
   ).size;
   const profit = sum('revenue') - sum('cogs') - sum('direct') - expenses;
   const hours =

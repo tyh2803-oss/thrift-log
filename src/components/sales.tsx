@@ -5,7 +5,7 @@ import { Plus, Radio, ArrowUpRight, Download, Printer, CheckCircle2 } from 'luci
 import {
   historyInventoryCostUnknown,
   historyCostUnknown,
-  whatnotFinancialPending,
+  sellerFinancialPending,
 } from '@/lib/cost-knowledge';
 import { orderTotalsById, payoutStatus } from '@/lib/ledger';
 import { useWorkspace } from '@/lib/use-workspace';
@@ -87,7 +87,7 @@ function SalesView({
           lifetime_revenue: t.revenue / 100,
           lifetime_cogs: historyCostUnknown(w, o.id) ? '' : t.cogs / 100,
           purchase_cost_status: historyCostUnknown(w, o.id) ? 'Unknown' : 'Recorded',
-          seller_financials_status: whatnotFinancialPending(w, o.id)
+          seller_financials_status: sellerFinancialPending(w, o.id)
             ? 'Pending Whatnot report'
             : 'Recorded',
           lifetime_fees: t.fees / 100,
@@ -361,7 +361,7 @@ function SalesView({
                   sm.profitKnown
                     ? 'After direct & event costs'
                     : sm.unknownFinancials
-                      ? 'Whatnot seller fees pending'
+                      ? 'Seller financials pending'
                       : `${sm.unknownCosts} purchase costs unknown`
                 }
                 positive={sm.profitKnown && sm.profit > 0}

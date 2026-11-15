@@ -1,0 +1,49 @@
+{
+  "verified": "2026-11-15",
+  "sources": {
+    "identity": {
+      "version": "v2.0.0",
+      "sha256": "8daac3dc299bfb873c1cd27bee76af4dde0812bfb05c7539276d09d9093ce30d",
+      "url": "https://developer.ebay.com/api-docs/master/commerce/identity/openapi/3/commerce_identity_v1_oas3.json"
+    },
+    "fulfillment": {
+      "version": "v1.20.7",
+      "sha256": "db06cfec913918dc675c19f36efcc8c5d8ae57231463a7e322b4c43b30c16eb9",
+      "url": "https://developer.ebay.com/api-docs/master/sell/fulfillment/openapi/3/sell_fulfillment_v1_oas3.json"
+    },
+    "finances": {
+      "version": "v1.19.0",
+      "sha256": "f81bff0114a73108669f61684265c6e94ce761667402bd65f2d9209ce22c5455",
+      "url": "https://developer.ebay.com/api-docs/master/sell/finances/openapi/3/sell_finances_v1_oas3.json"
+    },
+    "notification": {
+      "version": "v1.6.7",
+      "sha256": "149a7a23e4ca40fbae11b17cfb7df24b55c34117fd8426ea99e9a15483575590",
+      "url": "https://developer.ebay.com/api-docs/master/commerce/notification/openapi/3/commerce_notification_v1_oas3.json"
+    }
+  },
+  "readOperations": [
+    "GET /commerce/identity/v1/user/",
+    "GET /sell/fulfillment/v1/order",
+    "GET /sell/fulfillment/v1/order/{orderId}/shipping_fulfillment",
+    "GET /sell/finances/v1/transaction",
+    "GET /sell/finances/v1/payout",
+    "GET /commerce/notification/v1/public_key/{keyId}"
+  ],
+  "tokenOperations": [
+    "POST /identity/v1/oauth2/token (authorization_code, refresh_token, client_credentials)"
+  ],
+  "coreScopes": [
+    "commerce.identity.readonly",
+    "sell.fulfillment.readonly"
+  ],
+  "optionalFinancialScope": "sell.finances (no narrow readonly equivalent)",
+  "limitations": [
+    "USD only",
+    "Orders up to two years old",
+    "Finances EU/UK signatures not implemented",
+    "Net refunds need exact gross/fee reconciliation",
+    "No active listing or eBay Live/show synchronization",
+    "Saved business ledger retention requires operator policy review"
+  ]
+}

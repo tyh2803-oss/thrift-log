@@ -1,6 +1,7 @@
 'use client';
 import { SecureWorkspace } from './secure-workspace';
 import { WorkspaceProvider } from '@/lib/use-workspace';
+import { EbaySyncProvider } from './ebay-auto-sync';
 import { WhatnotSyncProvider } from './whatnot-auto-sync';
 
 export function WorkspaceRoot({
@@ -17,7 +18,9 @@ export function WorkspaceRoot({
   return (
     <SecureWorkspace>
       <WorkspaceProvider key={userId || 'demo'} demo={demo} userId={userId} isOwner={isOwner}>
-        <WhatnotSyncProvider>{children}</WhatnotSyncProvider>
+        <WhatnotSyncProvider>
+          <EbaySyncProvider>{children}</EbaySyncProvider>
+        </WhatnotSyncProvider>
       </WorkspaceProvider>
     </SecureWorkspace>
   );

@@ -1,5 +1,5 @@
 import { readImportAudit } from './import-audit';
-import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
+import { historyCostUnknown, sellerFinancialPending } from './cost-knowledge';
 import { correctedCostBasis, hasCostConfirmation } from './cost-basis';
 import { orderPostings, returnedItemIds } from './ledger';
 import { allocate } from './money';
@@ -222,7 +222,7 @@ export function inventoryPipeline(w: Workspace): PipelineSnapshot {
           ? null
           : f.revenue - (originalNonMerch.get(`${order.id}:${item.id}`) || 0),
         profit:
-          knownCost && !whatnotFinancialPending(w, order.id) ? f.revenue - f.cogs - f.direct : null,
+          knownCost && !sellerFinancialPending(w, order.id) ? f.revenue - f.cogs - f.direct : null,
         provisional: !confirmed.has(order.id),
         fulfillment: fulfillment.status,
         fulfilledAt: fulfillment.date,

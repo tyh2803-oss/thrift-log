@@ -64,14 +64,15 @@ export function ProfitReview({
         )}
         {!!review.feeOrderIds.length && (
           <section className="card padded">
-            <h3>Missing Whatnot seller fees</h3>
+            <h3>Missing marketplace financials</h3>
             <p>
-              {review.feeOrderIds.length} orders are waiting for verified seller charges. Generate
-              the seller financial report in Whatnot, then refresh the connection. Adding purchase
-              costs alone will not complete these orders’ profit.
+              {review.feeOrderIds.length} orders are waiting for verified seller charges or
+              financial reconciliation. Refresh the relevant marketplace connection and resolve its
+              financial exceptions. Whatnot may need a seller financial report; eBay may need
+              financial API access. Purchase costs alone will not complete these orders’ profit.
             </p>
             <Link className="btn btn-outline" href={`${base}/settings`} onClick={onClose}>
-              Open Whatnot settings
+              Open marketplace settings
             </Link>
             <details>
               <summary>View affected sales ({review.feeOrderIds.length})</summary>

@@ -1,6 +1,6 @@
 import type { FinancialEvent, Order, Workspace } from './model';
 import { allocate, orderTotals } from './money';
-import { historyCostUnknown, whatnotFinancialPending } from './cost-knowledge';
+import { historyCostUnknown, sellerFinancialPending } from './cost-knowledge';
 import { correctedCostBasis } from './cost-basis';
 export type Posting = {
   id: string;
@@ -152,7 +152,7 @@ export function currentOrderTotals(
     direct: sum('direct'),
     profit: sum('revenue') - sum('cogs') - sum('direct'),
     profitKnown:
-      !whatnotFinancialPending(w, order.id) &&
+      !sellerFinancialPending(w, order.id) &&
       (order.status !== 'Completed' ||
         !order.lines.some(
           (l) => !returned.has(l.itemId) && historyCostUnknown(w, order.id, l.itemId),
@@ -171,7 +171,7 @@ export function currentLineProfits(
     return {
       itemId: l.itemId,
       profitKnown:
-        !historyCostUnknown(w, order.id, l.itemId) && !whatnotFinancialPending(w, order.id),
+        !historyCostUnknown(w, order.id, l.itemId) && !sellerFinancialPending(w, order.id),
       profit: p.reduce((n, p) => n + p.revenue - p.cogs - p.direct, 0),
       revenue: p.reduce((n, p) => n + p.revenue, 0),
       cogs: p.reduce((n, p) => n + p.cogs, 0),
@@ -229,11 +229,11 @@ export function ledgerExportRows(
     purchase_cost_status: historyCostUnknown(w, p.orderId, p.itemId) ? 'Unknown' : 'Recorded',
     direct_costs: p.direct / 100,
     operating_expense: 0,
-    seller_financials_status: whatnotFinancialPending(w, p.orderId)
+    seller_financials_status: sellerFinancialPending(w, p.orderId)
       ? 'Pending Whatnot report'
       : 'Recorded',
     operating_profit:
-      historyCostUnknown(w, p.orderId, p.itemId) || whatnotFinancialPending(w, p.orderId)
+      historyCostUnknown(w, p.orderId, p.itemId) || sellerFinancialPending(w, p.orderId)
         ? ''
         : (p.revenue - p.cogs - p.direct) / 100,
     cash_receipt: 0,

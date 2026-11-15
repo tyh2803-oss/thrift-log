@@ -17,6 +17,7 @@ import { parseMoney } from '@/lib/finance';
 import { Button } from './ui/button';
 import { FormSaveBar } from './form-save-bar';
 import { Badge } from './shared';
+import { EbayConnection } from './ebay-connection';
 import { WhatnotConnection } from './whatnot-connection';
 import { BetaAccess } from './beta-access';
 import { clearPrivateBrowserState } from '@/lib/browser-scope';
@@ -205,12 +206,13 @@ function SettingsView({ onImport }: { onImport: () => void }) {
             <ShieldCheck size={20} />
           </div>
           <p className="subtitle">
-            Connect Whatnot for read-only synchronization. Other marketplaces support manual and CSV
-            records.
+            Connect Whatnot and eBay for read-only synchronization. Other marketplaces support
+            manual and CSV records.
           </p>
           <WhatnotConnection />
+          <EbayConnection />
           {adapters
-            .filter((a) => a.name !== 'Whatnot')
+            .filter((a) => a.name !== 'Whatnot' && a.name !== 'eBay')
             .map((a) => (
               <div className="connection" key={a.name}>
                 <div className="card-heading">

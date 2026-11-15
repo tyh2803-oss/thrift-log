@@ -5,7 +5,7 @@ import { metrics } from '../finance';
 import { currentOrderTotals, currentLineProfits, itemIsSold } from '../ledger';
 import {
   historyCostUnknown,
-  whatnotFinancialPending,
+  sellerFinancialPending,
   assumedHistoryAcquisition,
 } from '../cost-knowledge';
 import { inventoryPipeline, inventoryStages } from '../pipeline';
@@ -361,7 +361,7 @@ export function createBusinessTools(
     seenOrders.add(order.id);
     const totals = currentOrderTotals(w, order);
     const perLine = currentLineProfits(w, order);
-    const financialPending = whatnotFinancialPending(w, order.id);
+    const financialPending = sellerFinancialPending(w, order.id);
     const incomplete = historyCostUnknown(w, order.id) || financialPending;
     return {
       ...order,

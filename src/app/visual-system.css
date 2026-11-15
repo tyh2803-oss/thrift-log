@@ -1876,3 +1876,9 @@ form:has(.form-top-actions) :is(input, select, textarea),
     flex: 1;
   }
 }
+
+/* Read-only eBay connection reuses the existing connection/review surfaces. */
+.ebay-connection, .ebay-review { min-width: 0; overflow-wrap: anywhere; }
+.ebay-connection .actions { flex-wrap: wrap; gap: .5rem; }
+.ebay-review summary { min-height: 44px; align-content: center; }
+.ebay-review input, .ebay-review select { max-width: 100%; min-width: 0; }

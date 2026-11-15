@@ -32,7 +32,7 @@ export function historyUnknownCosts(w: Workspace): Map<string, Set<string>> {
   const result = new Map<string, Set<string>>();
   for (const receipt of w.imports) {
     if (
-      !['assistant-v1', 'whatnot-v1'].includes(receipt.mapping.format) ||
+      !['assistant-v1', 'whatnot-v1', 'ebay-v1'].includes(receipt.mapping.format) ||
       receipt.mapping.history !== 'true'
     )
       continue;
@@ -107,6 +107,26 @@ export function whatnotFinancialPending(w: Workspace, orderId: string) {
       }
     }
     whatnotPendingCache.set(w, ids);
+  }
+  return ids.has(orderId);
+}
+
+const ebayPendingCache = new WeakMap<Workspace, Set<string>>();
+/** Provider-neutral completeness; neither absent eBay charges nor Whatnot reports mean zero. */
+export function sellerFinancialPending(w: Workspace, orderId: string) {
+  if (whatnotFinancialPending(w, orderId)) return true;
+  let ids = ebayPendingCache.get(w);
+  if (!ids) {
+    ids = new Set<string>();
+    for (const receipt of w.imports) {
+      if (receipt.mapping.ebay !== 'true') continue;
+      try {
+        if (readImportAudit(receipt).sellerFinancialsPending === true) ids.add(receipt.id);
+      } catch {
+        ids.add(receipt.id);
+      }
+    }
+    ebayPendingCache.set(w, ids);
   }
   return ids.has(orderId);
 }

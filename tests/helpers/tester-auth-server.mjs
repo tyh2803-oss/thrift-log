@@ -302,7 +302,7 @@ const server = createServer(async (request, response) => {
         );
       // Existing browser suites model the optional integration as not migrated.
       // Only its status lookup is read-only; unexpected mutations remain guarded below.
-      if (name === 'whatnot_admin' && body.p_action === 'status')
+      if (['whatnot_admin', 'ebay_admin'].includes(name) && body.p_action === 'status')
         return send(
           { code: 'PGRST202', message: 'Optional Whatnot migration is not installed' },
           404,

@@ -1,3 +1,12 @@
 {
-  "crons": [{ "path": "/api/integrations/whatnot/cron", "schedule": "0 10 * * *" }]
+  "crons": [
+    {
+      "path": "/api/integrations/whatnot/cron",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/integrations/ebay/cron",
+      "schedule": "15 10 * * *"
+    }
+  ]
 }

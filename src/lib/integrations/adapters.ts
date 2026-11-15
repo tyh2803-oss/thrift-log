@@ -36,10 +36,18 @@ export const adapters: MarketplaceAdapter[] = [
   },
   {
     name: 'eBay',
-    status: 'Awaiting verification',
-    capabilities: ['manualListings', 'csvInventory', 'csvSales', 'csvListings'],
+    status: 'Read-only API',
+    capabilities: [
+      'manualListings',
+      'csvInventory',
+      'csvSales',
+      'csvListings',
+      'readOrders',
+      'readShipments',
+      'readReports',
+    ],
     documentation: 'https://developer.ebay.com/',
-    note: 'Manual entries and CSV imports work. OAuth API synchronization awaits official documentation access, an application, and seller authorization.',
+    note: 'Official read-only order and shipment synchronization through per-user OAuth. Optional financial transactions and payouts require eBay Finances access. Application credentials, seller consent and an additive migration are required.',
   },
   {
     name: 'Depop',

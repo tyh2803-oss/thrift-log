@@ -1,5 +1,7 @@
 # Thrift Log
 
+**eBay connection prepared:** per-user OAuth, read-only order/fulfillment sync, optional financial transactions and payouts, private encrypted credentials, and resumable review. Requires owner developer keys/consent and one additive unapplied migration. **Not published or applied to production.** See [minimum setup and limitations](docs/EBAY_INTEGRATION.md).
+
 **Inventory through conversation:** the assistant can create items in any category, edit details and purchase costs, and prepare individual/bulk stage moves, including reversals. New inventory, an actual sale and shipment can share one approval. Estimated worth stays separate from revenue; required financial facts and consequential confirmations remain explicit. See [assistant capabilities](docs/BUSINESS_ASSISTANT.md#tools-and-boundaries). No new database setup is required.
 
 **Faster large workspaces:** imported cost/date checks reuse parsed receipts, long Inventory/Listings/Orders views render 50 rows at a time with **Show more**, and offscreen thumbnails load lazily. Search, totals, exports and bulk actions still include every matching record. See [large-workspace performance](docs/PERFORMANCE.md#large-imported-workspaces--november-14). No database change or setup is required.

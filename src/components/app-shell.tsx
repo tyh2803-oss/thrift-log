@@ -39,6 +39,7 @@ import { Inventory } from './inventory';
 import { Sales } from './sales';
 import { Activity } from './activity';
 import { Insights } from './insights';
+import { EbayAutoSync } from './ebay-auto-sync';
 import { WhatnotAutoSync } from './whatnot-auto-sync';
 import { Settings } from './settings';
 import { Editor, type EditorTarget } from './editor';
@@ -451,6 +452,7 @@ function Shell({
             )}
           </div>
           <WhatnotAutoSync />
+          <EbayAutoSync />
           <div className="page-heading">
             <div>
               <div className="eyebrow">

@@ -296,7 +296,7 @@ function HomeView({
               : [
                   m.unknownCosts ? `${m.unknownCosts} purchase costs unknown` : '',
                   m.unknownFinancials
-                    ? `${m.unknownFinancials} Whatnot orders awaiting seller fees`
+                    ? `${m.unknownFinancials} orders awaiting seller financials`
                     : '',
                   'profit incomplete',
                 ]

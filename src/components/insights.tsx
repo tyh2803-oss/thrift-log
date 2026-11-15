@@ -6,7 +6,7 @@ import { orderPostings, ledgerExportRows } from '@/lib/ledger';
 import {
   historyCostUnknown,
   assumedHistoryAcquisition,
-  whatnotFinancialPending,
+  sellerFinancialPending,
 } from '@/lib/cost-knowledge';
 import { useWorkspace } from '@/lib/use-workspace';
 import { useNow } from '@/lib/use-now';
@@ -74,7 +74,7 @@ function InsightsView({
     r.profit += line.revenue - line.cogs - line.direct;
     if (
       (historyCostUnknown(w, line.orderId, line.itemId) && line.units !== 0) ||
-      whatnotFinancialPending(w, line.orderId)
+      sellerFinancialPending(w, line.orderId)
     )
       r.profitKnown = false;
     r.cogs += line.cogs;
@@ -163,7 +163,7 @@ function InsightsView({
       {!m.profitKnown && (
         <p className="error-box">
           {m.unknownFinancials > 0 &&
-            `${m.unknownFinancials} Whatnot orders await seller financial reports. `}
+            `${m.unknownFinancials} orders await seller financial data. `}
           {m.unknownCosts > 0 && `${m.unknownCosts} purchase costs are unknown. `} Profit, margin,
           ROI and profit charts are incomplete; revenue and recorded fees remain available.
         </p>
@@ -179,7 +179,7 @@ function InsightsView({
                 m.profitKnown
                   ? `${m.margin.toFixed(1)}% margin`
                   : m.unknownFinancials
-                    ? 'Whatnot seller fees pending'
+                    ? 'Seller financials pending'
                     : `${m.unknownCosts} purchase costs unknown`
               }
               positive={m.profitKnown && m.profit > 0}
